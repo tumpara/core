@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>Tumpara GraphQL</title>
+
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/react/17.0.2/umd/react.production.min.js" integrity="sha512-qlzIeUtTg7eBpmEaS12NZgxz52YYZVF5myj89mjJEesBd/oE9UPsYOX2QAXzvOAZYEvQohKdcY8zKE02ifXDmA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/17.0.2/umd/react-dom.production.min.js" integrity="sha512-9jGNr5Piwe8nzLLYTk8QrEMPfjGU0px80GYzKZUxi7lmCfrBjtyCc1V5kkS5vxVwwIB7Qpzc7UxLiQxfAN30dw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/js-cookie/2.2.1/js.cookie.min.js" integrity="sha512-Meww2sXqNHxI1+5Dyh/9KAtvI9RZSA4c1K2k5iL02oiPO/RH3Q30L3M1albtqMg50u4gRTYdV4EXOQqXEI336A==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/graphiql/1.5.17/graphiql.min.css" integrity="sha512-zM3+wPmIrGwBJmq5/05GWM4MIPktgJrqxgV6EEqfmeCpXmG1mSPfqwDsQA35iq7TrAhZkAwpoQPWFA1h6aFU6Q==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+		<style>
+			html,
+			body {
+				height: 100%;
+				margin: 0;
+				overflow: hidden;
+				width: 100%;
+			}
+
+			#graphiql {
+				height: 100vh;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="graphiql"></div>
+
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/graphiql/1.5.17/graphiql.min.js" integrity="sha512-iE0pdLn2XGgt4GcsZvFgQUEOj4pZK94JyPs8G/TlDrIOJbsq/0bxiUNVA/mJub5iPVRo3OWxgJeZSRlOYz0jEA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+		<script>
+			async function fetchGraphQL(graphQLParams) {
+				const headers = {
+					Accept: "application/json",
+					"Content-Type": "application/json",
+				};
+
+				const csrfToken = Cookies.get("csrftoken");
+				if (csrfToken) {
+					headers["x-csrftoken"] = csrfToken;
+				}
+
+				const response = await fetch('/api/graphql', {
+					method: "post",
+					headers: headers,
+					body: JSON.stringify(graphQLParams),
+				});
+				try {
+					return await response.json();
+				} catch (error) {
+					console.error(error);
+					return await response.text();
+				}
+			}
+
+			ReactDOM.render(
+				React.createElement(GraphiQL, {
+					fetcher: fetchGraphQL,
+          defaultVariableEditorOpen: true,
+					docExplorerOpen: true,
+					defaultQuery: `# Welcome to Tumpara's GraphQL endpoint!
+# ======================================
+#
+# GraphiQL (what you are looking at now) is an in-browser tool for writing,
+# validating and testing queries directly on this Tumpara instance. Anything
+# you execute here will be run on your live data, so be careful not to delete
+# anything you might still need. If you would like to run queries in an
+# anonymous session, open a private window in your browser.
+#
+# Keyboard shortcuts
+# ------------------
+# [Shift-Ctrl-P] Prettify query
+# [Shift-Ctrl-M] Merge query
+#   [Ctrl-Enter] Run query
+#   [Ctrl-Space] Activate autocomplete
+
+query {
+	__typename
+}`
+				}, [
+					React.createElement(GraphiQL.Logo, {}, [ 'Tumpara API Explorer' ])
+				]),
+				document.getElementById("graphiql")
+			);
+		</script>
+	</body>
+</html>

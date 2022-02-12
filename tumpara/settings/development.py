@@ -1,0 +1,19 @@
+import os
+
+os.environ.setdefault("TUMPARA_SECRET_KEY", "thisisnotsecure")
+os.environ.setdefault("TUMPARA_ENABLE_DEMO_BACKEND", "True")
+
+from .base import *
+
+DEBUG = True
+
+# An empty allowed hosts config will allow connections to localhost when DEBUG is
+# active. See: https://docs.djangoproject.com/en/3.1/ref/settings/#allowed-hosts
+ALLOWED_HOSTS = []
+
+# Disable password validators in development mode.
+AUTH_PASSWORD_VALIDATORS = []
+
+# Effectively disable all crossorigin headers.
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
