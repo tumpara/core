@@ -72,7 +72,7 @@ class JoinablesBackend(django.contrib.auth.backends.BaseBackend):
                 obj, for_concrete_model=True
             )
             membership = user_obj.memberships.get(
-                content_type=content_type, object_id=obj.pk
+                content_type=content_type, object_pk=obj.pk
             )
 
             permissions = {build_permission_name(obj, "view")}
@@ -115,7 +115,7 @@ class JoinablesBackend(django.contrib.auth.backends.BaseBackend):
         query = models.Q(
             content_type__app_label=app_label,
             content_type__model=model_name,
-            object_id__in=keys,
+            object_pk__in=keys,
         )
         if action in ("change", "delete"):
             query &= models.Q(is_owner=True)

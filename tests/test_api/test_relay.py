@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 import hypothesis
 import pytest
@@ -29,7 +29,7 @@ def create_connection(
     before: Optional[int | str] = None,
     first: Optional[int] = None,
     last: Optional[int] = None,
-) -> relay.Connection:
+) -> relay.Connection[Any]:
     return relay.Connection.from_sequence(
         dataset,
         after=relay.encode_key("Connection", after)
@@ -47,7 +47,7 @@ def create_connection(
 @hypothesis.example((20, None, None, None, 19))
 def test_connection_building_bounds(
     data: tuple[int, Optional[int], Optional[int], Optional[int], Optional[int]]
-):
+) -> None:
     """Building connections from iterables returns the correct number of edges, with
     the correct bounds set in PageInfo."""
     dataset_size, after, before, first, last = data
@@ -61,6 +61,8 @@ def test_connection_building_bounds(
     if last is not None:
         assert len(connection.edges) <= last
     for edge in connection.edges:
+        if edge is None:
+            continue
         if before is not None:
             assert edge.node < before
         if after is not None:
@@ -87,6 +89,7 @@ def test_connection_building_bounds(
             before_or_integer = (
                 min(before, dataset_size) if before is not None else dataset_size
             )
+            assert connection.edges[-1] is not None
             assert connection.page_info.has_next_page is (
                 connection.edges[-1].node < before_or_integer - 1
             )
@@ -97,6 +100,7 @@ def test_connection_building_bounds(
         if last is not None:
             # When paginating backwards, has_previous_page should be set correctly.
             after_integer = max(after, -1) if after is not None else -1
+            assert connection.edges[0] is not None
             assert connection.page_info.has_previous_page is (
                 connection.edges[0].node > after_integer + 1
             )
@@ -109,11 +113,13 @@ def test_connection_building_bounds(
         last_or_inf = last if last is not None else float("inf")
 
         if connection.page_info.has_next_page:
+            assert connection.edges[-1] is not None
             assert connection.edges[-1].node < dataset_size - 1
             if first is not None:
                 assert len(connection.edges) == min(first, last_or_inf)
 
         if connection.page_info.has_previous_page:
+            assert connection.edges[0] is not None
             assert connection.edges[0].node > 0
             if last is not None:
                 assert len(connection.edges) == min(last, first_or_inf)
@@ -121,25 +127,30 @@ def test_connection_building_bounds(
 
 @hypothesis.given(st.integers(0, 100), st.integers(1, 9))
 @hypothesis.example(50, 6)
-def test_connection_building_pagination(starting_point: int, page_size: int):
+def test_connection_building_pagination(starting_point: int, page_size: int) -> None:
     """Paginating through a dataset works as expected."""
     dataset = list(range(0, 101))
-    results = []
+    results = list[Optional[int]]()
 
     # Paginate forwards from the starting point (inclusive):
-    cursor: str | int = starting_point - 1
-    while True:
+    cursor: Optional[str | int] = starting_point - 1
+    while cursor is not None:
         connection = create_connection(dataset, after=cursor, first=page_size)
-        results.extend([edge.node for edge in connection.edges])
+        results.extend(
+            edge.node if edge is not None else None for edge in connection.edges
+        )
         cursor = connection.page_info.end_cursor
         if not connection.page_info.has_next_page:
             break
 
     # Paginate backwards from the starting point (exclusive):
     cursor = starting_point
-    while True:
+    while cursor is not None:
         connection = create_connection(dataset, before=cursor, last=page_size)
-        results = [*[edge.node for edge in connection.edges], *results]
+        results = [
+            *[edge.node if edge is not None else None for edge in connection.edges],
+            *results,
+        ]
         cursor = connection.page_info.start_cursor
         if not connection.page_info.has_previous_page:
             break
@@ -147,7 +158,7 @@ def test_connection_building_pagination(starting_point: int, page_size: int):
     assert results == dataset
 
 
-def test_connection_building_errors():
+def test_connection_building_errors() -> None:
     with pytest.raises(ValueError):
         create_connection([], after="thisisnotbase64")
     with pytest.raises(ValueError):

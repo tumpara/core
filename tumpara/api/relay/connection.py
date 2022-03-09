@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import dataclasses
+import typing
 from collections.abc import Sequence
 from typing import Any  # noqa: F401
 from typing import TYPE_CHECKING, Generic, Optional, TypeVar
 
 import strawberry.annotation
 import strawberry.arguments
+from django.db import models
 from strawberry.field import StrawberryField
 
 from .base import Node  # noqa: F401
@@ -16,6 +18,7 @@ if TYPE_CHECKING:
     from _typeshed import Self
 
 _Node = TypeVar("_Node", bound="Node")
+_Model = TypeVar("_Model", bound="models.Model")
 
 
 @strawberry.type(
@@ -44,10 +47,6 @@ class PageInfo:
     )
 
 
-def resolve_node_id(root: "Edge[_Node]") -> strawberry.ID:
-    return root.node.id
-
-
 @dataclasses.dataclass
 class Edge(Generic[_Node]):
     """An edge in a connection. This points to a single item in the dataset."""
@@ -56,22 +55,6 @@ class Edge(Generic[_Node]):
     cursor: str = strawberry.field(
         description="A cursor used for pagination in the corresponding connection."
     )
-    node_id: strawberry.ID = strawberry.field(
-        resolver=resolve_node_id,
-        description="The ID of the node connected to the edge.",
-    )
-
-
-def resolve_connection_nodes(
-    root: "Connection[Any]",
-) -> list[Optional[Node]]:
-    return [edge.node if edge is not None else None for edge in root.edges]
-
-
-def resolve_connection_node_ids(
-    root: "Connection[Any]",
-) -> list[Optional[strawberry.ID]]:
-    return [edge.node.id if edge is not None else None for edge in root.edges]
 
 
 @strawberry.type
@@ -79,13 +62,9 @@ class Connection(Generic[_Node]):
     """A connection to a list of items."""
 
     # We use Sequence here because the argument needs to be covariant (so that
-    # subclasses can override it). Further, these field() objects are here so we can
-    # create Connection() objects (they will be overridden by __init_subclass__).
+    # subclasses can override it).
     edges: Sequence[Optional[Edge[_Node]]]
-    nodes: list[Optional[_Node]] = strawberry.field(resolver=resolve_connection_nodes)
-    node_ids: list[Optional[strawberry.ID]] = strawberry.field(
-        resolver=resolve_connection_node_ids
-    )
+    nodes: list[Optional[_Node]]
     page_info: PageInfo = strawberry.field(
         description="Pagination information for fetching more objects in the "
         "connection's dataset."
@@ -94,7 +73,13 @@ class Connection(Generic[_Node]):
         description="Total number of results in the dataset, ignoring pagnation."
     )
 
-    def __init_subclass__(cls, *args: Any, **kwargs: Any):
+    def __init_subclass__(cls, **kwargs: Any):
+        if any(
+            typing.get_origin(base) is Generic
+            for base in cls.__orig_bases__  # type: ignore
+        ):
+            return super().__init_subclass__(**kwargs)
+
         if "name" not in kwargs or "pluralized_name" not in kwargs:
             raise TypeError("name and pluralized_name parameters must be provided")
         name = kwargs.pop("name")
@@ -102,22 +87,30 @@ class Connection(Generic[_Node]):
         pluralized_name = kwargs.pop("pluralized_name")
         assert isinstance(pluralized_name, str)
 
-        cls.edges = strawberry.field(
+        # There are a few reasons why these field initialization stuff is delayed and
+        # done here rather than directly giving edges and nodes a field in the class.
+        #
+        # First, Strawberry still has a few problems with generics, needing us to
+        # manually resolve them in the subclass. That's why all the connection
+        # subclasses redefine the actual properties.
+        #
+        # Further, Mypy also does not currently resolve subclasses of generic
+        # dataclasses correctly:
+        #   https://github.com/python/mypy/issues/10039#issuecomment-774304871
+        #   https://github.com/python/mypy/issues/12063
+        #
+        # The workaround is to manually redefine all affected properties in the subclass
+        # and then add the fields (with their description) again here.
+        cls.edges = strawberry.field(  # type: ignore
             description=f"A list of {name} edges in the connection."
         )
-        cls.nodes = strawberry.field(
-            resolver=resolve_connection_nodes,
+        cls.nodes = strawberry.field(  # type: ignore
             description=f"A list of {pluralized_name} in the connection. This is the "
             "same as querying `{ edges { node } }`, so when no edge data (like the "
             "cursor) is needed, this field can be used instead.",
         )
-        cls.node_ids = strawberry.field(
-            resolver=resolve_connection_node_ids,
-            description=f"A list of the ID of each {name} in the connection. This is "
-            "the same as querying `{ edges { node { id } }`.",
-        )
 
-        super().__init_subclass__(*args, **kwargs)
+        super().__init_subclass__(**kwargs)
 
     @classmethod
     def from_sequence(
@@ -180,6 +173,7 @@ class Connection(Generic[_Node]):
                 ),
                 total_count=sequence_length,
                 edges=[],
+                nodes=[],
             )
 
         # See the specification again for this algorithm:
@@ -222,6 +216,30 @@ class Connection(Generic[_Node]):
             ),
             total_count=sequence_length,
             edges=edges,
+            nodes=(edge.node if edge is not None else None for edge in edges),
+        )
+
+
+class DjangoConnection(Generic[_Node, _Model], Connection[_Node]):
+    """A connection superclass for connections with Django models."""
+
+    @classmethod
+    def from_queryset(
+        cls: type[Self],
+        queryset: models.QuerySet[_Model],
+        *,
+        after: Optional[str] = None,
+        before: Optional[str] = None,
+        first: Optional[int] = None,
+        last: Optional[int] = None,
+    ) -> Self:
+        return cls.from_sequence(  # type: ignore
+            queryset,
+            queryset.count(),
+            after=after,
+            before=before,
+            first=first,
+            last=last,
         )
 
 

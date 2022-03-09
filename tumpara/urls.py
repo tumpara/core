@@ -1,5 +1,5 @@
 import django.urls
 
-import tumpara.api.urls
+import tumpara.api.schema
 
-urlpatterns = tumpara.api.urls.urlpatterns
+urlpatterns = tumpara.api.schema.urlpatterns

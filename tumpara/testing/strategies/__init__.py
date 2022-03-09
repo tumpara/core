@@ -8,7 +8,7 @@ from .filesystem import (
     filenames,
     temporary_directories,
 )
-from .utils import field_names, graphql_ints, optional_booleans
+from .utils import field_names, graphql_ints, optional_booleans, usernames
 
 __all__ = (
     hypothesis.strategies.__all__
@@ -21,5 +21,6 @@ __all__ = (
         "graphql_ints",
         "optional_booleans",
         "temporary_directories",
+        "usernames",
     ]
 )

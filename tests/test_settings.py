@@ -7,7 +7,7 @@ import pytest
 from . import settings
 
 
-def test_string_or_none():
+def test_string_or_none() -> None:
     assert settings.string_or_none("hi") == "hi"
     assert settings.string_or_none("") is None
     assert settings.string_or_none(None) is None
@@ -31,7 +31,7 @@ def test_string_or_none():
 )
 def test_parse_env_boolean(
     monkeypatch: pytest.MonkeyPatch, value: str, expected: Optional[bool]
-):
+) -> None:
     monkeypatch.setenv("TESTING_VARIABLE", value)
     if expected is not None:
         assert settings.parse_env("TESTING_VARIABLE", None, bool) is expected
@@ -40,11 +40,11 @@ def test_parse_env_boolean(
             settings.parse_env("TESTING_VARIABLE", None, bool)
 
 
-def test_parse_env_defaults():
+def test_parse_env_defaults() -> None:
     assert settings.parse_env("TESTING_VARIABLE", "hello", bool) == "hello"
 
 
-def test_parse_env_cast(monkeypatch: pytest.MonkeyPatch):
+def test_parse_env_cast(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TESTING_VARIABLE", "14")
     assert settings.parse_env("TESTING_VARIABLE", "hello", int) == 14
     monkeypatch.setenv("TESTING_VARIABLE", "abc")

@@ -13,7 +13,7 @@ def temporary_directories(draw: st.DrawFn) -> str:
     """Hypothesis strategy that creates temporary directories."""
     directory = tempfile.mkdtemp()
 
-    @hypothesis.control.cleanup  # type: ignore
+    @hypothesis.control.cleanup
     def teardown_temporary_directory() -> None:
         shutil.rmtree(directory)
 

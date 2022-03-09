@@ -3,12 +3,13 @@ from __future__ import annotations
 import abc
 import base64
 import binascii
-from typing import Any, cast
+from typing import Any, Optional, cast
 
-import graphql
 import strawberry
 import strawberry.types.types
 from django.db import models
+
+from ..utils import InfoType
 
 
 def decode_key(value: str) -> tuple[str, ...]:
@@ -35,7 +36,7 @@ def encode_key(*values: str | object) -> str:
 
 
 def get_node_origin(
-    type_name: str, info: graphql.GraphQLResolveInfo
+    type_name: str, info: InfoType
 ) -> tuple[type[Node], strawberry.types.types.TypeDefinition]:
     """Get the actual :class:`Node` subclass from a type name.
 
@@ -67,7 +68,7 @@ class Node(abc.ABC):
     """An object that can be globally referenced with an ID."""
 
     @strawberry.field(description="The ID of the object.")
-    def id(root: Any, info: graphql.GraphQLResolveInfo) -> strawberry.ID:
+    def id(root: Any, info: InfoType) -> strawberry.ID:
         type_name = info.path.typename
         assert isinstance(
             type_name, str
@@ -80,23 +81,41 @@ class Node(abc.ABC):
         return cast(strawberry.ID, encode_key(type_definition.name, *key_tuple))
 
     @classmethod
-    def get_key_for_node(
-        cls, root: Any, info: graphql.GraphQLResolveInfo
-    ) -> str | tuple[str, ...]:
+    def get_key_for_node(cls, node: Any, info: InfoType) -> str | tuple[str, ...]:
         """Extract the key used to generate a unique ID for an instance of this Node.
 
         For Django objects, the default implementation will return the primary key.
         """
-        if isinstance(root, models.Model):
-            return str(root.pk)
+        if isinstance(node, models.Model):
+            return str(node.pk)
         else:
             raise NotImplementedError(
-                f"Cannot generate a global ID for object of type {type(root)!r}. If "
+                f"Cannot generate a global ID for object of type {type(node)!r}. If "
                 f"this is not intentional, extend the Node type and override the "
-                f"'get_key' method."
+                f"'get_key_for_node' method."
             )
 
     @classmethod
     @abc.abstractmethod
-    def get_node_from_key(cls, info: graphql.GraphQLResolveInfo, *key: str) -> Any:
+    def get_node_from_key(cls, info: InfoType, *key: str) -> Any:
         """Resolve an instance of this node type from the global ID's key."""
+
+
+@strawberry.type
+class Query:
+    @strawberry.field(description="Resolve a node by its ID.")
+    def node(root: Any, info: InfoType, id: strawberry.ID) -> Optional[Node]:
+        type_name, *key = decode_key(str(id))
+        origin, _ = get_node_origin(type_name, info)
+        node = origin.get_node_from_key(info, *key)
+
+        if node is None:
+            return None
+
+        if hasattr(origin, "is_type_of"):
+            assert origin.is_type_of(node, info), (  # type: ignore
+                "get_node_from_key() must return an object that is compatible with "
+                "is_type_of() "
+            )
+
+        return cast(Node, node)

@@ -11,8 +11,8 @@ _N = TypeVar("_N", bound="SupportsFloat")
 
 @strawberry.input
 class ScalarFilter(Generic[_T], abc.ABC):
-    include: Optional[list[_T]]
-    exclude: Optional[list[_T]]
+    include: Optional[list[_T]] = None
+    exclude: Optional[list[_T]] = None
 
     @abc.abstractmethod
     def build_query(self, field_name: str) -> models.Q:
@@ -42,39 +42,48 @@ class ScalarFilter(Generic[_T], abc.ABC):
 @strawberry.input
 class StringFilter(ScalarFilter[str]):
     include: Optional[list[str]] = strawberry.field(
+        default=None,
         description="Explicit list of possible strings. Only objects with one of these "
-        "set will be matched."
+        "set will be matched.",
     )
     exclude: Optional[list[str]] = strawberry.field(
+        default=None,
         description="Explicit list of excluded strings. Objects with one of these set "
-        "will not be returned, even if other filters match."
+        "will not be returned, even if other filters match.",
     )
     contains: Optional[str] = strawberry.field(
+        default=None,
         description="Match field values that contain the provided string.",
     )
     does_not_contain: Optional[str] = strawberry.field(
+        default=None,
         description="Objects where the field value contains the provided string will "
         "not be returned, even if other filters match.",
     )
     starts_with: Optional[str] = strawberry.field(
+        default=None,
         description="Match field values that start with the provided string.",
     )
     does_not_start_with: Optional[str] = strawberry.field(
+        default=None,
         description="Objects where the field value starts with the provided string "
         "will not be returned, even if other filters match.",
     )
     ends_with: Optional[str] = strawberry.field(
+        default=None,
         description="Match field values that end with the provided string.",
     )
     does_not_end_with: Optional[str] = strawberry.field(
+        default=None,
         description="Objects where the field value ends with the provided string "
         "will not be returned, even if other filters match.",
     )
     case_sensitive: bool = strawberry.field(
+        default=False,
         description="By default, all filters are case insensitive. Set this to `true` "
         "filter for exact matches. Note that this setting is ignored for the `include` "
-        "and `exclude` options.",
-        default=False,
+        "and `exclude` options. Also note that SQLite doesn't support case-sensitive "
+        "filtering.",
     )
 
     def build_query(self, field_name: str) -> models.Q:
@@ -102,32 +111,47 @@ class StringFilter(ScalarFilter[str]):
 
 @strawberry.input
 class NumberFilter(Generic[_N], ScalarFilter[_N]):
-    include: Optional[list[_N]] = strawberry.field(
-        description="Explicit list of possible values. Only objects with one of these "
-        "set will be matched."
-    )
-    exclude: Optional[list[_N]] = strawberry.field(
-        description="Explicit list of excluded values. Objects with one of these set "
-        "will not be returned, even if other filters match."
-    )
-    minimum: Optional[_N] = strawberry.field(
-        description="Match objects with field values of at least the one specified."
-    )
-    maximum: Optional[_N] = strawberry.field(
-        description="Match objects with field values of at most the one specified."
-    )
+    include: Optional[list[_N]] = None
+    exclude: Optional[list[_N]] = None
+    minimum: Optional[_N] = None
+    maximum: Optional[_N] = None
     inclusive_minimum: bool = strawberry.field(
+        default=True,
         description="By default, the `minimum` filter is inclusive. Set this to "
         "`false` to make it exclusive (turn the *greater-than-equals* into a "
         "*greater-than*).",
-        default=True,
     )
     inclusive_maximum: bool = strawberry.field(
+        default=True,
         description="By default, the `maximum` filter is inclusive. Set this to "
         "`false` to make it exclusive (turn the *less-than-equals* into a "
         "*less-than*).",
-        default=True,
     )
+
+    def __init_subclass__(cls, **kwargs: Any):
+        # Initialize generic fields. See the comment in __init_subclass__ of
+        # tumpara.api.relay.connection.Connection for more details on why this is done.
+        cls.include = strawberry.field(
+            default=None,
+            description="Explicit list of possible values. Only objects with one of "
+            "these set will be matched.",
+        )
+        cls.exclude = strawberry.field(
+            default=None,
+            description="Explicit list of excluded values. Objects with one of these "
+            "set will not be returned, even if other filters match.",
+        )
+        cls.minimum = strawberry.field(
+            default=None,
+            description="Match objects with field values of at least the one "
+            "specified.",
+        )
+        cls.maximum = strawberry.field(
+            default=None,
+            description="Match objects with field values of at most the one specified.",
+        )
+
+        super().__init_subclass__(**kwargs)
 
     def build_query(self, field_name: str) -> models.Q:
         query = super().build_query(field_name)
@@ -153,9 +177,15 @@ class NumberFilter(Generic[_N], ScalarFilter[_N]):
 
 @strawberry.input
 class IntFilter(NumberFilter[int]):
-    pass
+    include: Optional[list[int]] = None
+    exclude: Optional[list[int]] = None
+    minimum: Optional[int] = None
+    maximum: Optional[int] = None
 
 
 @strawberry.input
 class FloatFilter(NumberFilter[float]):
-    pass
+    include: Optional[list[float]] = None
+    exclude: Optional[list[float]] = None
+    minimum: Optional[float] = None
+    maximum: Optional[float] = None

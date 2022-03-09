@@ -1,10 +1,9 @@
 from typing import Any, Optional, cast
 
-import graphql
 import strawberry
 from django.db import models
-from strawberry.arguments import UNSET
 
+from tumpara import api
 from tumpara.api import filtering, relay
 
 from .. import models as accounts_models
@@ -12,13 +11,13 @@ from .. import models as accounts_models
 
 @strawberry.input(description="Filtering options when querying `User` objects.")
 class UserFilter:
-    login_name: Optional[filtering.StringFilter]
-    full_name: Optional[filtering.StringFilter]
-    short_name: Optional[filtering.StringFilter]
+    username: Optional[filtering.StringFilter] = None
+    full_name: Optional[filtering.StringFilter] = None
+    short_name: Optional[filtering.StringFilter] = None
     any_name: Optional[filtering.StringFilter] = strawberry.field(
-        description="Filter based on any of the name fields."
+        default=None, description="Filter based on any of the name fields."
     )
-    is_active: Optional[bool]
+    is_active: Optional[bool] = None
 
     def build_query(self, field_name: str) -> models.Q:
         """Build a Django Q object for this filter.
@@ -31,15 +30,15 @@ class UserFilter:
         prefix = field_name + "__" if field_name != "" else ""
         query = models.Q()
 
-        if self.login_name is not None:
-            query &= self.login_name.build_query(f"{prefix}login_name")
+        if self.username is not None:
+            query &= self.username.build_query(f"{prefix}username")
         if self.full_name is not None:
             query &= self.full_name.build_query(f"{prefix}full_name")
         if self.short_name is not None:
             query &= self.short_name.build_query(f"{prefix}short_name")
         if self.any_name is not None:
             query &= (
-                self.any_name.build_query(f"{prefix}login_name")
+                self.any_name.build_query(f"{prefix}username")
                 | self.any_name.build_query(f"{prefix}full_name")
                 | self.any_name.build_query(f"{prefix}short_name")
             )
@@ -51,8 +50,8 @@ class UserFilter:
 
 @strawberry.type(description="A user with an account on this server.")
 class User(relay.Node):
-    login_name: str = strawberry.field(
-        description=str(accounts_models.User._meta.get_field("login_name").help_text)
+    username: str = strawberry.field(
+        description=str(accounts_models.User._meta.get_field("username").help_text)
     )
     full_name: str = strawberry.field(
         description=str(accounts_models.User._meta.get_field("full_name").help_text)
@@ -67,12 +66,23 @@ class User(relay.Node):
         description=str(accounts_models.User._meta.get_field("is_active").help_text)
     )
 
+    @strawberry.field(description="Name to display for the user.")
+    def display_name(self) -> str:
+        if self.short_name:
+            return self.short_name
+        elif self.full_name:
+            return self.full_name
+        else:
+            return self.username
+
     @classmethod
-    def is_type_of(cls, obj: Any, info: graphql.GraphQLResolveInfo) -> bool:
+    def is_type_of(cls, obj: Any, info: api.InfoType) -> bool:
         return isinstance(obj, accounts_models.User)
 
     @classmethod
-    def get_node_from_key(cls, info: graphql.GraphQLResolveInfo, *key: str) -> Any:
+    def get_node_from_key(cls, info: api.InfoType, *key: str) -> Any:
+        if not api.check_authentication(info):
+            return None
         assert len(key) == 1, "invalid key format"
         return accounts_models.User.objects.get(pk=key[0])
 
@@ -88,38 +98,39 @@ class UserEdge(relay.Edge[User]):
 
 
 @strawberry.type(description="A connection to a list of users.")
-class UserConnection(relay.Connection[User], name="user", pluralized_name="users"):
+class UserConnection(
+    relay.DjangoConnection[User, accounts_models.User],
+    name="user",
+    pluralized_name="users",
+):
     edges: list[Optional[UserEdge]]
     nodes: list[Optional[User]]
 
 
 def resolve_user_connection(
-    filter: Optional[UserFilter] = UNSET, **kwargs: Any
+    info: api.InfoType, filter: Optional[UserFilter] = None, **kwargs: Any
 ) -> Optional[UserConnection]:
-    queryset = accounts_models.User.objects.all()
-    if filter not in (None, UNSET):
-        queryset.filter(filter.build_query(""))
-    return UserConnection.from_sequence(queryset, queryset.count(), **kwargs)
+    if not api.check_authentication(info):
+        queryset = accounts_models.User.objects.none()
+    else:
+        queryset = accounts_models.User.objects.all()
+        if filter is not None:
+            queryset = queryset.filter(filter.build_query(""))
+    return UserConnection.from_queryset(queryset, **kwargs)
 
 
 @strawberry.type
 class Query:
-    @strawberry.field(description="Resolve a node by its ID.")
-    def node(
-        root: Any, info: graphql.GraphQLResolveInfo, id: strawberry.ID
-    ) -> Optional[relay.Node]:
-        type_name, *key = relay.decode_key(str(id))
-        origin, _ = relay.get_node_origin(type_name, info)
-        node = origin.get_node_from_key(info, *key)
-
-        if hasattr(origin, "is_type_of"):
-            assert origin.is_type_of(node, info), (  # type: ignore
-                "get_node_from_key() must return an object that is compatible with "
-                "is_type_of() "
-            )
-
-        return cast(relay.Node, node)
-
-    users: Optional[UserConnection] = relay.ConnectionField(
+    users: Optional[UserConnection] = relay.ConnectionField(  # type: ignore
         description="All users available on this server."
     )(resolve_user_connection)
+
+    @strawberry.field(
+        description="The user that is currently accessing the API. For anonymous "
+        "sessions, this will be `null`."
+    )
+    def me(self, info: api.InfoType) -> Optional[User]:
+        if info.context.user.is_authenticated:
+            return cast(User, info.context.user)
+        else:
+            return None
