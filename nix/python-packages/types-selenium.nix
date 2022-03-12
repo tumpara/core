@@ -2,7 +2,7 @@
 
 buildPythonPackage rec {
   pname = "types-selenium";
-  version = "3.141.7";
+  version = "3.141.9";
 
   src = fetchPypi {
     inherit pname version;

@@ -214,7 +214,7 @@ class UserMembership(AbstractMembership):
 
 
 class JoinableQueryset(models.QuerySet["Joinable"]):
-    def for_user(self, permission: str, user: User) -> JoinableQueryset:
+    def for_user(self, permission: str, user: User | AnonymousUser) -> JoinableQueryset:
         """Narrow down the queryset to only return elements where the given user has
         a specific permission."""
         if not user.is_authenticated or not user.is_active:

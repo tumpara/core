@@ -13,7 +13,7 @@
           packageOverrides = self: super: {
             django = (super.django_3.override {
               withGdal = true;
-            }).overrideAttrs(oldAttrs: {
+            }).overrideAttrs (oldAttrs: {
               patches = oldAttrs.patches ++ [ (pkgs.substituteAll {
                 src = ./nix/django_3_set_spatialite_lib.patch;
                 libspatialite = pkgs.libspatialite;

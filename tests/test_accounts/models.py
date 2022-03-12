@@ -1,5 +1,5 @@
-from tumpara.accounts.models import Joinable
+from tumpara.accounts import models as accounts_models
 
 
-class JoinableThing(Joinable):
-    pass
+class JoinableThing(accounts_models.Joinable):
+    objects = accounts_models.JoinableManager()

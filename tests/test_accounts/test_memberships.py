@@ -258,16 +258,16 @@ def test_joinable_for_user_query(django_executor: Any, data: st.DataObject) -> N
     owned_things = set[JoinableThing]()
 
     for thing in things:
-        match data.draw(st.integers(0, 2)):
-            case 0:
-                pass
-            case 1:
-                thing.add_membership(user)
-                member_things.add(thing)
-            case 2:
-                thing.add_membership(user, owner=True)
-                member_things.add(thing)
-                owned_things.add(thing)
+        # TODO Convert this to a match statement as soon as the new Mypy version
+        #  comes out:
+        choice = data.draw(st.integers(0, 2))
+        if choice == 1:
+            thing.add_membership(user)
+            member_things.add(thing)
+        elif choice == 2:
+            thing.add_membership(user, owner=True)
+            member_things.add(thing)
+            owned_things.add(thing)
 
     assert (
         set(JoinableThing.objects.for_user(view_thing_permission, user))
@@ -290,7 +290,7 @@ def test_joinable_for_user_query(django_executor: Any, data: st.DataObject) -> N
 @hypothesis.given(st.text())
 def test_joinable_for_user_with_invalid_permission(
     django_executor: Any, permission: str
-):
+) -> None:
     hypothesis.assume(permission not in supported_permissions)
     user = User(username="test")
     with pytest.raises(ValueError, match="unsupported permission"):

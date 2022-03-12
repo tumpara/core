@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from functools import partial
+import functools
 
 from django.db import models
 from django.utils import crypto, timezone
@@ -28,7 +28,7 @@ class Token(models.Model):
         _("key"),
         max_length=32,
         primary_key=True,
-        default=partial(crypto.get_random_string, 32),
+        default=functools.partial(crypto.get_random_string, 32),
     )
     user = models.ForeignKey(
         accounts_models.User,
@@ -56,3 +56,7 @@ class Token(models.Model):
     usage_timestamp = models.DateTimeField(_("last used"), auto_now=True)
 
     objects = TokenManager()
+
+    class Meta:
+        verbose_name = _("API token")
+        verbose_name_plural = _("API tokens")

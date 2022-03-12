@@ -4,8 +4,9 @@ This will make the app run and load settings from environment variables
 """
 
 import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Generic, Optional, Type, TypeVar, Union, overload
+from typing import Any, Generic, Optional, Type, TypeVar, Union, overload
 
 import django.apps.registry
 import django_stubs_ext
@@ -206,6 +207,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "tumpara.accounts",
     "tumpara.api",
+    "tumpara.libraries",
 ]
 
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
