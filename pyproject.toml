@@ -18,3 +18,24 @@ extend-exclude = "((tests|tumpara)/.*/migrations/.*\\.py)"
 [tool.isort]
 profile = "black"
 skip_glob = ["tests/**/migrations/*.py", "tumpara/**/migrations/*.py"]
+
+[tool.pylint.MASTER]
+jobs = 0
+ignore = "migrations"
+load-plugins = ["pylint_django"]
+
+[tool.pylint."MESSAGES CONTROL"]
+disable = [
+	"import-outside-toplevel",
+#	"missing-function-docstring",
+	"missing-class-docstring",
+	"missing-module-docstring",
+	"too-few-public-methods",
+	"wrong-import-order",  # isort already does this.
+	"no-else-continue",
+	"no-else-raise",
+	"no-else-return",
+	"too-many-locals",
+	"too-many-nested-blocks",
+]
+

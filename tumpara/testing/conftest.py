@@ -8,7 +8,8 @@ import os
 import hypothesis
 from hypothesis import HealthCheck
 
-from .fixtures import *  # noqa: F401 (this module registers fixtures)
+# pylint: disable-next=wildcard-import, unused-wildcard-import
+from .fixtures import *  # noqa: F401
 
 hypothesis.settings.register_profile(
     "dev",

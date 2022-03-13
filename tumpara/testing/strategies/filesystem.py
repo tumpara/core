@@ -9,7 +9,7 @@ from hypothesis import strategies as st
 
 
 @st.composite
-def temporary_directories(draw: st.DrawFn) -> str:
+def temporary_directories(draw: st.DrawFn) -> str:  # pylint: disable=unused-variable
     """Hypothesis strategy that creates temporary directories."""
     directory = tempfile.mkdtemp()
 

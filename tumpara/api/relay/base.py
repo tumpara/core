@@ -16,8 +16,8 @@ def decode_key(value: str) -> tuple[str, ...]:
     """Decode a set of strings from the serialized representation."""
     try:
         joined_string = base64.b64decode(value.encode()).decode()
-    except binascii.Error:
-        raise ValueError("failed to decode key: " + value)
+    except binascii.Error as error:
+        raise ValueError("failed to decode key: " + value) from error
     return tuple(joined_string.split(":"))
 
 

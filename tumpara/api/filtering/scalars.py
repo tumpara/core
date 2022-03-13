@@ -1,5 +1,5 @@
 import abc
-from typing import SupportsFloat  # noqa: F401, used in the _N type variable
+from typing import SupportsFloat  # noqa: F401  # pylint: disable=unused-import
 from typing import Any, Generic, Optional, TypeVar
 
 import strawberry

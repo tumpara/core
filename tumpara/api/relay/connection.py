@@ -3,15 +3,14 @@ from __future__ import annotations
 import dataclasses
 import typing
 from collections.abc import Sequence
-from typing import Any  # noqa: F401
-from typing import TYPE_CHECKING, Generic, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Optional, TypeVar
 
 import strawberry.annotation
 import strawberry.arguments
 from django.db import models
 from strawberry.field import StrawberryField
 
-from .base import Node  # noqa: F401
+from .base import Node  # noqa: F401  # pylint: disable=unused-import
 from .base import decode_key, encode_key
 
 if TYPE_CHECKING:
@@ -78,7 +77,8 @@ class Connection(Generic[_Node]):
             typing.get_origin(base) is Generic
             for base in cls.__orig_bases__  # type: ignore
         ):
-            return super().__init_subclass__(**kwargs)
+            super().__init_subclass__(**kwargs)
+            return
 
         if "name" not in kwargs or "pluralized_name" not in kwargs:
             raise TypeError("name and pluralized_name parameters must be provided")
@@ -129,8 +129,8 @@ class Connection(Generic[_Node]):
                 after_context, after_index_string = decode_key(after)
                 after_index = int(after_index_string)
                 assert after_context == "Connection"
-            except (ValueError, AssertionError):
-                raise ValueError("invalid after cursor: " + after)
+            except (ValueError, AssertionError) as error:
+                raise ValueError("invalid after cursor: " + after) from error
 
         before_index: Optional[int] = None
         if before is not None:
@@ -138,8 +138,8 @@ class Connection(Generic[_Node]):
                 before_context, before_index_string = decode_key(before)
                 before_index = int(before_index_string)
                 assert before_context == "Connection"
-            except (ValueError, AssertionError):
-                raise ValueError("invalid before cursor: " + before)
+            except (ValueError, AssertionError) as error:
+                raise ValueError("invalid before cursor: " + before) from error
 
         if first is not None and first < 0:
             raise ValueError("'first' option must be non-negative")

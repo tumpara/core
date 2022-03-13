@@ -119,6 +119,7 @@ class JoinablesBackend(django.contrib.auth.backends.BaseBackend):
         )
         if action in ("change", "delete"):
             query &= models.Q(is_owner=True)
+
         if user_obj.memberships.filter(query).count() == len(keys):
             return True
         else:

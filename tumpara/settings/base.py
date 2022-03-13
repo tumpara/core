@@ -18,6 +18,7 @@ _T = TypeVar("_T")
 
 
 def apply_monkeypatches() -> None:
+    """Apply monkeypatch so our typing annotations work."""
     # Patch __class_getitem__ methods so that our type annotations work:
     # https://github.com/typeddjango/django-stubs#i-cannot-use-queryset-or-manager-with-type-annotations
     django_stubs_ext.monkeypatch()
@@ -66,6 +67,17 @@ def parse_env(
     default_value: _Default,
     cast: Union[None, Type[bool], Callable[[str], _T]] = None,
 ) -> Union[str, bool, _T, _Default]:
+    """Parse an environment variable into a native data type.
+
+    :param variable_name: Name of the environment variable. For Tumpara-specific
+        options, this should begin with ``TUMPARA_``.
+    :param default_value: Default value that will be used when no value is provided at
+        runtime. This should be the already parsed value (i.e. *not* the string as it
+        would be given in an environment variable).
+    :param cast: Optional type or callable that will be used to cast the environment
+        variable. If this is :type:`bool`, the values "yes / 1 / on" and "no / 0 / off"
+        can be used as well. If this is not given, the result will be a string.
+    """
     if variable_name not in os.environ:
         return default_value
 
@@ -86,15 +98,17 @@ def parse_env(
 
     try:
         return cast(value)
-    except ValueError:
+    except ValueError as error:
         raise ImproperlyConfigured(
             f"Failed to parse settings option {value!r} from environment "
             f"variable {variable_name}. Please check your formatting (should "
             f"have type {cast.__name__})."
-        )
+        ) from error
 
 
 def string_or_none(value: Any) -> Optional[str]:
+    """Return the given value's string representation if it can be parsed. Otherwise
+    return ``None``."""
     if value is None:
         return None
     result = str(value)
@@ -130,11 +144,11 @@ else:
 if not DATA_ROOT.exists():
     try:
         DATA_ROOT.mkdir()
-    except IOError:
+    except IOError as error:
         raise ImproperlyConfigured(
             f"Failed to create the data directory at '{DATA_ROOT}'. Make sure the "
             f"parent is writable."
-        )
+        ) from error
 elif not DATA_ROOT.is_dir():
     raise ImproperlyConfigured(
         f"The data directory '{DATA_ROOT}' exists but is not a folder. Please delete "

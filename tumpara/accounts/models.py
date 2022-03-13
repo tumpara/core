@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Collection, Generic, Optional, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Collection, Optional, cast
 
 import django.contrib.auth
 import django.contrib.auth.validators
@@ -9,7 +9,7 @@ from django.contrib.auth import models as auth_models
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.contenttypes import fields as contenttypes_fields
 from django.contrib.contenttypes.models import ContentType
-from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.exceptions import PermissionDenied
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 

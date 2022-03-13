@@ -10,7 +10,7 @@ graphql_ints = functools.partial(
 )
 
 # Values for the 'field_name' parameter of filters and filter sets.
-field_names = functools.partial(st.from_regex, "^[a-z0-9]+(__?[a-z0-9]+)")
+field_names = functools.partial(st.from_regex, r"^[a-z0-9]+(__?[a-z0-9]+)")
 
 
 @st.composite
@@ -18,5 +18,5 @@ def usernames(draw: st.DrawFn) -> str:
     """Generate valid Django usernames."""
     from django.contrib.auth.base_user import AbstractBaseUser
 
-    username = draw(st.from_regex("[\w.@+-]+", fullmatch=True))
+    username = draw(st.from_regex(r"[\w.@+-]+", fullmatch=True))
     return AbstractBaseUser.normalize_username(username)

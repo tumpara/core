@@ -96,7 +96,7 @@ def test_wrong_credentials_token(
 
 
 @hypothesis.given(
-    st.from_regex("#[.\\-_a-zA-Z0-9]+", fullmatch=True),
+    st.from_regex(r"#[.\\-_a-zA-Z0-9]+", fullmatch=True),
     st.lists(st.text(), min_size=0, max_size=4),
 )
 def test_invalid_method_token(

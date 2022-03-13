@@ -9,7 +9,8 @@ __all__ = ["django_executor"]
 
 @pytest.fixture(scope="function")
 def django_executor(
-    django_db_setup: Any, django_db_blocker: Any
+    django_db_setup: Any,  # pylint: disable=unused-argument
+    django_db_blocker: Any,  # pylint: disable=unused-argument
 ) -> DjangoHypothesisExecutor:
     """This fixture enables a Hypothesis executor that will take care of any
     Django-related things (such as the database) that need to be cleared out in

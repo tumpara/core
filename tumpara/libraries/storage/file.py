@@ -19,6 +19,7 @@ _logger = logging.getLogger(__name__)
 
 @backends.register("file")
 class FileSystemBackend(LibraryStorage, django_storage.FileSystemStorage):
+    # pylint: disable-next=super-init-not-called
     def __init__(self, parsed_uri: ParseResult):
         django_storage.FileSystemStorage.__init__(self, parsed_uri.path)
 
@@ -127,9 +128,10 @@ class FileSystemBackend(LibraryStorage, django_storage.FileSystemStorage):
                             # This state should not actually happen.
                             # TODO: Raise a warning here.
                             _logger.warning(
-                                f"Received a pair of inotify events that shouldn't go "
-                                f"together ({flags} and {next_flags}). This is "
-                                f"probably a bug."
+                                "Received a pair of inotify events that shouldn't go "
+                                "together (%s and %s). This is probably a bug.",
+                                flags,
+                                next_flags,
                             )
 
                     # A file or folder was moved out of the library.
@@ -179,4 +181,3 @@ class FileSystemBackend(LibraryStorage, django_storage.FileSystemStorage):
             inotify.rm_watch_recursive(watch)
         except OSError:
             pass
-        return None

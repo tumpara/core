@@ -1,6 +1,4 @@
-import logging
-
-from .development import *
+from .development import *  # pylint: disable=wildcard-import, unused-wildcard-import
 
 # Force an in-memory test database (since we are testing with SQLite). Pytest
 # normally automatically does it, but not currently when using xdist with a

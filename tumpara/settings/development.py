@@ -3,6 +3,7 @@ import os
 os.environ.setdefault("TUMPARA_SECRET_KEY", "thisisnotsecure")
 os.environ.setdefault("TUMPARA_ENABLE_DEMO_BACKEND", "True")
 
+# pylint: disable-next=wildcard-import, unused-wildcard-import, wrong-import-position
 from .base import *
 
 DEBUG = True
