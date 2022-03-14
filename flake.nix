@@ -101,6 +101,12 @@
           black
           isort
         ];
+
+        documentationDependencies = pythonPackages: with pythonPackages; [
+        	furo
+        	pygments-graphql
+        	sphinx
+        ];
       in rec {
         packages = {
 #          tumpara = pkgs.python39Packages.buildPythonApplication rec {
@@ -116,6 +122,7 @@
             (runtimeDependencies pythonPackages)
             ++ (testDependencies pythonPackages)
             ++ (developmentDependencies pythonPackages)
+            ++ (documentationDependencies pythonPackages)
           );
         };
         defaultPackage = packages.tumpara;
