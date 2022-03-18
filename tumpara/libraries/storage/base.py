@@ -4,7 +4,7 @@ import os
 import re
 import urllib.parse
 from collections.abc import Callable, Generator
-from typing import Literal, Optional
+from typing import Literal, Optional, overload
 
 from django.core.exceptions import ImproperlyConfigured
 from django.core.files import storage as django_storage
@@ -107,9 +107,19 @@ class LibraryStorageManager:
     def __init__(self) -> None:
         self.schemes = dict[str, type[LibraryStorage]]()
 
+    @overload
     def register(
         self, scheme: str
     ) -> Callable[[type[LibraryStorage]], type[LibraryStorage]]:
+        ...
+
+    @overload
+    def register(self, scheme: str, storage_class: type[LibraryStorage]) -> None:
+        ...
+
+    def register(
+        self, scheme: str, storage_class: Optional[type[LibraryStorage]] = None
+    ) -> Optional[Callable[[type[LibraryStorage]], type[LibraryStorage]]]:
         """Register a backend with the store.
 
         Use this as a decorator on the class:
@@ -126,7 +136,14 @@ class LibraryStorageManager:
         For example, that might be the case when both unencrypted and encrypted
         connections are supported.
 
+        Alternatively, you can also call this method (without using it as a decorator)
+        and pass the storage class as the second argument. This is useful for placing
+        inside the :meth:`~django.apps.AppConfig.ready` method of an application
+        configuration class.
+
         :param scheme: The scheme part of all URIs supported by the backend.
+        :param storage_class: Storage class to register as a backend. If this is not
+            provided, decorator will be returned.
         """
         assert (
             isinstance(scheme, str) and len(scheme) > 0
@@ -148,7 +165,11 @@ class LibraryStorageManager:
             self.schemes[scheme] = storage_class
             return storage_class
 
-        return decorate_class
+        if storage_class is not None:
+            decorate_class(storage_class)
+            return None
+        else:
+            return decorate_class
 
     def build(self, uri: str) -> LibraryStorage:
         """Parse the given URI and return an instance of the corresponding backend."""

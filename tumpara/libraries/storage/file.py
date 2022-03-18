@@ -11,13 +11,12 @@ from django.core.files import storage as django_storage
 from inotifyrecursive import flags as inotify_flags
 
 from .. import scanner
-from .base import LibraryStorage, WatchGenerator, backends
+from .base import LibraryStorage, WatchGenerator
 
 __all__ = ["FileSystemBackend"]
 _logger = logging.getLogger(__name__)
 
 
-@backends.register("file")
 class FileSystemBackend(LibraryStorage, django_storage.FileSystemStorage):
     # pylint: disable-next=super-init-not-called
     def __init__(self, parsed_uri: ParseResult):
@@ -56,6 +55,9 @@ class FileSystemBackend(LibraryStorage, django_storage.FileSystemStorage):
             flags = inotify_flags.from_mask(event.mask)
             return path, flags, absolute_path
 
+        # Send an always-None response, so we can start the generator manually in the
+        # tests (the generator's initialization code isn't run otherwise). This
+        # shouldn't have any drawbacks in actual usage.
         response: None | int | Literal[False, "check_empty"] = yield None
 
         while response is not False:
@@ -96,8 +98,8 @@ class FileSystemBackend(LibraryStorage, django_storage.FileSystemStorage):
 
                 if inotify_flags.MOVED_FROM in flags:
                     # For MOVED_FROM events, check if the next event is a corresponding
-                    # MOVED_TO event. If so, then a file or folder was moved inside the
-                    # library.
+                    # MOVED_TO event. If so, then a file or directory was moved inside
+                    # the library.
                     if inotify_flags.MOVED_TO in next_flags:
                         assert isinstance(next_path, str)
                         assert isinstance(next_absolute_path, str)
@@ -106,9 +108,9 @@ class FileSystemBackend(LibraryStorage, django_storage.FileSystemStorage):
                             inotify_flags.ISDIR in flags
                             and inotify_flags.ISDIR in next_flags
                         ):
-                            # A folder was moved inside of the library.
+                            # A directory was moved inside of the library.
                             events.popleft()
-                            response = yield scanner.FolderMovedEvent(
+                            response = yield scanner.DirectoryMovedEvent(
                                 old_path=path, new_path=next_path
                             )
                             continue
@@ -134,19 +136,19 @@ class FileSystemBackend(LibraryStorage, django_storage.FileSystemStorage):
                                 next_flags,
                             )
 
-                    # A file or folder was moved out of the library.
+                    # A file or directory was moved out of the library.
                     if inotify_flags.ISDIR in flags:
-                        response = yield scanner.FolderRemovedEvent(path=path)
+                        response = yield scanner.DirectoryRemovedEvent(path=path)
                     else:
                         response = yield scanner.FileRemovedEvent(path=path)
                 elif inotify_flags.MOVED_TO in flags:
                     if inotify_flags.ISDIR in flags:
                         for filename in self.walk_files(path):
-                            response = yield scanner.NewFileEvent(path=filename)
+                            response = yield scanner.FileEvent(path=filename)
                             if response is False:  # pragma: no cover
                                 break
                     elif os.path.isfile(absolute_path):
-                        response = yield scanner.NewFileEvent(path=path)
+                        response = yield scanner.FileEvent(path=path)
                 elif inotify_flags.CREATE in flags:
                     if inotify_flags.ISDIR not in flags and os.path.isfile(
                         absolute_path
@@ -154,7 +156,7 @@ class FileSystemBackend(LibraryStorage, django_storage.FileSystemStorage):
                         # When creating and directly saving a file, two inotify events
                         # may be received - a CREATE and a MODIFY event. If this is the
                         # case, the latter event is scrapped so the client only receives
-                        # a NewFileEvent doesn't get an additional FileModifiedEvent
+                        # a FileEvent doesn't get an additional FileModifiedEvent
                         # following it.
                         if (
                             inotify_flags.ISDIR not in next_flags
@@ -162,7 +164,7 @@ class FileSystemBackend(LibraryStorage, django_storage.FileSystemStorage):
                             and next_path == path
                         ):
                             events.popleft()
-                        response = yield scanner.NewFileEvent(path=path)
+                        response = yield scanner.FileEvent(path=path)
                 elif inotify_flags.MODIFY in flags:
                     if inotify_flags.ISDIR not in flags and os.path.isfile(
                         absolute_path

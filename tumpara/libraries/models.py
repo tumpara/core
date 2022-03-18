@@ -2,6 +2,8 @@ import os.path
 from typing import Literal
 
 from django.conf import settings
+from django.contrib.contenttypes import fields as contenttypes_fields
+from django.contrib.contenttypes import models as contenttypes_models
 from django.core.files import base as django_files
 from django.db import models
 from django.utils.functional import cached_property
@@ -35,7 +37,7 @@ def validate_library_source(source: str) -> None:
 class Library(accounts_models.Joinable):
     """A Library is a data source that supports scanning for files.
 
-    Libraries hold content in form of :class:`Item` objects.
+    Libraries hold content in form of :class:`Record` objects.
     """
 
     source = models.CharField(
@@ -57,7 +59,7 @@ class Library(accounts_models.Joinable):
         _("default visibility"),
         choices=Visibility.VISIBILTY_CHOICES,
         default=Visibility.MEMBERS,
-        help_text=_("Default visibility value for items where it is not defined."),
+        help_text=_("Default visibility value for records where it is not defined."),
     )
 
     class Meta:
@@ -104,7 +106,7 @@ class Library(accounts_models.Joinable):
         )
 
 
-class Item(models.Model):
+class Record(models.Model):
     """A piece of content in a library.
 
     This model's purpose is mainly to facilitate listing of all content in a library and
@@ -112,8 +114,8 @@ class Item(models.Model):
     ``content_type`` and ``content_pk`` refer to the model that implements any
     actual content.
 
-    Items may be linked to any number of :class:`File` objects. Although not strictly
-    required (there may be library items that don't depend on a file), most will have
+    Records may be linked to any number of :class:`File` objects. Although not strictly
+    required (there may be library records that don't depend on a file), most will have
     at least one file.
     """
 
@@ -137,20 +139,34 @@ class Item(models.Model):
         help_text=_("Determines who can see this object."),
     )
 
+    content_type = models.ForeignKey(
+        contenttypes_models.ContentType, on_delete=models.CASCADE
+    )
+    object_pk = models.PositiveIntegerField()
+    content_object = contenttypes_fields.GenericForeignKey("content_type", "object_pk")
+
     class Meta:
         verbose_name = _("library")
         verbose_name_plural = _("libraries")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["content_type", "object_pk"],
+                name="record_unique_for_content_type",
+            ),
+        ]
 
 
 class File(models.Model):
-    """A file linked to an :class:`Item`."""
+    """A file linked to a :class:`Record`."""
 
-    item = models.ForeignKey(
-        Item,
+    record = models.ForeignKey(
+        Record,
         on_delete=models.CASCADE,
         db_index=True,
-        verbose_name=_("library item"),
-        help_text=_("The library item this file is attached to."),
+        related_name="files",
+        related_query_name="file",
+        verbose_name=_("library record"),
+        help_text=_("The library record this file is attached to."),
     )
 
     path = models.CharField(
@@ -165,7 +181,7 @@ class File(models.Model):
         db_index=True,
         help_text="The file's cryptographic hash to quickly identify changes.",
     )
-    last_seen = models.DateTimeField(
+    availability = models.DateTimeField(
         _("last seen timestamp"),
         null=True,
         blank=True,
@@ -176,9 +192,20 @@ class File(models.Model):
     class Meta:
         verbose_name = _("file")
         verbose_name_plural = _("files")
+        constraints = [
+            # Ideally, these would be unique per library, but Django doesn't currently
+            # support constraints spanning relationships. Further, we only care about
+            # unique paths. A digest may very well be present for multiple files in a
+            # record, since we want copied files to both be attached to the same record.
+            models.UniqueConstraint(
+                fields=["record", "path"],
+                condition=models.Q(availability__isnull=False),
+                name="available_path_unique_per_record",
+            ),
+        ]
 
     def __str__(self) -> str:
-        return f"{self.path} in {self.item.library}"
+        return f"{self.path} in {self.record.library}"
 
     @property
     def directory_name(self) -> str:
@@ -190,4 +217,4 @@ class File(models.Model):
 
         :param mode: The file open mode – currently only reading is supported.
         """
-        return self.item.library.storage.open(self.path, mode)
+        return self.record.library.storage.open(self.path, mode)

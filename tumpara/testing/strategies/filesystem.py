@@ -3,8 +3,8 @@ import shutil
 import tempfile
 from typing import Any, Collection
 
+import hypothesis
 import hypothesis.control
-from hypothesis import assume
 from hypothesis import strategies as st
 
 
@@ -29,7 +29,7 @@ def directory_names(draw: st.DrawFn, *, exclude: Collection[str] = ()) -> str:
         already present in this parameter will be discarded.
     """
     result = draw(st.from_regex(r"[a-zA-Z][a-zA-Z\ \-_\.0-9]*", fullmatch=True))
-    assume(result not in exclude)
+    hypothesis.assume(result not in exclude)
     return result
 
 
@@ -49,7 +49,7 @@ def filenames(
         st.from_regex(r"[a-zA-Z0-9][a-zA-Z\ \-_0-9]*\.[a-z0-9]{1,4}", fullmatch=True)
     )
     result += suffix
-    assume(result not in {os.path.basename(item) for item in exclude})
+    hypothesis.assume(result not in {os.path.basename(item) for item in exclude})
     return result
 
 
@@ -64,26 +64,26 @@ def directory_trees(
     only yields the structure of the resulting filesystem - no files are actually
     created.
     """
-    folders = [""]
+    directories = [""]
     # Create up to 20 additional directories, each underneath one of the existing
     # directories.
     for _ in range(draw(st.integers(1, 4))):
-        base = draw(st.sampled_from(folders))
+        base = draw(st.sampled_from(directories))
         name = draw(directory_names())
         path = os.path.join(base, name)
-        assume(path not in folders)
-        folders.append(path)
+        hypothesis.assume(path not in directories)
+        directories.append(path)
 
     file_paths = []
     file_contents = []
     # Create a random number of files in those folders and populate them with random
     # text.
     for _ in range(draw(st.integers(2, 15))):
-        directory = draw(st.sampled_from(folders))
+        directory = draw(st.sampled_from(directories))
         name = draw(filenames())
         path = os.path.join(directory, name)
-        assume(path not in file_paths)
+        hypothesis.assume(path not in file_paths)
         file_paths.append(path)
         file_contents.append(draw(st.text(min_size=1)))
 
-    return folders, file_paths, file_contents
+    return directories, file_paths, file_contents
