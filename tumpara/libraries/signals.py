@@ -1,8 +1,37 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Optional, Protocol
+
 import django.dispatch
+from django.db import models
+
+if TYPE_CHECKING:
+    from django.contrib.contenttypes import models as contenttypes_models
+
+    from . import models as libraries_models
 
 __all__ = ["new_file", "files_changed"]
 
-new_file = django.dispatch.Signal()
+
+class NewFileReceiver(Protocol):
+    def __call__(
+        self, sender: str, path: str, library: libraries_models.Library
+    ) -> Optional[libraries_models.Record | models.Model]:
+        ...
+
+
+class NewFileSignal(django.dispatch.Signal):
+    def connect(  # type: ignore
+        self,
+        receiver: NewFileReceiver,
+        sender: Optional[str] = None,
+        weak: bool = True,
+        dispatch_uid: Optional[str] = None,
+    ) -> None:
+        super().connect(receiver, sender, weak=weak, dispatch_uid=dispatch_uid)
+
+
+new_file = NewFileSignal()
 """Sent when a new file is found in a library.
 
 When you register a receiver, it should use the provided parameters to decide if the new
@@ -13,6 +42,10 @@ unsaved content object. In that case, a new record object will be created.
 
 If no receiver claims a file by returning a value other than ``None``, the new file will
 be ignored. If more than one receiver claims a file it will also be ignored.
+
+Note that this signal will *not* be called for new files that are copies of already
+known files. In that case, the new file will be added to the existing
+:class:`tumpara.libraries.models.Record`.
 
 :param sender: The Library's ``context``.
 :type sender: str
@@ -29,7 +62,26 @@ be ignored. If more than one receiver claims a file it will also be ignored.
 :meta hide-value:
 """
 
-files_changed = django.dispatch.Signal()
+
+class FilesChangedReceiver(Protocol):
+    def __call__(
+        self, sender: contenttypes_models.ContentType, record: libraries_models.Record
+    ) -> None:
+        ...
+
+
+class FilesChangedSignal(django.dispatch.Signal):
+    def connect(  # type: ignore
+        self,
+        receiver: FilesChangedReceiver,
+        sender: Optional[contenttypes_models.ContentType] = None,
+        weak: bool = True,
+        dispatch_uid: Optional[str] = None,
+    ) -> None:
+        super().connect(receiver, sender, weak=weak, dispatch_uid=dispatch_uid)
+
+
+files_changed = FilesChangedSignal()
 """Sent when the list of files for a library record changes.
 
 This happens when a new file has been scanned, an existing file is changed on disk or
