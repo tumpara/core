@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Protocol
+from typing import TYPE_CHECKING, Any, Optional, Protocol
 
 import django.dispatch
 from django.db import models
 
 if TYPE_CHECKING:
-    from django.contrib.contenttypes import models as contenttypes_models
-
     from . import models as libraries_models
 
 __all__ = ["new_file", "files_changed"]
@@ -15,7 +13,7 @@ __all__ = ["new_file", "files_changed"]
 
 class NewFileReceiver(Protocol):
     def __call__(
-        self, sender: str, path: str, library: libraries_models.Library
+        self, sender: str, path: str, library: libraries_models.Library, **kwargs: Any
     ) -> Optional[libraries_models.Record | models.Model]:
         ...
 
@@ -65,7 +63,10 @@ known files. In that case, the new file will be added to the existing
 
 class FilesChangedReceiver(Protocol):
     def __call__(
-        self, sender: contenttypes_models.ContentType, record: libraries_models.Record
+        self,
+        sender: type[models.Model],
+        record: libraries_models.Record,
+        **kwargs: Any,
     ) -> None:
         ...
 
@@ -74,7 +75,7 @@ class FilesChangedSignal(django.dispatch.Signal):
     def connect(  # type: ignore
         self,
         receiver: FilesChangedReceiver,
-        sender: Optional[contenttypes_models.ContentType] = None,
+        sender: Optional[type[models.Model]] = None,
         weak: bool = True,
         dispatch_uid: Optional[str] = None,
     ) -> None:
@@ -94,7 +95,7 @@ or doesn't fit the library content object anymore) the
 :class:`tumpara.libraries.models.File` object should be deleted.
 
 :param sender: The type of content object in the library record.
-:type sender: django.contrib.contenttypes.models.ContentType
+:type sender: type[models.Model]
 :param record: Library record that had files changed.
 :type record: ~tumpara.libraries.models.Record
 

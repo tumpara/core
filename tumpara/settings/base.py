@@ -210,6 +210,9 @@ DATABASES = {
     "default": {
         "ENGINE": "django.contrib.gis.db.backends.spatialite",
         "NAME": DATA_ROOT / "db.sqlite3",
+        "TEST": {
+            "NAME": DATA_ROOT / "db_test.sqlite3",
+        },
     }
 }
 

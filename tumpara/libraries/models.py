@@ -173,7 +173,10 @@ class File(models.Model):
         _("filename"),
         max_length=255,
         db_index=True,
-        help_text=_("Path of this file, relative to the library root."),
+        help_text=_(
+            "Path of this file, relative to the library root. This should *not*"
+            "start with a slash."
+        ),
     )
     digest = models.CharField(
         _("digest value"),
