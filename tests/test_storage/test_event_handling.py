@@ -22,7 +22,7 @@ def library() -> Generator[libraries_models.Library, None, None]:
 
 @pytest.mark.django_db
 def test_basic_file_scanning(library: libraries_models.Library) -> None:
-    """New file events work ."""
+    """New and modified file events work as expected."""
     TestingStorage.set("foo", "hello")
     scanner.FileEvent("foo").commit(library)
     # This will also make sure that there is *exactly* one file object.
@@ -74,3 +74,34 @@ def test_ignoring_directories(library: libraries_models.Library) -> None:
     TestingStorage.unset("bar/.nomedia")
     refresh()
     assert file.availability is not None
+
+
+@pytest.mark.django_db
+def test_file_copying(library: libraries_models.Library) -> None:
+    """A copied file (with the same content) is added to an existing record object."""
+    TestingStorage.set("foo", "content")
+    TestingStorage.set("bar", "content")
+    scanner.FileEvent("foo").commit(library)
+    scanner.FileEvent("bar").commit(library)
+    first_record = libraries_models.Record.objects.get()
+    assert first_record.files.filter(availability__isnull=False).count() == 2
+
+    # Now add a new file, which we later edit so that it has the same content. It should
+    # get its own record the first time and then be moved into the other record once
+    # it's edited.
+    TestingStorage.set("baz", "content2")
+    scanner.FileEvent("baz").commit(library)
+    second_record = libraries_models.Record.objects.exclude(pk=first_record.pk).get()
+    assert second_record.files.filter(availability__isnull=False).count() == 1
+
+    TestingStorage.set("baz", "content")
+    scanner.FileEvent("baz").commit(library)
+    assert first_record.files.filter(availability__isnull=False).count() == 3
+    assert second_record.files.filter().count() == 1
+    assert not second_record.files.filter(availability__isnull=False).exists()
+
+
+@pytest.mark.django_db
+def test_file_unification(library: libraries_models.Library) -> None:
+    """When a file is edited in such a way that it becomes a copy of an existing file,
+    they are merged into the same library record."""

@@ -73,24 +73,6 @@ class FileEvent(Event):
                 record__library=library,
             )
         )
-        if len(file_candidates) > 0:
-            # All candidates should all point to the same record. This is because we
-            # want multiple copies of the same file – we assume that file digests are
-            # unique by file content – to be managed by only one library content
-            # object.
-            candidate_records = set(file.record for file in file_candidates)
-            if len(candidate_records) > 1:
-                # There are actually cases where this can happen, but since this
-                # shouldn't actually be the case for normal usage we log it away for
-                # now.
-                _logger.warning(
-                    f"New file {self.path!r} in {library} - skipping because there was "
-                    f"no unique library record to place it to. If this is an error "
-                    f"(for example if the file is unique, try removing all but one of "
-                    f"these records from the database: "
-                    f"{', '.join(record.pk for record in candidate_records)}"
-                )
-                return
 
         done = False
 
@@ -104,6 +86,17 @@ class FileEvent(Event):
                     file.availability = timezone.now()
                     file.save()
                     return
+
+                # First, check if an existing file object for this path exists. If that
+                # is already attached to the same record as we have here, we are done.
+                for other_file in file_candidates:
+                    if (
+                        other_file is not file
+                        and other_file.path == self.path
+                        and other_file.record == file.record
+                        and other_file.availability is not None
+                    ):
+                        return
 
                 file.record.files.create(
                     # Note that we will definitely be creating a record with a unique
@@ -122,8 +115,9 @@ class FileEvent(Event):
                 # path).
                 for other_file in file_candidates:
                     if other_file is not file and other_file.path == self.path:
-                        file.availability = None
-                        file.save()
+                        other_file.availability = None
+                        other_file.save()
+                        pass
 
                 return
 
