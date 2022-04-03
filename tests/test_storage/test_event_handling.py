@@ -2,6 +2,7 @@ from collections.abc import Generator
 
 import freezegun
 import pytest
+from django.db import models
 from django.utils import timezone
 
 from tumpara.libraries import models as libraries_models
@@ -21,7 +22,9 @@ def library() -> Generator[libraries_models.Library, None, None]:
 
 
 @pytest.mark.django_db
-def test_basic_file_scanning(library: libraries_models.Library) -> None:
+def test_basic_file_scanning(
+    library: libraries_models.Library, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """New and modified file events work as expected."""
     TestingStorage.set("foo", "hello")
     scanner.FileEvent("foo").commit(library)
@@ -35,7 +38,15 @@ def test_basic_file_scanning(library: libraries_models.Library) -> None:
     assert content.initialized
     assert content.content == b"hello"
 
-    with freezegun.freeze_time(timezone.timedelta(minutes=1)):
+    with monkeypatch.context() as patch_context:
+        patch_context.setattr(
+            scanner.FileEvent,
+            "__init__",
+            lambda *args, **kwargs: pytest.fail("unchanged file rescanned"),
+        )
+        scanner.FileModifiedEvent("foo").commit(library)
+
+    with freezegun.freeze_time(timezone.timedelta(minutes=2)):
         TestingStorage.set("foo", "bye")
         scanner.FileModifiedEvent("foo").commit(library)
         assert libraries_models.File.objects.count() == 1
@@ -100,8 +111,139 @@ def test_file_copying(library: libraries_models.Library) -> None:
     assert second_record.files.filter().count() == 1
     assert not second_record.files.filter(availability__isnull=False).exists()
 
+    # When moving back to the old content, the former file object should be marked as
+    # available again.
+    TestingStorage.set("baz", "content2")
+    scanner.FileEvent("baz").commit(library)
+    assert first_record.files.filter().count() == 3
+    assert first_record.files.filter(availability__isnull=False).count() == 2
+    assert second_record.files.filter().count() == 1
+    assert second_record.files.filter(availability__isnull=False).count() == 1
+
 
 @pytest.mark.django_db
-def test_file_unification(library: libraries_models.Library) -> None:
-    """When a file is edited in such a way that it becomes a copy of an existing file,
-    they are merged into the same library record."""
+def test_refinding_files(library: libraries_models.Library) -> None:
+    """Files that were once present (but then no longer available) are re-found when
+    they come back."""
+    TestingStorage.set("foo", "foo")
+    TestingStorage.set("bar", "bar")
+    scanner.FileEvent("foo").commit(library)
+    scanner.FileEvent("bar").commit(library)
+    TestingStorage.unset("foo")
+    TestingStorage.unset("bar")
+    scanner.FileEvent("foo").commit(library)
+    scanner.FileEvent("bar").commit(library)
+
+    # Now we should have two files on record, and both should be unavailable.
+    assert libraries_models.File.objects.count() == 2
+    foo_file = libraries_models.File.objects.get(path="foo")
+    assert not foo_file.available
+    bar_file = libraries_models.File.objects.get(path="bar")
+    assert not bar_file.available
+    bar_digest = bar_file.digest
+    assert bar_file.record.content_object.content == b"bar"
+
+    # Move the first file's content to a different location and add it back in. Then the
+    # existing file object should be used.
+    TestingStorage.set("foo2", "foo")
+    scanner.FileEvent("foo2").commit(library)
+    foo_file.refresh_from_db()
+    assert foo_file.available
+    assert foo_file.path == "foo2"
+
+    # Now add the second file back in, but with a new content. This should also lead to
+    # the existing record being reused.
+    TestingStorage.set("bar", "whooo")
+    scanner.FileEvent("bar").commit(library)
+    bar_file.refresh_from_db()
+    assert bar_file.available
+    assert bar_file.digest != bar_digest
+    assert bar_file.record.content_object.content == b"whooo"
+
+
+@pytest.mark.django_db
+def test_moving_and_deleting_file(library: libraries_models.Library) -> None:
+    """Moved and deleted files are handled appropriately."""
+    TestingStorage.set("foo", "content")
+    scanner.FileEvent("foo").commit(library)
+    TestingStorage.unset("foo")
+    TestingStorage.set("bar", "content")
+    scanner.FileMovedEvent("foo", "bar").commit(library)
+
+    # Make sure we only have one file on record (that's why we use .get()) and that the
+    # path has been updated.
+    file = libraries_models.File.objects.get()
+    assert file.path == "bar"
+
+    TestingStorage.unset("bar")
+    scanner.FileRemovedEvent("bar").commit(library)
+    assert libraries_models.File.objects.count() == 1
+    file.refresh_from_db()
+    assert file.available is False
+
+
+@pytest.mark.django_db
+def test_moving_and_deleting_directory(library: libraries_models.Library) -> None:
+    """Moved and deleted directories are handled appropriately.
+
+    This is more or less the same test as :func:`test_moving_and_deleting_file`.
+    """
+    for name in range(4):
+        TestingStorage.set(f"foo/{name}", "content")
+        scanner.FileEvent(f"foo/{name}").commit(library)
+        TestingStorage.unset(f"foo/{name}")
+        TestingStorage.set(f"bar/{name}", "content")
+    scanner.DirectoryMovedEvent("foo", "bar").commit(library)
+
+    # Make sure the file records have been reused and their paths are updated.
+    files = list(libraries_models.File.objects.order_by("path"))
+    assert len(files) == 4
+    for name, file in enumerate(files):
+        assert file.path == f"bar/{name}"
+
+    for name in range(4):
+        TestingStorage.unset(f"bar/{name}")
+    scanner.DirectoryRemovedEvent("bar").commit(library)
+    # Make sure there are still only four file objects and they are all unavailable.
+    assert libraries_models.File.objects.count() == 4
+    assert not libraries_models.File.objects.filter(availability__isnull=False).exists()
+
+
+@pytest.mark.django_db
+def test_moving_to_ignored_directories(library: libraries_models.Library) -> None:
+    """Moving files and directories inside ignored directories marks those objects
+    as unavailable."""
+    TestingStorage.set("trash/.nomedia", "")
+    for name in ("foo", "bar/a", "bar/b", "bar/c"):
+        TestingStorage.set(name, "content")
+        scanner.FileEvent(name).commit(library)
+
+    TestingStorage.unset("foo")
+    TestingStorage.set("trash/foo", "content")
+    scanner.FileMovedEvent("foo", "trash/foo").commit(library)
+    assert "foo" in libraries_models.File.objects.get(availability__isnull=True).path
+    assert libraries_models.File.objects.filter(availability__isnull=False).count() == 3
+
+    for name in ("bar/a", "bar/b", "bar/c"):
+        TestingStorage.unset(name)
+        TestingStorage.set(f"trash/{name}", "content")
+    scanner.DirectoryMovedEvent("bar", "trash/bar").commit(library)
+    assert libraries_models.File.objects.count() == 4
+    assert not libraries_models.File.objects.filter(availability__isnull=False).exists()
+
+
+@pytest.mark.django_db
+def test_transparent_new_files(library: libraries_models.Library) -> None:
+    """Modification and move events also work as expected when called with new file
+    paths."""
+    TestingStorage.set("foo", "content")
+    TestingStorage.set("bar", "content")
+    scanner.FileModifiedEvent("foo").commit(library)
+    scanner.FileMovedEvent("something", "bar").commit(library)
+
+    record = libraries_models.Record.objects.get()
+    assert list(
+        record.files.order_by("path")
+        .filter(availability__isnull=False)
+        .values_list("path")
+    ) == [("bar",), ("foo",)]

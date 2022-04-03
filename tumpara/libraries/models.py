@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os.path
 from typing import Literal
 
@@ -202,13 +204,20 @@ class File(models.Model):
             # record, since we want copied files to both be attached to the same record.
             models.UniqueConstraint(
                 fields=["record", "path"],
-                condition=models.Q(availability__isnull=False),
-                name="available_path_unique_per_record",
+                name="path_unique_per_record",
             ),
         ]
 
     def __str__(self) -> str:
         return f"{self.path} in {self.record.library}"
+
+    @property
+    def library(self) -> Library:
+        return self.record.library
+
+    @property
+    def available(self) -> bool:
+        return self.availability is not None
 
     @property
     def directory_name(self) -> str:
