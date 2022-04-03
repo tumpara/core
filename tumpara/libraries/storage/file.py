@@ -1,8 +1,8 @@
 import logging
 import os
+import urllib.parse
 from collections import deque
 from typing import Literal
-from urllib.parse import ParseResult
 
 import inotify_simple
 import inotifyrecursive
@@ -19,7 +19,7 @@ _logger = logging.getLogger(__name__)
 
 class FileSystemBackend(LibraryStorage, django_storage.FileSystemStorage):
     # pylint: disable-next=super-init-not-called
-    def __init__(self, parsed_uri: ParseResult):
+    def __init__(self, parsed_uri: urllib.parse.ParseResult):
         django_storage.FileSystemStorage.__init__(self, parsed_uri.path)
 
     def check(self) -> None:

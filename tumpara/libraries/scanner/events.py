@@ -53,7 +53,9 @@ class FileEvent(Event):
 
         def bail(reason: str) -> None:
             """Bail out and mark all file objects for this path as unavailable."""
-            _logger.debug(f"New file {self.path!r} in {library} - {reason}.")
+            _logger.debug(
+                f"New file {self.path!r} in {library} - skipping because {reason}."
+            )
             libraries_models.File.objects.filter(
                 path=self.path, record__library=library
             ).update(availability=None)
@@ -167,15 +169,11 @@ class FileEvent(Event):
                 if isinstance(response, models.Model)
             ]
             if len(responses) == 0:
-                _logger.debug(
-                    f"New file {self.path!r} in {library} - skipping because no "
-                    f"compatible file handler was found."
-                )
+                bail("no compatible file handler was found")
+                return
             elif len(responses) > 1:
-                _logger.warning(
-                    f"New file {self.path!r} in {library} - skipping because more than "
-                    f"one compatible file handler was found."
-                )
+                bail("more than one compatible file handler was found")
+                return
             else:
                 response = responses[0]
                 if isinstance(response, libraries_models.Record):

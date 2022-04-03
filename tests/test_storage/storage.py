@@ -19,10 +19,10 @@ class TestingStorage(storage.LibraryStorage):
     def __init__(self, parsed_uri: urllib.parse.ParseResult):
         pass
 
-    def check(self) -> bool:
-        return True
+    def check(self) -> None:
+        return
 
-    def open(self, name: str, mode: str = "rb") -> io.BytesIO:
+    def open(self, name: str, mode: str = "rb") -> io.BytesIO:  # type: ignore
         assert (
             mode == "rb"
         ), "the testing backend only supports opening files with mode 'rb'"

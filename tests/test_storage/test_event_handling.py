@@ -1,8 +1,8 @@
+import functools
 from collections.abc import Generator
 
 import freezegun
 import pytest
-from django.db import models
 from django.utils import timezone
 
 from tumpara.libraries import models as libraries_models
@@ -42,7 +42,7 @@ def test_basic_file_scanning(
         patch_context.setattr(
             scanner.FileEvent,
             "__init__",
-            lambda *args, **kwargs: pytest.fail("unchanged file rescanned"),
+            functools.partial(pytest.fail, "unchanged file rescanned"),
         )
         scanner.FileModifiedEvent("foo").commit(library)
 
@@ -69,7 +69,7 @@ def test_ignoring_directories(library: libraries_models.Library) -> None:
     scanner.FileEvent("bar/file.txt").commit(library)
     file = libraries_models.File.objects.get()
 
-    def refresh():
+    def refresh() -> None:
         del library.__dict__["_ignored_directories"]
         scanner.FileEvent("bar/file.txt").commit(library)
         assert libraries_models.File.objects.count() == 1
@@ -141,13 +141,22 @@ def test_refinding_files(library: libraries_models.Library) -> None:
     bar_file = libraries_models.File.objects.get(path="bar")
     assert not bar_file.available
     bar_digest = bar_file.digest
-    assert bar_file.record.content_object.content == b"bar"
+    bar_content = bar_file.record.content_object
+    assert isinstance(bar_content, GenericHandler)
+    assert bar_content.content == b"bar"
 
     # Move the first file's content to a different location and add it back in. Then the
     # existing file object should be used.
     TestingStorage.set("foo2", "foo")
     scanner.FileEvent("foo2").commit(library)
     foo_file.refresh_from_db()
+    # Trick MyPy to think that foo_file is a new variable. We need to do this because
+    # otherwise foo_file.available would still be inferred as False from the assertion
+    # a few lines up. This would lead to the next assertion evaluating to NoReturn,
+    # which in turn yields 'Statement is unreachable' errors for the following lines.
+    # Reassigning the variable seems to do the trick here. See also:
+    # https://github.com/python/mypy/issues/4805#issuecomment-376666418
+    foo_file = foo_file
     assert foo_file.available
     assert foo_file.path == "foo2"
 
@@ -156,9 +165,12 @@ def test_refinding_files(library: libraries_models.Library) -> None:
     TestingStorage.set("bar", "whooo")
     scanner.FileEvent("bar").commit(library)
     bar_file.refresh_from_db()
+    bar_file = bar_file  # Trick MyPy again, see above
     assert bar_file.available
     assert bar_file.digest != bar_digest
-    assert bar_file.record.content_object.content == b"whooo"
+    bar_content = bar_file.record.content_object
+    assert isinstance(bar_content, GenericHandler)
+    assert bar_content.content == b"whooo"
 
 
 @pytest.mark.django_db
