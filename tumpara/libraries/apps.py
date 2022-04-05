@@ -6,6 +6,6 @@ class LibrariesConfig(django.apps.AppConfig):
 
     def ready(self) -> None:
         from . import storage
-        from .storage.file import FileSystemBackend
+        from .storage.file import FileSystemLibraryStorage
 
-        storage.register("file", FileSystemBackend)
+        storage.register("file", FileSystemLibraryStorage)

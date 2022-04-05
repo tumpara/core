@@ -13,11 +13,11 @@ from inotifyrecursive import flags as inotify_flags
 from .. import scanner
 from .base import LibraryStorage, WatchGenerator
 
-__all__ = ["FileSystemBackend"]
+__all__ = ["FileSystemLibraryStorage"]
 _logger = logging.getLogger(__name__)
 
 
-class FileSystemBackend(LibraryStorage, django_storage.FileSystemStorage):
+class FileSystemLibraryStorage(LibraryStorage, django_storage.FileSystemStorage):
     # pylint: disable-next=super-init-not-called
     def __init__(self, parsed_uri: urllib.parse.ParseResult):
         django_storage.FileSystemStorage.__init__(self, parsed_uri.path)
