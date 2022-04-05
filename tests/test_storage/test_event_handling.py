@@ -1,15 +1,20 @@
 import functools
+import os.path
 from collections.abc import Generator
 
 import freezegun
+import hypothesis.stateful
 import pytest
 from django.utils import timezone
 
+from tumpara import testing
 from tumpara.libraries import models as libraries_models
 from tumpara.libraries import scanner
+from tumpara.testing import strategies as st
 
 from .models import GenericHandler
 from .storage import TestingStorage
+from .utils import LibraryActionsStateMachine
 
 
 @pytest.fixture
@@ -75,8 +80,8 @@ def test_ignoring_directories(library: libraries_models.Library) -> None:
         assert libraries_models.File.objects.count() == 1
         file.refresh_from_db()
 
-    # Make sure the already scanned file is marked unavailable when the folder gets a
-    # .nomedia file...
+    # Make sure the already scanned file is marked unavailable when the directory gets a
+    # new .nomedia file.
     TestingStorage.set("bar/.nomedia", "")
     refresh()
     assert file.availability is None
@@ -203,6 +208,7 @@ def test_moving_and_deleting_directory(library: libraries_models.Library) -> Non
     for name in range(4):
         TestingStorage.set(f"foo/{name}", "content")
         scanner.FileEvent(f"foo/{name}").commit(library)
+    for name in range(4):
         TestingStorage.unset(f"foo/{name}")
         TestingStorage.set(f"bar/{name}", "content")
     scanner.DirectoryMovedEvent("foo", "bar").commit(library)
@@ -259,3 +265,85 @@ def test_transparent_new_files(library: libraries_models.Library) -> None:
         .filter(availability__isnull=False)
         .values_list("path")
     ) == [("bar",), ("foo",)]
+
+
+@testing.state_machine(use_django_executor=True)
+class test_integration(LibraryActionsStateMachine):
+    """State machine that tests individual event handling.
+
+    This is an integration test that should handle most of the cases we have in the
+    above tests as well. It also serves as a test for the testing storage.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        TestingStorage.clear()
+        self.library = libraries_models.Library.objects.create(
+            source=f"testing:///", context="test_storage"
+        )
+
+    def teardown(self) -> None:
+        TestingStorage.clear()
+
+    def _add_file(self, path: str, content: bytes, data: st.DataObject) -> None:
+        TestingStorage.set(path, content)
+
+        # Randomly commit either a NewFileEvent or a FileModified event, as these
+        # should both handle new files (in case of the latter because the file does
+        # not exist in the database yet).
+        if data.draw(st.booleans()):
+            scanner.FileEvent(path).commit(self.library)
+        else:
+            scanner.FileModifiedEvent(path).commit(self.library)
+
+    def _add_directory(self, path: str, data: st.DataObject) -> None:
+        # There is no new directory event.
+        pass
+
+    def _delete_file(self, path: str, data: st.DataObject) -> None:
+        TestingStorage.unset(path)
+
+        scanner.FileRemovedEvent(path).commit(self.library)
+
+    def _delete_directory(self, path: str, data: st.DataObject) -> None:
+        prefix = os.path.join(path, "")
+        for name in {
+            name for name in TestingStorage.paths() if name.startswith(prefix)
+        }:
+            TestingStorage.unset(name)
+
+        scanner.DirectoryRemovedEvent(path).commit(self.library)
+
+    def _move_file(self, old_path: str, new_path: str, data: st.DataObject) -> None:
+        TestingStorage.set(new_path, TestingStorage.get(old_path))
+        TestingStorage.unset(old_path)
+
+        scanner.FileMovedEvent(old_path, new_path).commit(self.library)
+
+    def _move_directory(
+        self, old_path: str, new_path: str, data: st.DataObject
+    ) -> None:
+        prefix = os.path.join(old_path, "")
+        for name in {
+            name for name in TestingStorage.paths() if name.startswith(prefix)
+        }:
+            new_name = os.path.join(new_path, os.path.relpath(name, old_path))
+            TestingStorage.set(new_name, TestingStorage.get(name))
+            TestingStorage.unset(name)
+
+        scanner.DirectoryMovedEvent(old_path, new_path).commit(self.library)
+
+    def _change_file(self, path: str, content: bytes, data: st.DataObject) -> None:
+        TestingStorage.set(path, content)
+
+        scanner.FileModifiedEvent(path).commit(self.library)
+
+    @hypothesis.stateful.rule(data=st.data())
+    def remove_untracked_file(self, data: st.DataObject) -> None:
+        """Fire a file remove event for a file that is not tracked by the library."""
+        path = data.draw(st.filenames(exclude=list(self.files.keys())))
+        scanner.FileRemovedEvent(path).commit(self.library)
+
+    @hypothesis.stateful.invariant()
+    def check_state(self) -> None:
+        self.assert_library_state(self.library)

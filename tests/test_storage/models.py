@@ -32,11 +32,16 @@ class GenericHandler(models.Model):
     ) -> None:
         if sender is not GenericHandler:
             pass
-        first_file = record.files.first()
-        assert isinstance(first_file, libraries_models.File)
+
         handler = record.content_object
         assert isinstance(handler, GenericHandler)
-        with first_file.open("rb") as file_io:
-            handler.content = file_io.read()
-        handler.initialized = True
+
+        first_file = record.files.filter(availability__isnull=False).first()
+        if first_file is None:
+            handler.initialized = False
+        else:
+            assert isinstance(first_file, libraries_models.File)
+            with first_file.open("rb") as file_io:
+                handler.content = file_io.read()
+            handler.initialized = True
         handler.save()

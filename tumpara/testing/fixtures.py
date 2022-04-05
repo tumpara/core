@@ -21,7 +21,8 @@ def django_executor(
     and after the *entire* test and won't do anything in between individual Hypothesis
     runs. Instead, do this:
 
-    ..code-block python::
+    .. code-block:: python
+
         @hypothesis.given(st.integers())
         def test_something(django_executor: Any, value: int) -> None:
             # Do something with the database...

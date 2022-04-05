@@ -11,6 +11,7 @@ The goal of the project is to provide an open, privately hostable alternative to
   :caption: Developing Tumpara
 
   reference/libraries
+  reference/testing
 
 Indices and tables
 ------------------

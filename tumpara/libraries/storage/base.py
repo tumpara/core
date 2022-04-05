@@ -124,7 +124,7 @@ class LibraryStorageManager:
 
         Use this as a decorator on the class:
 
-        .. code-block: python
+        .. code-block:: python
 
             from tumpara.libraries import storage
 

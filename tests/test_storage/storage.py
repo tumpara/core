@@ -1,6 +1,7 @@
 import io
 import os.path
 import urllib.parse
+from collections.abc import Generator
 from typing import ClassVar
 
 from django.utils import timezone
@@ -66,6 +67,14 @@ class TestingStorage(storage.LibraryStorage):
     def unset(cls, path: str) -> None:
         if path in cls._data:
             del cls._data[path]
+
+    @classmethod
+    def paths(cls) -> Generator[str, None, None]:
+        yield from cls._data.keys()
+
+    @classmethod
+    def get(cls, path: str) -> bytes | str:
+        return cls._data[path][1]
 
     @classmethod
     def clear(cls) -> None:
