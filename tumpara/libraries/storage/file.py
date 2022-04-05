@@ -108,7 +108,7 @@ class FileSystemLibraryStorage(LibraryStorage, django_storage.FileSystemStorage)
                             inotify_flags.ISDIR in flags
                             and inotify_flags.ISDIR in next_flags
                         ):
-                            # A directory was moved inside of the library.
+                            # A directory was moved inside the library.
                             events.popleft()
                             response = yield scanner.DirectoryMovedEvent(
                                 old_path=path, new_path=next_path
@@ -117,9 +117,8 @@ class FileSystemLibraryStorage(LibraryStorage, django_storage.FileSystemStorage)
                         elif (
                             inotify_flags.ISDIR not in flags
                             and inotify_flags.ISDIR not in next_flags
-                            and os.path.isfile(next_absolute_path)
                         ):
-                            # A file was moved inside of the library.
+                            # A file was moved inside the library.
                             events.popleft()
                             response = yield scanner.FileMovedEvent(
                                 old_path=path, new_path=next_path

@@ -86,7 +86,7 @@ files_changed = FilesChangedSignal()
 """Sent when the list of files for a library record changes.
 
 This happens when a new file has been scanned, an existing file is changed on disk or
-a file is deleted.
+a file is deleted. It is *not* sent when files are moved.
 
 Receivers of this signal should check the files that are attached to the given library
 record and act accordingly (for example by updating cached metadata). Should any of the

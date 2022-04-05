@@ -286,6 +286,10 @@ class FileMovedEvent(Event):
                 f"Moving file {self.old_path!r} to {self.new_path!r}, but the new path "
                 f"is in an ignored directory. Records were marked unavailable."
             )
+            for record in touched_records:
+                libraries_signals.files_changed.send_robust(
+                    sender=record.content_type.model_class(), record=record
+                )
         else:
             affected_rows = file_queryset.update(path=self.new_path)
             if affected_rows == 0:
@@ -304,10 +308,6 @@ class FileMovedEvent(Event):
             _logger.warning(
                 "More than one file processed for file move event which should "
                 "have been unique."
-            )
-        for record in touched_records:
-            libraries_signals.files_changed.send_robust(
-                sender=record.content_type.model_class(), record=record
             )
 
 
@@ -380,6 +380,11 @@ class DirectoryMovedEvent(Event):
                 f"path is in an ignored directory. {affected_rows} records were marked "
                 f"unavailable."
             )
+
+            for record in touched_records:
+                libraries_signals.files_changed.send_robust(
+                    sender=record.content_type.model_class(), record=record
+                )
         else:
             count = 0
             for file in file_queryset:
@@ -391,11 +396,6 @@ class DirectoryMovedEvent(Event):
             _logger.debug(
                 f"Got a directory moved event from {self.old_path!r} to "
                 f"{self.new_path!r} in {library} which affected {count} file(s)."
-            )
-
-        for record in touched_records:
-            libraries_signals.files_changed.send_robust(
-                sender=record.content_type.model_class(), record=record
             )
 
 
