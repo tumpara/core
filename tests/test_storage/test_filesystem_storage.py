@@ -270,7 +270,7 @@ def test_watch_creation(
 class test_integration(LibraryActionsStateMachine):
     """Complete test case for the scanning scenario with the filesystem backend."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.root = tempfile.mkdtemp()
 
@@ -288,10 +288,10 @@ class test_integration(LibraryActionsStateMachine):
         self.watch_events = self.watched_library.storage.watch()
         assert next(self.watch_events) is None
 
-    def teardown(self):
+    def teardown(self) -> None:
         shutil.rmtree(self.root)
 
-    def _add_file(self, path: str, content: bytes, **kwargs):
+    def _add_file(self, path: str, content: bytes, data: st.DataObject) -> None:
         full_path = os.path.join(self.root, path)
         with open(full_path, "wb") as f:
             f.write(content)
@@ -299,22 +299,24 @@ class test_integration(LibraryActionsStateMachine):
             os.fsync(f.fileno())
         os.utime(full_path)
 
-    def _add_directory(self, path: str, **kwargs):
+    def _add_directory(self, path: str, data: st.DataObject) -> None:
         os.mkdir(os.path.join(self.root, path))
 
-    def _delete_file(self, path: str, **kwargs):
+    def _delete_file(self, path: str, data: st.DataObject) -> None:
         os.unlink(os.path.join(self.root, path))
 
-    def _delete_directory(self, path: str, **kwargs):
+    def _delete_directory(self, path: str, data: st.DataObject) -> None:
         shutil.rmtree(os.path.join(self.root, path))
 
-    def _move_file(self, old_path: str, new_path: str, **kwargs):
+    def _move_file(self, old_path: str, new_path: str, data: st.DataObject) -> None:
         os.rename(os.path.join(self.root, old_path), os.path.join(self.root, new_path))
 
-    def _move_directory(self, old_path: str, new_path: str, **kwargs):
-        self._move_file(old_path, new_path)
+    def _move_directory(
+        self, old_path: str, new_path: str, data: st.DataObject
+    ) -> None:
+        self._move_file(old_path, new_path, data)
 
-    def _change_file(self, path: str, content: bytes, **kwargs):
+    def _change_file(self, path: str, content: bytes, data: st.DataObject) -> None:
         # When modifying files, we sometimes need to actually make sure the OS has fired
         # the corresponding events before continuing. That way we try to eliminate race
         # conditions while testing. Also, we check the file timestamps - just to be
@@ -326,14 +328,14 @@ class test_integration(LibraryActionsStateMachine):
         inotify.read(timeout=0)
 
         before_time = self.watched_library.storage.get_modified_time(path)
-        self._add_file(path, content)
+        self._add_file(path, content, data)
         after_time = self.watched_library.storage.get_modified_time(path)
         assert before_time < after_time
 
         inotify.read()
 
     @hypothesis.stateful.invariant()
-    def perform_scan(self):
+    def perform_scan(self) -> None:
         """Run the scan on both libraries and make sure the state is OK."""
         self.library.scan(watch=False, thread_count=1)
         self.assert_library_state(self.library)

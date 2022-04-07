@@ -230,6 +230,7 @@ class LibraryActionsStateMachine(hypothesis.stateful.RuleBasedStateMachine):
             assert record.files.filter(availability__isnull=False).count() == len(paths)
             for path in paths:
                 file = record.files.get(availability__isnull=False, path=path)
+                assert file.availability is not None
                 assert file.availability >= self.file_timestamps[path]
 
     def _add_file(self, path: str, content: bytes, data: st.DataObject) -> None:

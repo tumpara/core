@@ -222,6 +222,7 @@ INSTALLED_APPS = [
     "django.contrib.gis",
     "django.contrib.sessions",
     "corsheaders",
+    "tumpara.setup",
     "tumpara.accounts",
     "tumpara.api",
     "tumpara.libraries",

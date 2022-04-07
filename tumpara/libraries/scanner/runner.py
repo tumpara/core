@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from django.conf import settings
 from django.db import connection, transaction
@@ -21,9 +21,9 @@ _logger = logging.getLogger(__name__)
 RAISE_EXCEPTIONS = False
 
 
-def check_thread_count(requested_thread_count: int) -> int:
+def check_thread_count(requested_thread_count: Optional[int]) -> int:
     if requested_thread_count is None:
-        requested_thread_count = max(1, int(os.cpu_count() * 0.9))
+        requested_thread_count = max(1, int((os.cpu_count() or 1) * 0.9))
     elif not isinstance(requested_thread_count, int):
         raise TypeError("requested thread count must be an integer")
     elif requested_thread_count < 1:
@@ -41,7 +41,7 @@ def check_thread_count(requested_thread_count: int) -> int:
         return 1
 
     try:
-        import dlib
+        import dlib  # type: ignore
 
         if dlib.DLIB_USE_CUDA and requested_thread_count != 1:
             _logger.info(
@@ -130,7 +130,7 @@ def run(
     library: Library,
     events: storage.WatchGenerator,
     *,
-    thread_count: int = None,
+    thread_count: Optional[int] = None,
 ) -> None:
     """Handle scanner events for a library, automatically determining
 

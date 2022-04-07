@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import multiprocessing
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import django
 from django.conf import settings
@@ -17,7 +17,9 @@ _logger = logging.getLogger(__name__)
 def process(
     library_pk: int,
     queue: multiprocessing.JoinableQueue[Event],
-    counter: multiprocessing.Value,
+    # multiprocessing.Value isn't really typed that well yet, see here:
+    # https://github.com/python/typeshed/issues/4266
+    counter: multiprocessing.Value,  # type: ignore
 ) -> None:
     """Worker process for multiprocessed event handling.
 
@@ -32,6 +34,7 @@ def process(
     from ..models import Library
 
     library = Library.objects.get(pk=library_pk)
+    _counter = cast(Any, counter)
 
     try:
         while True:
@@ -59,10 +62,13 @@ def process(
                         + "."
                     )
 
-            with counter.get_lock():
-                counter.value += 1
-                if counter.value % settings.REPORT_INTERVAL == 0 and counter.value > 0:
-                    _logger.info(f"{counter.value} events processed so far.")
+            with _counter.get_lock():
+                _counter.value += 1
+                if (
+                    _counter.value % settings.REPORT_INTERVAL == 0
+                    and _counter.value > 0
+                ):
+                    _logger.info(f"{_counter.value} events processed so far.")
 
             queue.task_done()
     finally:

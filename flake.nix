@@ -19,6 +19,9 @@
                 libspatialite = pkgs.libspatialite;
                 extension = pkgs.stdenv.hostPlatform.extensions.sharedLibrary;
               }) ];
+              postPatch = ''
+              	sed -ie 's,lib_path = ""/nix/store,lib_path = "/nix/store,g' django/contrib/gis/gdal/libgdal.py
+              '';
             });
 
             pylint-plugin-utils = super.pylint-plugin-utils.overridePythonAttrs (oldAttrs: rec {

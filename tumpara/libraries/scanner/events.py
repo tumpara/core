@@ -266,14 +266,6 @@ class FileModifiedEvent(Event):
 
 
 @dataclasses.dataclass
-class FileMaybeModifiedEvent(Event):
-    """This event is sent once for every file before a scan starts.
-
-    It marks files as (temporarily) unavailable that may have changed.
-    """
-
-
-@dataclasses.dataclass
 class FileMovedEvent(Event):
     """Event for files being renamed or moved while remaining inside the library."""
 
@@ -462,7 +454,7 @@ class ScanEvent(Event):
         assumed to be done. Instead, wait for those to finish first.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.start_timestamp = timezone.now()
 
     def commit(self, library: libraries_models.Library) -> None:

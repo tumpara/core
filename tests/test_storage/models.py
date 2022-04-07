@@ -92,7 +92,7 @@ class GenericHandler(models.Model):
         handler.save()
 
     @staticmethod
-    def assert_unique_contents():
+    def assert_unique_contents() -> None:
         """Make sure that all handlers have unique content."""
         for library in GenericHandler.objects.values_list(
             "records__library"

@@ -151,12 +151,12 @@ class Library(accounts_models.Joinable):
 
         scan_event = scanner.ScanEvent()
 
-        def events() -> storage.WatchGenerator:
+        def scan_events() -> storage.WatchGenerator:
             for path in self.storage.walk_files(safe=True):
                 yield scanner.FileModifiedEvent(path=path)
 
         _logger.info(f"Scanning step 2 of 3 for {self}: Searching for new content...")
-        scanner.run(self, events(), thread_count=thread_count)
+        scanner.run(self, scan_events(), thread_count=thread_count)
 
         _logger.info(
             f"Scanning step 3 of 3 for {self}: Removing obsolete database entries..."
@@ -170,12 +170,12 @@ class Library(accounts_models.Joinable):
             f"Finished file scan for {self}. Continuing to watch for changes..."
         )
 
-        def events() -> storage.WatchGenerator:
+        def watch_events() -> storage.WatchGenerator:
             # When watching, pass through all events from the storage backend's
             # EventGenerator. The response needs to be handled separately to support
             # stopping the generator.
             generator = self.storage.watch()
-            response = None
+            response: Literal[None, False] | int = None
             while response is not False:
                 response = yield generator.send(response)
             try:
@@ -183,7 +183,7 @@ class Library(accounts_models.Joinable):
             except StopIteration:
                 pass
 
-        scanner.run(self, events(), thread_count=thread_count)
+        scanner.run(self, watch_events(), thread_count=thread_count)
 
 
 class Record(models.Model):
