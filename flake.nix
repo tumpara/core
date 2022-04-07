@@ -11,11 +11,11 @@
 
         python = pkgs.python310.override {
           packageOverrides = self: super: {
-            django = (super.django_3.override {
+            django = (super.django_4.override {
               withGdal = true;
             }).overridePythonAttrs (oldAttrs: {
               patches = oldAttrs.patches ++ [ (pkgs.substituteAll {
-                src = ./nix/django_3_set_spatialite_lib.patch;
+                src = ./nix/django_4_set_spatialite_lib.patch;
                 libspatialite = pkgs.libspatialite;
                 extension = pkgs.stdenv.hostPlatform.extensions.sharedLibrary;
               }) ];

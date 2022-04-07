@@ -8,11 +8,11 @@
 
 buildPythonPackage rec {
   pname = "django-stubs-ext";
-  version = "0.3.1";
+  version = "0.4.0";
 
   src = fetchPypi {
     inherit pname version;
-    sha256 = "eDwZjX45pBvguQ/YQ/oncCQ6ZCkir2eb5LGeA7gsjCg=";
+    sha256 = "MQTEdIw0vXQcMQo+avkN/7pG5BvMviQ4luOKcIJih2s=";
   };
 
   preBuild = ''

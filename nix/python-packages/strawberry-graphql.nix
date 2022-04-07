@@ -14,11 +14,11 @@
 
 buildPythonPackage rec {
   pname = "strawberry-graphql";
-  version = "0.103.5";
+  version = "0.105.0";
 
   src = fetchPypi {
     inherit pname version;
-    sha256 = "cpZVYRj8CM5bgTf+l25wGeWxrcnDxXm9pFv0ndx+ctk=";
+    sha256 = "F/lkBxxzqKmOGXupVTe0w/xeeGQvUagyfpBu8h1Jzk8=";
   };
 
   propagatedBuildInputs = [
