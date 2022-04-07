@@ -154,8 +154,6 @@ class Library(accounts_models.Joinable):
         def events() -> storage.WatchGenerator:
             for path in self.storage.walk_files(safe=True):
                 yield scanner.FileModifiedEvent(path=path)
-            for path in self.storage.walk_files(safe=True):
-                yield scanner.FileModifiedEvent(path=path)
 
         _logger.info(f"Scanning step 2 of 3 for {self}: Searching for new content...")
         scanner.run(self, events(), thread_count=thread_count)

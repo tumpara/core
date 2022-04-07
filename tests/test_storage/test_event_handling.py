@@ -10,7 +10,6 @@ from django.utils import timezone
 from tumpara import testing
 from tumpara.libraries import models as libraries_models
 from tumpara.libraries import scanner
-from tumpara.libraries import signals as libraries_signals
 from tumpara.testing import strategies as st
 
 from .models import GenericHandler
@@ -20,24 +19,8 @@ from .utils import LibraryActionsStateMachine
 
 @pytest.fixture
 def library(
-    monkeypatch: pytest.MonkeyPatch,
+    patch_exception_handling: None,
 ) -> Generator[libraries_models.Library, None, None]:
-    from tumpara.libraries.scanner import runner
-
-    # Use send() on the signals instead of send_robust() because that way our tests fail
-    # if errors occur (which we don't want, but in production we just ignore them).
-    monkeypatch.setattr(
-        libraries_signals.new_file,
-        "send_robust",
-        libraries_signals.new_file.send,
-    )
-    monkeypatch.setattr(
-        libraries_signals.files_changed,
-        "send_robust",
-        libraries_signals.files_changed.send,
-    )
-    monkeypatch.setattr(runner, "RAISE_EXCEPTIONS", True)
-
     TestingStorage.clear()
     yield libraries_models.Library.objects.create(
         source="testing:///", context="test_storage"
@@ -312,8 +295,9 @@ def test_moving_unavailable_objects(library: libraries_models.Library) -> None:
     assert not bar_file.available
 
 
+@pytest.mark.usefixtures("patch_exception_handling")
 @testing.state_machine(use_django_executor=True)
-class atest_integration(LibraryActionsStateMachine):
+class test_integration(LibraryActionsStateMachine):
     """State machine that tests individual event handling.
 
     This is an integration test that should handle most of the cases we have in the

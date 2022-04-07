@@ -98,3 +98,38 @@ def test_record_splitting(library: libraries_models.Library) -> None:
     assert GenericHandler.objects.count() == 2
     assert GenericHandler.objects.filter(content=b"content1").exists()
     assert GenericHandler.objects.filter(content=b"content2").exists()
+
+
+@pytest.mark.django_db
+def test_more_swapping(library: libraries_models.Library) -> None:
+    TestingStorage.set("one", "foo")
+    TestingStorage.set("two", "bar")
+    library.scan()
+
+    TestingStorage.set("one", "bar")
+    TestingStorage.set("two", "foo")
+    library.scan()
+
+    TestingStorage.set("one", "foo")
+    TestingStorage.set("two", "bar")
+    library.scan()
+
+    foo_handler = GenericHandler.objects.get(content=b"foo")
+    foo_record = foo_handler.records.first()
+    assert foo_record.files.filter(availability__isnull=False).count() == 1
+    foo_record.files.get(availability__isnull=False, path="one")
+    bar_handler = GenericHandler.objects.get(content=b"bar")
+    bar_record = bar_handler.records.first()
+    assert bar_record.files.filter(availability__isnull=False).count() == 1
+    bar_record.files.get(availability__isnull=False, path="two")
+
+
+@pytest.mark.django_db
+def test_moving(library: libraries_models.Library) -> None:
+    TestingStorage.set("a", "foo")
+    TestingStorage.set("b", "bar")
+    library.scan()
+
+    TestingStorage.set("directory/b", "bar")
+    TestingStorage.unset("b")
+    library.scan()

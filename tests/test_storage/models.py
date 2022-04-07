@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-import pytest
 from django.contrib.contenttypes import fields as contenttypes_fields
 from django.contrib.contenttypes.models import ContentType
-from django.db import models
+from django.db import models, transaction
 
 from tumpara.libraries import models as libraries_models
 
@@ -49,6 +48,7 @@ class GenericHandler(models.Model):
         return handler
 
     @staticmethod
+    @transaction.atomic
     def handle_files_changed(
         sender: type[models.Model],
         record: libraries_models.Record,
@@ -61,8 +61,15 @@ class GenericHandler(models.Model):
         assert isinstance(handler, GenericHandler)
 
         for file in record.files.filter(availability__isnull=False).order_by("-pk"):
-            with file.open("rb") as file_io:
-                file_content = file_io.read()
+            try:
+                with file.open("rb") as file_io:
+                    file_content = file_io.read()
+            except IOError:
+                # This case might occur if we still have an old database entry of a file
+                # that the scanner hasn't yet gotten to.
+                file.availability = None
+                file.save()
+                continue
 
             if file_content != handler.content:
                 # Move this file out to another handler, because the content doesn't
@@ -78,6 +85,8 @@ class GenericHandler(models.Model):
                     new_record = new_handler.records.first()
                 file.record = new_record
                 file.save()
+                new_handler.initialized = True
+                new_handler.save()
 
         handler.initialized = True
         handler.save()

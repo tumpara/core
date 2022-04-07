@@ -34,7 +34,7 @@ def check_thread_count(requested_thread_count: int) -> int:
         in ["django.db.backends.sqlite3", "django.contrib.gis.db.backends.spatialite"]
         and requested_thread_count != 1
     ):
-        _logger.warning(
+        _logger.info(
             f"Ignoring requested thread count of {requested_thread_count} to avoid "
             f"concurrency issues with the SQLite backend."
         )
@@ -44,7 +44,7 @@ def check_thread_count(requested_thread_count: int) -> int:
         import dlib
 
         if dlib.DLIB_USE_CUDA and requested_thread_count != 1:
-            _logger.warning(
+            _logger.info(
                 f"Ignoring requested thread count of {requested_thread_count} "
                 f"because CUDA is active."
             )

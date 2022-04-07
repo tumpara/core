@@ -99,6 +99,7 @@ class FileEvent(Event):
         if candidates := candidates_by_path & candidates_by_digest:
             file = candidates.pop()
             need_saving = True
+            need_change_signal = True
 
             for other_file in candidates:
                 if not other_file.available:
@@ -115,27 +116,28 @@ class FileEvent(Event):
         # same digest. Then that old file object can be replaced with this new one.
         elif candidates := candidates_by_digest & unavailable_candidates:
             file = candidates.pop()
-            need_change_signal = True
             need_saving = True
+            need_change_signal = True
 
         # Third case: we have existing database entries that match the digest, but are
         # currently available. Then we create a new file object in their record (all
         # file objects with the same digest should always share a record).
         elif candidates := candidates_by_digest & available_candidates:
-            file = libraries_models.File.objects.create(
+            file = libraries_models.File(
                 record=candidates.pop().record,
                 path=self.path,
                 digest=digest,
                 availability=timezone.now(),
             )
+            need_saving = True
             need_change_signal = True
 
         # Fourth case: we have an existing file object for this path that is marked
         # as available. This is the case when a file is edited on disk.
         elif candidates := candidates_by_path & available_candidates:
             file = candidates.pop()
-            need_change_signal = True
             need_saving = True
+            need_change_signal = True
 
         # Fifth case: we have an existing file object for this path that is marked as
         # unavailable. Note that this case might be problematic because there might now
@@ -143,8 +145,8 @@ class FileEvent(Event):
         # there before.
         elif candidates := candidates_by_path & unavailable_candidates:
             file = candidates.pop()
-            need_change_signal = True
             need_saving = True
+            need_change_signal = True
 
         # Sixth case: we have a completely new file. Since we couldn't place the file
         # into any existing library record, we can now create a new one. To do that,
