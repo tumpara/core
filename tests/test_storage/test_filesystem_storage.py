@@ -274,10 +274,15 @@ class test_integration(LibraryActionsStateMachine):
         super().__init__()
         self.root = tempfile.mkdtemp()
 
+        self.library = libraries_models.Library.objects.create(
+            source=f"file://{self.root}",
+            context="test_storage",
+        )
+
         # This library will be scanned by watching the backend because that yields
         # slightly different events for some actions, and we want to test those as well.
         self.watched_library = libraries_models.Library.objects.create(
-            source=f"file://{self.root}",
+            source=f"file://{self.root}/",  # The slash fools the unique constraint
             context="test_storage",
         )
         self.watch_events = self.watched_library.storage.watch()
@@ -330,6 +335,9 @@ class test_integration(LibraryActionsStateMachine):
     @hypothesis.stateful.invariant()
     def perform_scan(self):
         """Run the scan on both libraries and make sure the state is OK."""
+        self.library.scan(watch=False, thread_count=1)
+        self.assert_library_state(self.library)
+
         while True:
             event = self.watch_events.send(0)
             if event is None:
