@@ -10,6 +10,7 @@ from django.utils import timezone
 from tumpara import testing
 from tumpara.libraries import models as libraries_models
 from tumpara.libraries import scanner
+from tumpara.libraries import signals as libraries_signals
 from tumpara.testing import strategies as st
 
 from .models import GenericHandler
@@ -18,7 +19,25 @@ from .utils import LibraryActionsStateMachine
 
 
 @pytest.fixture
-def library() -> Generator[libraries_models.Library, None, None]:
+def library(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[libraries_models.Library, None, None]:
+    from tumpara.libraries.scanner import runner
+
+    # Use send() on the signals instead of send_robust() because that way our tests fail
+    # if errors occur (which we don't want, but in production we just ignore them).
+    monkeypatch.setattr(
+        libraries_signals.new_file,
+        "send_robust",
+        libraries_signals.new_file.send,
+    )
+    monkeypatch.setattr(
+        libraries_signals.files_changed,
+        "send_robust",
+        libraries_signals.files_changed.send,
+    )
+    monkeypatch.setattr(runner, "RAISE_EXCEPTIONS", True)
+
     TestingStorage.clear()
     yield libraries_models.Library.objects.create(
         source="testing:///", context="test_storage"
@@ -267,8 +286,34 @@ def test_transparent_new_files(library: libraries_models.Library) -> None:
     ) == [("bar",), ("foo",)]
 
 
+@pytest.mark.django_db
+def test_moving_unavailable_objects(library: libraries_models.Library) -> None:
+    """When moving a directory, unavailable objects should be moved as well."""
+    TestingStorage.set("a/foo", "content")
+    scanner.FileEvent("a/foo").commit(library)
+    TestingStorage.set("a/bar", "content")
+    scanner.FileEvent("a/bar").commit(library)
+    TestingStorage.unset("a/bar")
+    scanner.FileRemovedEvent("a/bar").commit(library)
+
+    foo_file = libraries_models.File.objects.get(path="a/foo")
+    bar_file = libraries_models.File.objects.get(path="a/bar")
+    assert not bar_file.available
+
+    TestingStorage.unset("a/foo")
+    TestingStorage.set("b/foo", "content")
+    scanner.DirectoryMovedEvent("a", "b").commit(library)
+
+    foo_file.refresh_from_db()
+    assert foo_file.path == "b/foo"
+    assert foo_file.available
+    bar_file.refresh_from_db()
+    assert bar_file.path == "b/bar"
+    assert not bar_file.available
+
+
 @testing.state_machine(use_django_executor=True)
-class test_integration(LibraryActionsStateMachine):
+class atest_integration(LibraryActionsStateMachine):
     """State machine that tests individual event handling.
 
     This is an integration test that should handle most of the cases we have in the
@@ -279,7 +324,10 @@ class test_integration(LibraryActionsStateMachine):
         super().__init__()
         TestingStorage.clear()
         self.library = libraries_models.Library.objects.create(
-            source=f"testing:///", context="test_storage"
+            source=f"testing:///a", context="test_storage"
+        )
+        self.scanned_library = libraries_models.Library.objects.create(
+            source=f"testing:///b", context="test_storage"
         )
 
     def teardown(self) -> None:
@@ -347,3 +395,6 @@ class test_integration(LibraryActionsStateMachine):
     @hypothesis.stateful.invariant()
     def check_state(self) -> None:
         self.assert_library_state(self.library)
+
+        self.scanned_library.scan()
+        self.assert_library_state(self.scanned_library)

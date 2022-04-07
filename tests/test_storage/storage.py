@@ -40,6 +40,9 @@ class TestingStorage(storage.LibraryStorage):
             raise FileNotFoundError(f"file path {name!r} not found in dataset")
         return self._data[name][0]
 
+    def get_created_time(self, name: str) -> timezone.datetime:
+        return self.get_modified_time(name)
+
     def exists(self, name: str) -> bool:
         return name in self._data
 

@@ -8,6 +8,7 @@ from typing import Literal, Optional, overload
 
 from django.core.exceptions import ImproperlyConfigured
 from django.core.files import storage as django_storage
+from django.utils import timezone
 
 from .. import scanner
 

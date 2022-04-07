@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import logging
 import os.path
-from typing import Literal
+from typing import Any, Literal, NoReturn, Optional, overload
 
 from django.conf import settings
 from django.contrib.contenttypes import fields as contenttypes_fields
@@ -13,7 +14,9 @@ from django.utils.translation import gettext_lazy as _
 
 from tumpara.accounts import models as accounts_models
 
-from . import storage
+from . import scanner, storage
+
+_logger = logging.getLogger(__name__)
 
 
 class Visibility:
@@ -107,6 +110,83 @@ class Library(accounts_models.Joinable):
             for ignored_directory in self._ignored_directories
         )
 
+    @overload
+    def scan(
+        self, watch: Literal[False] = False, *, thread_count: Optional[int] = ...
+    ) -> None:
+        ...
+
+    @overload
+    def scan(
+        self, watch: Literal[True], *, thread_count: Optional[int] = ...
+    ) -> NoReturn:
+        ...
+
+    def scan(self, watch: bool = False, *, thread_count: Optional[int] = None) -> Any:
+        """Perform a full scan of file in this library.
+
+        This will make sure that all :class:`File` objects linked to a :class:`Record`
+        of this library are up-to-date. However, that does not mean that all files in
+        the database are actually readable - implementors are advised to check whether
+        the :attr:`File.availability` attribute is `None` and act accordingly.
+
+        :param watch: Whether to continue to watch for changes after the initial scan
+            has been completed. If this is set, this function will not return and idle
+            until new events come in.
+        :param thread_count: Number of processes to use for event handling. If this is
+            `None` (the default), a sane default will automatically be chosen.
+        """
+        _logger.info(
+            f"Scanning step 1 of 3 for {self}: Checking for ignored directories..."
+        )
+        try:
+            del self._ignored_directories
+        except AttributeError:
+            pass
+        self.check_path_ignored("/")
+        _logger.debug(
+            f"Found {len(self._ignored_directories)} folder(s) that will be ignored "
+            f"while scanning."
+        )
+
+        scan_event = scanner.ScanEvent()
+
+        def events() -> storage.WatchGenerator:
+            for path in self.storage.walk_files(safe=True):
+                yield scanner.FileModifiedEvent(path=path)
+            for path in self.storage.walk_files(safe=True):
+                yield scanner.FileModifiedEvent(path=path)
+
+        _logger.info(f"Scanning step 2 of 3 for {self}: Searching for new content...")
+        scanner.run(self, events(), thread_count=thread_count)
+
+        _logger.info(
+            f"Scanning step 3 of 3 for {self}: Removing obsolete database entries..."
+        )
+        scan_event.commit(self)
+
+        if not watch:
+            _logger.info(f"Finished scan for {self}.")
+            return
+        _logger.info(
+            f"Finished file scan for {self}. Continuing to watch for changes..."
+        )
+
+        def events() -> storage.WatchGenerator:
+            # When watching, pass through all events from the storage backend's
+            # EventGenerator. The response needs to be handled separately to support
+            # stopping the generator.
+            generator = self.storage.watch()
+            response = None
+            while response is not False:
+                response = yield generator.send(response)
+            try:
+                generator.send(False)
+            except StopIteration:
+                pass
+
+        scanner.run(self, events(), thread_count=thread_count)
+
 
 class Record(models.Model):
     """A piece of content in a library.
@@ -124,6 +204,8 @@ class Record(models.Model):
     library = models.ForeignKey(
         Library,
         on_delete=models.CASCADE,
+        related_name="records",
+        related_query_name="record",
         verbose_name=_("library"),
         help_text=_(
             "Library the object is attached to. Users will have access depending on "
@@ -204,6 +286,7 @@ class File(models.Model):
             # record, since we want copied files to both be attached to the same record.
             models.UniqueConstraint(
                 fields=["record", "path"],
+                condition=models.Q(availability__isnull=False),
                 name="path_unique_per_record",
             ),
         ]

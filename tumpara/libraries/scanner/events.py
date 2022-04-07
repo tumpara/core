@@ -92,21 +92,21 @@ class FileEvent(Event):
         }
         file: Optional[libraries_models.File] = None
         need_change_signal = False
+        need_saving = False
 
         # First case: we have a file object that already matches the description we
         # have. This means that the file has not changed since the last time we scanned.
         if candidates := candidates_by_path & candidates_by_digest:
             file = candidates.pop()
-            file.availability = timezone.now()
-            file.save()
+            need_saving = True
 
             for other_file in candidates:
                 if not other_file.available:
                     continue
                 _logger.warning(
                     f"Got two matching file records for the same path in a library, "
-                    f"which should not happen. The file object {other_file} will be marked "
-                    f"unavailable. This is probably a bug."
+                    f"which should not happen. The file object {other_file} will be "
+                    f"marked unavailable. This is probably a bug."
                 )
                 other_file.availability = None
                 other_file.save()
@@ -115,10 +115,8 @@ class FileEvent(Event):
         # same digest. Then that old file object can be replaced with this new one.
         elif candidates := candidates_by_digest & unavailable_candidates:
             file = candidates.pop()
-            file.availability = timezone.now()
-            file.path = self.path
-            file.save()
             need_change_signal = True
+            need_saving = True
 
         # Third case: we have existing database entries that match the digest, but are
         # currently available. Then we create a new file object in their record (all
@@ -136,10 +134,8 @@ class FileEvent(Event):
         # as available. This is the case when a file is edited on disk.
         elif candidates := candidates_by_path & available_candidates:
             file = candidates.pop()
-            file.availability = timezone.now()
-            file.digest = digest
-            file.save()
             need_change_signal = True
+            need_saving = True
 
         # Fifth case: we have an existing file object for this path that is marked as
         # unavailable. Note that this case might be problematic because there might now
@@ -147,10 +143,8 @@ class FileEvent(Event):
         # there before.
         elif candidates := candidates_by_path & unavailable_candidates:
             file = candidates.pop()
-            file.availability = timezone.now()
-            file.digest = digest
-            file.save()
             need_change_signal = True
+            need_saving = True
 
         # Sixth case: we have a completely new file. Since we couldn't place the file
         # into any existing library record, we can now create a new one. To do that,
@@ -206,6 +200,12 @@ class FileEvent(Event):
             other_file.availability = None
             other_file.save()
 
+        if need_saving:
+            file.path = self.path
+            file.digest = digest
+            file.availability = timezone.now()
+            file.save()
+
         if need_change_signal:
             libraries_signals.files_changed.send_robust(
                 sender=file.record.content_type.model_class(), record=file.record
@@ -251,13 +251,24 @@ class FileModifiedEvent(Event):
         if (
             file.availability is not None
             and file.availability > library.storage.get_modified_time(self.path)
+            and file.availability > library.storage.get_created_time(self.path)
         ):
             # The file seems to still be available and hasn't changed since the last
             # time we checked, so go ahead and call it a day.
+            file.availability = timezone.now()
+            file.save()
             return
         else:
             # Since the file was changed, we need to rescan it.
             FileEvent(path=self.path).commit(library)
+
+
+@dataclasses.dataclass
+class FileMaybeModifiedEvent(Event):
+    """This event is sent once for every file before a scan starts.
+
+    It marks files as (temporarily) unavailable that may have changed.
+    """
 
 
 @dataclasses.dataclass
@@ -291,7 +302,9 @@ class FileMovedEvent(Event):
                     sender=record.content_type.model_class(), record=record
                 )
         else:
-            affected_rows = file_queryset.update(path=self.new_path)
+            affected_rows = file_queryset.update(
+                path=self.new_path, availability=timezone.now()
+            )
             if affected_rows == 0:
                 _logger.debug(
                     f"Got a file moved event for {self.old_path!r} to "
@@ -391,6 +404,8 @@ class DirectoryMovedEvent(Event):
                 file.path = os.path.join(
                     self.new_path, os.path.relpath(file.path, self.old_path)
                 )
+                if file.availability is not None:
+                    file.availability = timezone.now()
                 file.save()
                 count += 1
             _logger.debug(
@@ -424,6 +439,47 @@ class DirectoryRemovedEvent(Event):
         _logger.debug(
             f"Got a directory removed event for {self.path!r} in {library} which "
             f"affected {affected_rows} file(s)."
+        )
+
+        for record in touched_records:
+            libraries_signals.files_changed.send_robust(
+                sender=record.content_type.model_class(), record=record
+            )
+
+
+class ScanEvent(Event):
+    """This event is sent after a full scan of the library.
+
+    The event object should be created before beginning the scan and committed after all
+    other events of the scan have been processed. It takes care of any leftover
+    :class:`libraries_models.File` objects that are no longer available.
+
+    .. warning::
+        When using multiprocessing, this event should be treated as a critical section!
+        Do not commit this when other threads are still processing events that are
+        assumed to be done. Instead, wait for those to finish first.
+    """
+
+    def __init__(self):
+        self.start_timestamp = timezone.now()
+
+    def commit(self, library: libraries_models.Library) -> None:
+        from .. import models as libraries_models
+
+        file_queryset = libraries_models.File.objects.filter(
+            # Since all events mark their touched files as available with a new
+            # timestamp, we can use that to find all the old records that are no
+            # longer available.
+            availability__lte=self.start_timestamp,
+            record__library=library,
+        )
+        touched_records = list(
+            libraries_models.Record.objects.filter(file__in=file_queryset).distinct()
+        )
+
+        affected_rows = file_queryset.update(availability=None)
+        _logger.debug(
+            f"Marked {affected_rows} file objects in {library} as no longer available."
         )
 
         for record in touched_records:

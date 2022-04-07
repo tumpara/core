@@ -59,8 +59,8 @@ class LibraryActionsStateMachine(hypothesis.stateful.RuleBasedStateMachine):
 
         self.files[path] = content
         self.file_timestamps[path] = timezone.now()
-        self.events.append(f"_add_file {path!r} {content!r}")
         self._add_file(path, content, data=data)
+        self.events.append(f"add_file {path!r} {content!r}")
 
     @hypothesis.stateful.rule(name=st.directory_names(), data=st.data())
     def add_directory(self, name: str, data: st.DataObject) -> None:
@@ -70,8 +70,8 @@ class LibraryActionsStateMachine(hypothesis.stateful.RuleBasedStateMachine):
         hypothesis.assume(path not in self.directories)
 
         self.directories.add(path)
-        self.events.append(f"_add_directory {path!r}")
         self._add_directory(path, data=data)
+        self.events.append(f"add_directory {path!r}")
 
     @hypothesis.stateful.precondition(lambda self: len(self.files) >= 1)
     @hypothesis.stateful.rule(data=st.data())
@@ -80,8 +80,8 @@ class LibraryActionsStateMachine(hypothesis.stateful.RuleBasedStateMachine):
         path = data.draw(st.sampled_from(list(self.files.keys())))
         del self.files[path]
         del self.file_timestamps[path]
-        self.events.append(f"_delete_file {path!r}")
         self._delete_file(path, data=data)
+        self.events.append(f"delete_file {path!r}")
 
     @hypothesis.stateful.precondition(lambda self: len(self.directories) >= 2)
     @hypothesis.stateful.rule(data=st.data())
@@ -100,8 +100,8 @@ class LibraryActionsStateMachine(hypothesis.stateful.RuleBasedStateMachine):
                 del self.files[file_path]
                 del self.file_timestamps[file_path]
 
-        self.events.append(f"_delete_directory {path!r}")
         self._delete_directory(path, data=data)
+        self.events.append(f"delete_directory {path!r}")
 
     @hypothesis.stateful.precondition(
         lambda self: len(self.directories) >= 2 and len(self.files) >= 1
@@ -122,8 +122,8 @@ class LibraryActionsStateMachine(hypothesis.stateful.RuleBasedStateMachine):
         del self.files[old_path]
         del self.file_timestamps[old_path]
 
-        self.events.append(f"_move_file {old_path!r} {new_path!r}")
         self._move_file(old_path, new_path, data=data)
+        self.events.append(f"move_file {old_path!r} {new_path!r}")
 
     @hypothesis.stateful.precondition(lambda self: len(self.files) >= 1)
     @hypothesis.stateful.rule(content=st.binary(min_size=1), data=st.data())
@@ -133,8 +133,8 @@ class LibraryActionsStateMachine(hypothesis.stateful.RuleBasedStateMachine):
         hypothesis.assume(content != self.files[path])
         self.files[path] = content
         self.file_timestamps[path] = timezone.now()
-        self.events.append(f"_change_file {path!r} {content!r}")
         self._change_file(path, content, data=data)
+        self.events.append(f"change_file {path!r} {content!r}")
 
     @hypothesis.stateful.precondition(lambda self: len(self.directories) >= 3)
     @hypothesis.stateful.rule(name=st.directory_names(), data=st.data())
@@ -171,8 +171,8 @@ class LibraryActionsStateMachine(hypothesis.stateful.RuleBasedStateMachine):
                 del self.files[file_path]
                 del self.file_timestamps[file_path]
 
-        self.events.append(f"_move_directory {old_path!r} {new_path!r}")
         self._move_directory(old_path, new_path, data=data)
+        self.events.append(f"move_directory {old_path!r} {new_path!r}")
 
     @hypothesis.stateful.precondition(lambda self: len(self.files) >= 2)
     @hypothesis.stateful.rule(data=st.data())
@@ -203,6 +203,8 @@ class LibraryActionsStateMachine(hypothesis.stateful.RuleBasedStateMachine):
         del self.file_timestamps[temp_path]
         self._move_file(temp_path, paths[-1], data=data)
 
+        self.events.append(f"swap_files {', '.join(repr(path) for path in paths)}")
+
     def assert_library_state(self, library: libraries_models.Library) -> None:
         """Helper method that asserts the state of a given library matches what is on
         record."""
@@ -213,7 +215,12 @@ class LibraryActionsStateMachine(hypothesis.stateful.RuleBasedStateMachine):
 
         assert file_queryset.count() == len(self.files)
         for content in self.files.values():
-            handler = GenericHandler.objects.get(content=content)
+            try:
+                handler = GenericHandler.objects.get(
+                    records__library=library, content=content
+                )
+            except GenericHandler.MultipleObjectsReturned:
+                raise
             assert handler.initialized
             record = libraries_models.Record.objects.get(
                 content_type=ContentType.objects.get_for_model(handler),
