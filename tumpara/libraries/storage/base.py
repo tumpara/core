@@ -6,9 +6,8 @@ import urllib.parse
 from collections.abc import Callable, Generator
 from typing import Literal, Optional, overload
 
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.core.files import storage as django_storage
-from django.utils import timezone
 
 from .. import scanner
 
@@ -177,7 +176,7 @@ class LibraryStorageManager:
         parsed_uri = urllib.parse.urlparse(uri)
         scheme = parsed_uri.scheme
         if scheme not in self.schemes:
-            raise RuntimeError(
+            raise ValidationError(
                 f"no supported library storage backend found for scheme {scheme!r}"
             )
         return self.schemes[scheme](parsed_uri)

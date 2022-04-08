@@ -1,6 +1,6 @@
 from typing import Optional, cast
 
-import django.contrib.auth.backends
+from django.contrib.auth.backends import BaseBackend
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
 from django.db import models
@@ -9,7 +9,42 @@ from .models import AnonymousUser, Joinable, User, UserMembership
 from .utils import build_permission_name
 
 
-class JoinablesBackend(django.contrib.auth.backends.BaseBackend):
+class UserViewingBackend(BaseBackend):
+    """User backend that allows logged-in uses to view other profiles and change their
+    own."""
+
+    def get_user_permissions(
+        self,
+        user_obj: models.Model | AnonymousUser,
+        obj: Optional[models.Model] = None,
+    ) -> set[str]:
+        if (
+            not cast(User, user_obj).is_active
+            or not cast(User, user_obj).is_authenticated
+        ):
+            return set()
+
+        permissions: set[str]()
+
+        if isinstance(obj, User):
+            permissions = {build_permission_name(obj, "view")}
+            if user_obj == obj:
+                permissions.add(build_permission_name(obj, "change"))
+            if user_obj.is_superuser:
+                permissions.add(build_permission_name(obj, "delete"))
+        elif obj is None:
+            permissions = {build_permission_name(User, "view")}
+            if user_obj.is_superuser:
+                permissions.add(build_permission_name(User, "add"))
+                permissions.add(build_permission_name(User, "change"))
+                permissions.add(build_permission_name(User, "delete"))
+        else:
+            return super().get_user_permissions(user_obj, obj)
+
+        return permissions
+
+
+class JoinablesBackend(BaseBackend):
     """User backend that supports querying for permissions based on memberships added
     by a :class:`tumpara.accounts.models.Joinable`.
 

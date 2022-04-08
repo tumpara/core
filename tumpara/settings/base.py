@@ -264,6 +264,7 @@ ALLOWED_HOSTS = parse_env("TUMPARA_HOST", list[str](), lambda host: [host])
 
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
+    "tumpara.accounts.backends.UserViewingBackend",
     "tumpara.accounts.backends.JoinablesBackend",
 ]
 AUTH_USER_MODEL = "accounts.user"

@@ -3,13 +3,23 @@ from __future__ import annotations
 import abc
 import base64
 import binascii
-from typing import Any, Optional, cast
+import datetime
+import decimal
+import typing
+from collections.abc import Collection
+from typing import Any, ClassVar, Generic, Optional, TypeVar, cast
 
 import strawberry
 import strawberry.types.types
 from django.db import models
+from django.utils import encoding
+from strawberry.field import StrawberryAnnotation, StrawberryField
 
 from ..utils import InfoType
+
+_Node = TypeVar("_Node", bound="Node")
+_DjangoNode = TypeVar("_DjangoNode", bound="DjangoNode")
+_Model = TypeVar("_Model", bound="models.Model")
 
 
 def decode_key(value: str) -> tuple[str, ...]:
@@ -82,18 +92,12 @@ class Node(abc.ABC):
 
     @classmethod
     def get_key_for_node(cls, node: Any, info: InfoType) -> str | tuple[str, ...]:
-        """Extract the key used to generate a unique ID for an instance of this Node.
-
-        For Django objects, the default implementation will return the primary key.
-        """
-        if isinstance(node, models.Model):
-            return str(node.pk)
-        else:
-            raise NotImplementedError(
-                f"Cannot generate a global ID for object of type {type(node)!r}. If "
-                f"this is not intentional, extend the Node type and override the "
-                f"'get_key_for_node' method."
-            )
+        """Extract the key used to generate a unique ID for an instance of this Node."""
+        raise NotImplementedError(
+            f"Cannot generate a global ID for object of type {type(node)!r}. If "
+            f"this is not intentional, extend the Node type and override the "
+            f"'get_key_for_node' method."
+        )
 
     @classmethod
     @abc.abstractmethod
@@ -101,21 +105,140 @@ class Node(abc.ABC):
         """Resolve an instance of this node type from the global ID's key."""
 
 
+class NonGenericTypeDefinition(strawberry.types.types.TypeDefinition):
+    is_generic = False
+
+
+class DjangoNodeField(StrawberryField):
+    @property
+    def arguments(self) -> list[strawberry.arguments.StrawberryArgument]:
+        return []
+
+    def get_result(self, source: Any, *args: Any, **kwargs: Any) -> Any:
+        assert isinstance(source, DjangoNode)
+        assert isinstance(source._obj, models.Model)
+        return super().get_result(source._obj, *args, **kwargs)
+
+
+@strawberry.interface
+class DjangoNode(Generic[_Model], Node, abc.ABC):
+    _model: ClassVar[type[_Model]]
+
+    def __init__(self, obj: _Model):
+        if not isinstance(obj, self._model):
+            raise
+        self._obj = obj
+
+    def __init_subclass__(cls, **kwargs):
+        model: Optional[type[_Model]] = None
+
+        for base in cls.__orig_bases__:  # type: ignore
+            origin = typing.get_origin(base)
+            if origin is Generic:
+                super().__init_subclass__(**kwargs)
+                return
+            elif origin is DjangoNode:
+                (model,) = typing.get_args(base)
+
+        assert model is not None and issubclass(
+            model, models.Model
+        ), f"DjangoNode classes must be initialized with a Django model (got {model!r})"
+        cls._model = model
+
+        # Patch the is_generic field because we know that our type isn't actually
+        # generic anymore and Strawberry doesn't currently support this situation:
+        # https://github.com/strawberry-graphql/strawberry/issues/1195
+        cls._type_definition.__class__ = NonGenericTypeDefinition  # type: ignore
+
+        if "fields" not in kwargs or not isinstance(kwargs["fields"], Collection):
+            raise TypeError("fields argument is mandatory for DjangoNode")
+
+        for field_name in kwargs.pop("fields"):
+            if not isinstance(field_name, str):
+                raise TypeError("field names must be given as strings")
+
+            model_field = model._meta.get_field(field_name)
+            assert isinstance(model_field, models.Field)
+
+            if model_field.choices:
+                raise ValueError("converting fields with choices is not supported yet")
+
+            type_annotation: object
+            if isinstance(model_field, models.BooleanField):
+                type_annotation = bool
+            elif isinstance(model_field, (models.CharField, models.TextField)):
+                type_annotation = str
+            elif isinstance(model_field, models.IntegerField):
+                type_annotation = int
+            elif isinstance(model_field, models.FloatField):
+                type_annotation = float
+            elif isinstance(model_field, models.DecimalField):
+                type_annotation = decimal.Decimal
+            elif isinstance(model_field, models.DateField):
+                type_annotation = datetime.date
+            elif isinstance(model_field, models.DateTimeField):
+                type_annotation = datetime.datetime
+            elif isinstance(model_field, models.TimeField):
+                type_annotation = datetime.time
+            else:
+                raise TypeError(f"unknown field type: {type(model_field)}")
+
+            if model_field.null:
+                type_annotation = Optional[type_annotation]
+
+            api_field = DjangoNodeField(
+                python_name=field_name,
+                type_annotation=StrawberryAnnotation(type_annotation),
+                description=encoding.force_str(model_field.help_text),
+            )
+            setattr(cls, field_name, api_field)
+            cls.__annotations__[field_name] = type_annotation
+
+        super().__init_subclass__(**kwargs)
+
+    @classmethod
+    def get_node_from_key(cls, info: InfoType, *key: str) -> Any:
+        assert len(key) == 1, "invalid key format"
+        return cls._model._default_manager.get(pk=key[0])
+
+    @classmethod
+    def get_key_for_node(cls, node: Any, info: InfoType) -> str | tuple[str, ...]:
+        """Extract the key used to generate a unique ID for an instance of this Node.
+
+        For Django objects, the default implementation will return the primary key.
+        """
+        if isinstance(node, DjangoNode):
+            return str(node._obj.pk)
+        else:
+            return super().get_key_for_node(node, info)
+
+
+def resolve_node(info: InfoType, id: strawberry.ID) -> Optional[Node]:
+    from tumpara.accounts.utils import build_permission_name
+
+    type_name, *key = decode_key(str(id))
+    origin, _ = get_node_origin(type_name, info)
+    node = origin.get_node_from_key(info, *key)
+
+    if node is None:
+        return None
+
+    if hasattr(origin, "is_type_of"):
+        assert origin.is_type_of(node, info), (  # type: ignore
+            "get_node_from_key() must return an object that is compatible with "
+            "is_type_of() "
+        )
+
+    if isinstance(node, models.Model) and not info.context.user.has_perm(
+        build_permission_name(node, "view"), node
+    ):
+        return None
+
+    return cast(Node, node)
+
+
 @strawberry.type
 class Query:
-    @strawberry.field(description="Resolve a node by its ID.")
-    def node(root: Any, info: InfoType, id: strawberry.ID) -> Optional[Node]:
-        type_name, *key = decode_key(str(id))
-        origin, _ = get_node_origin(type_name, info)
-        node = origin.get_node_from_key(info, *key)
-
-        if node is None:
-            return None
-
-        if hasattr(origin, "is_type_of"):
-            assert origin.is_type_of(node, info), (  # type: ignore
-                "get_node_from_key() must return an object that is compatible with "
-                "is_type_of() "
-            )
-
-        return cast(Node, node)
+    node: Optional[Node] = strawberry.field(
+        resolver=resolve_node, description="Resolve a node by its ID."
+    )

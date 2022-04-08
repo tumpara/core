@@ -3,21 +3,27 @@ from __future__ import annotations
 import dataclasses
 import typing
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Generic, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Optional, Union
 
 import strawberry.annotation
 import strawberry.arguments
 from django.db import models
 from strawberry.field import StrawberryField
 
-from .base import Node  # noqa: F401  # pylint: disable=unused-import
-from .base import decode_key, encode_key
+from ..utils import InfoType
+from .base import (
+    DjangoNode,
+    Node,
+    NonGenericTypeDefinition,
+    _DjangoNode,
+    _Model,
+    _Node,
+    decode_key,
+    encode_key,
+)
 
 if TYPE_CHECKING:
     from _typeshed import Self
-
-_Node = TypeVar("_Node", bound="Node")
-_Model = TypeVar("_Model", bound="models.Model")
 
 
 @strawberry.type(
@@ -50,10 +56,17 @@ class PageInfo:
 class Edge(Generic[_Node]):
     """An edge in a connection. This points to a single item in the dataset."""
 
-    node: _Node = strawberry.field(description="The node connected to the edge.")
+    node: _Node
     cursor: str = strawberry.field(
         description="A cursor used for pagination in the corresponding connection."
     )
+
+    def __init_subclass__(cls, **kwargs):
+        # Delay the field initialization code, see this method in the Connection class
+        # for details.
+        cls.node = strawberry.field(description="The node connected to the edge.")
+
+        super().__init_subclass__(**kwargs)
 
 
 @strawberry.type
@@ -113,10 +126,42 @@ class Connection(Generic[_Node]):
         super().__init_subclass__(**kwargs)
 
     @classmethod
+    def empty(cls: type[Self], total_count: int = 0) -> Self:
+        return cls(  # type: ignore
+            page_info=PageInfo(
+                has_next_page=False,
+                has_previous_page=False,
+                start_cursor=None,
+                end_cursor=None,
+            ),
+            total_count=total_count,
+            edges=[],
+            nodes=[],
+        )
+
+    @classmethod
+    def _get_edge_type(cls) -> type[Edge[_Node]]:
+        try:
+            field_annotation = typing.get_type_hints(cls)["edges"]
+            assert typing.get_origin(field_annotation) is list
+            optional_annotation = typing.get_args(field_annotation)[0]
+            assert typing.get_origin(optional_annotation) in (Optional, Union)
+            inner_annotation = next(
+                arg for arg in typing.get_args(optional_annotation) if arg is not None
+            )
+            assert issubclass(inner_annotation, Edge)
+            return inner_annotation
+        except Exception as error:
+            raise TypeError(
+                "Could not extract edge type from annotations - make sure the 'edges' "
+                "field is annotated like this: list[Optional[SomeEdge]]. Also note "
+                "that the node type of the edge and the connection should match."
+            ) from error
+
+    @classmethod
     def from_sequence(
         cls: type[Self],
         sequence: Sequence[_Node],
-        size: Optional[int] = None,
         *,
         after: Optional[str] = None,
         before: Optional[str] = None,
@@ -146,7 +191,7 @@ class Connection(Generic[_Node]):
         if last is not None and last < 0:
             raise ValueError("'last' option must be non-negative")
 
-        sequence_length = size if size is not None else len(sequence)
+        sequence_length = len(sequence)
 
         # The following algorithm more or less follows the one provided in the Relay
         # specification:
@@ -164,17 +209,7 @@ class Connection(Generic[_Node]):
         slice_stop = max(0, min(slice_stop, sequence_length))
 
         if slice_stop is not None and slice_start >= slice_stop:
-            return cls(  # type: ignore
-                page_info=PageInfo(
-                    has_next_page=False,
-                    has_previous_page=False,
-                    start_cursor=None,
-                    end_cursor=None,
-                ),
-                total_count=sequence_length,
-                edges=[],
-                nodes=[],
-            )
+            return cls.empty(sequence_length)
 
         # See the specification again for this algorithm:
         # https://relay.dev/graphql/connections.htm#sec-undefined.PageInfo.Fields
@@ -202,8 +237,9 @@ class Connection(Generic[_Node]):
             #   [0, 1, 2, 3, 4][5-1:5] = [4]
             slice_start = max(slice_start, slice_stop - last)
 
+        edge_type = cls._get_edge_type()
         edges = [
-            Edge(node=item, cursor=encode_key("Connection", index + slice_start))
+            edge_type(node=item, cursor=encode_key("Connection", index + slice_start))
             for index, item in enumerate(sequence[slice_start:slice_stop])
         ]
         # MyPy doesn't get that cls is actually a dataclass:
@@ -220,22 +256,77 @@ class Connection(Generic[_Node]):
         )
 
 
-class DjangoConnection(Generic[_Node, _Model], Connection[_Node]):
+class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
     """A connection superclass for connections with Django models."""
+
+    _node: ClassVar[type[_DjangoNode]]
+    _model: ClassVar[type[_Model]]
+
+    def __init_subclass__(cls, **kwargs):
+        node: Optional[type[_DjangoNode]] = None
+        model: Optional[type[_Model]] = None
+
+        for base in cls.__orig_bases__:  # type: ignore
+            origin = typing.get_origin(base)
+            if origin is Generic:
+                super().__init_subclass__(**kwargs)
+                return
+            elif origin is DjangoConnection:
+                (node, model) = typing.get_args(base)
+
+        assert node is not None and issubclass(
+            node, DjangoNode
+        ), f"DjangoConnection classes must be created with a DjangoNode (got {node!r})"
+        assert model is not None and issubclass(model, models.Model), (
+            f"DjangoConnection classes must be created with a Django model "
+            f"(got {model!r})"
+        )
+        assert (
+            node._model is model
+        ), "a DjangoConnection must point to the same model as the accompanying node"
+        cls._node = node
+        cls._model = model
+
+        super().__init_subclass__(**kwargs)
 
     @classmethod
     def from_queryset(
         cls: type[Self],
         queryset: models.QuerySet[_Model],
+        info: InfoType,
         *,
         after: Optional[str] = None,
         before: Optional[str] = None,
         first: Optional[int] = None,
         last: Optional[int] = None,
     ) -> Self:
-        return cls.from_sequence(  # type: ignore
-            queryset,
-            queryset.count(),
+        from tumpara.accounts.utils import build_permission_name
+
+        if not info.context.user.has_perm(
+            build_permission_name(queryset.model, "view")
+        ):
+            return cls.empty()
+
+        # Since Connection.from_sequence expects a sequence of nodes (the API type) and
+        # we only have a queryset (which yields model instances), we need to transform
+        # that accordingly.
+        class NodeSequence:
+            def __getitem__(self, item):
+                nonlocal queryset
+                assert isinstance(item, slice)
+                queryset = queryset[item]
+                return self
+
+            def __iter__(self):
+                for obj in queryset:
+                    assert isinstance(obj, cls._model)
+                    yield cls._node(obj)
+
+            def __len__(self):
+                return queryset.count()
+
+        return cls.from_sequence(
+            NodeSequence(),
             after=after,
             before=before,
             first=first,

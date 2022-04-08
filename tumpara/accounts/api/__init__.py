@@ -49,42 +49,21 @@ class UserFilter:
 
 
 @strawberry.type(description="A user with an account on this server.")
-class User(relay.Node):
-    username: str = strawberry.field(
-        description=str(accounts_models.User._meta.get_field("username").help_text)
-    )
-    full_name: str = strawberry.field(
-        description=str(accounts_models.User._meta.get_field("full_name").help_text)
-    )
-    short_name: str = strawberry.field(
-        description=str(accounts_models.User._meta.get_field("short_name").help_text)
-    )
-    email: str = strawberry.field(
-        description=str(accounts_models.User._meta.get_field("email").help_text)
-    )
-    is_active: bool = strawberry.field(
-        description=str(accounts_models.User._meta.get_field("is_active").help_text)
-    )
+class User(
+    relay.DjangoNode[accounts_models.User],
+    fields=["username", "full_name", "short_name", "email", "is_active"],
+):
+    def __init__(self, *args: Any, **kwargs: Any):
+        relay.DjangoNode.__init__(self, *args, **kwargs)
 
     @strawberry.field(description="Name to display for the user.")
     def display_name(self) -> str:
-        if self.short_name:
-            return self.short_name
-        elif self.full_name:
-            return self.full_name
+        if self._obj.short_name:
+            return self._obj.short_name
+        elif self._obj.full_name:
+            return self._obj.full_name
         else:
-            return self.username
-
-    @classmethod
-    def is_type_of(cls, obj: Any, info: api.InfoType) -> bool:
-        return isinstance(obj, accounts_models.User)
-
-    @classmethod
-    def get_node_from_key(cls, info: api.InfoType, *key: str) -> Any:
-        if not api.check_authentication(info):
-            return None
-        assert len(key) == 1, "invalid key format"
-        return accounts_models.User.objects.get(pk=key[0])
+            return self._obj.username
 
 
 # We need to redefine 'node' and 'edges' below because otherwise Strawberry thinks they
@@ -94,7 +73,7 @@ class User(relay.Node):
 
 @strawberry.type
 class UserEdge(relay.Edge[User]):
-    node: User = strawberry.field(description="The user object connected to this edge.")
+    node: User
 
 
 @strawberry.type(description="A connection to a list of users.")
@@ -110,13 +89,10 @@ class UserConnection(
 def resolve_user_connection(
     info: api.InfoType, filter: Optional[UserFilter] = None, **kwargs: Any
 ) -> Optional[UserConnection]:
-    if not api.check_authentication(info):
-        queryset = accounts_models.User.objects.none()
-    else:
-        queryset = accounts_models.User.objects.all()
-        if filter is not None:
-            queryset = queryset.filter(filter.build_query(""))
-    return UserConnection.from_queryset(queryset, **kwargs)
+    queryset = accounts_models.User.objects.all()
+    if filter is not None:
+        queryset = queryset.filter(filter.build_query(""))
+    return UserConnection.from_queryset(queryset, info, **kwargs)
 
 
 @strawberry.type
@@ -131,6 +107,6 @@ class Query:
     )
     def me(self, info: api.InfoType) -> Optional[User]:
         if info.context.user.is_authenticated:
-            return cast(User, info.context.user)
+            return User(info.context.user)
         else:
             return None
