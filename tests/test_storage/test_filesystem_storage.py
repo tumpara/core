@@ -266,6 +266,8 @@ def test_watch_creation(
     assert generator.send("check_empty") is True  # type: ignore
 
 
+@pytest.mark.slow
+@pytest.mark.usefixtures("patch_exception_handling")
 @testing.state_machine(use_django_executor=True)
 class test_integration(LibraryActionsStateMachine):
     """Complete test case for the scanning scenario with the filesystem backend."""

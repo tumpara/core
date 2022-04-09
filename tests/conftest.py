@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 import pytest
 
 from tumpara.testing.conftest import *  # noqa: F401
@@ -25,3 +27,26 @@ def patch_exception_handling(monkeypatch: pytest.MonkeyPatch) -> None:
         "send_robust",
         libraries_signals.files_changed.send,
     )
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--run-slow",
+        action="store_true",
+        default=False,
+        help="Run expensive and / or slow tests.",
+    )
+
+
+def pytest_configure(config: pytest.Config):
+    config.addinivalue_line("markers", "slow: mark test as slow to run")
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: Sequence[pytest.Item]):
+    if not config.getoption("--run-slow"):
+        skip_marker = pytest.mark.skip(
+            reason="Won't run expensive test unless --run-slow is given."
+        )
+        for item in items:
+            if "slow" in item.keywords:
+                item.add_marker(skip_marker)

@@ -295,6 +295,7 @@ def test_moving_unavailable_objects(library: libraries_models.Library) -> None:
     assert not bar_file.available
 
 
+@pytest.mark.slow
 @pytest.mark.usefixtures("patch_exception_handling")
 @testing.state_machine(use_django_executor=True)
 class test_integration(LibraryActionsStateMachine):
