@@ -7,6 +7,15 @@ from tumpara.api import relay
 from tumpara.testing import strategies as st
 
 
+class Edge(relay.Edge[relay.Node]):
+    pass
+
+
+class Connection(relay.Connection[relay.Node], name="test", pluralized_name="tests"):
+    edges: list[Optional[Edge]]
+    nodes: list[Optional[relay.Node]]
+
+
 @st.composite
 def connection_test_data(
     draw: st.DrawFn,
@@ -30,7 +39,7 @@ def create_connection(
     first: Optional[int] = None,
     last: Optional[int] = None,
 ) -> relay.Connection[Any]:
-    return relay.Connection.from_sequence(
+    return Connection.from_sequence(
         dataset,
         after=relay.encode_key("Connection", after)
         if isinstance(after, int)

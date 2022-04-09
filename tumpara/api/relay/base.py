@@ -199,7 +199,8 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
     @classmethod
     def get_node_from_key(cls, info: InfoType, *key: str) -> Any:
         assert len(key) == 1, "invalid key format"
-        return cls._model._default_manager.get(pk=key[0])
+        obj = cls._model._default_manager.get(pk=key[0])
+        return cls(obj)
 
     @classmethod
     def get_key_for_node(cls, node: Any, info: InfoType) -> str | tuple[str, ...]:

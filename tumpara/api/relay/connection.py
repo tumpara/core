@@ -11,16 +11,7 @@ from django.db import models
 from strawberry.field import StrawberryField
 
 from ..utils import InfoType
-from .base import (
-    DjangoNode,
-    Node,
-    NonGenericTypeDefinition,
-    _DjangoNode,
-    _Model,
-    _Node,
-    decode_key,
-    encode_key,
-)
+from .base import DjangoNode, _DjangoNode, _Model, _Node, decode_key, encode_key
 
 if TYPE_CHECKING:
     from _typeshed import Self
