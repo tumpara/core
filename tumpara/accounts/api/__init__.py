@@ -48,22 +48,23 @@ class UserFilter:
         return query
 
 
-@strawberry.type(description="A user with an account on this server.")
-class User(
+@strawberry.type(name="User", description="A user with an account on this server.")
+class UserNode(
     relay.DjangoNode[accounts_models.User],
     fields=["username", "full_name", "short_name", "email", "is_active"],
 ):
-    def __init__(self, *args: Any, **kwargs: Any):
-        relay.DjangoNode.__init__(self, *args, **kwargs)
-
     @strawberry.field(description="Name to display for the user.")
     def display_name(self) -> str:
-        if self._obj.short_name:
-            return self._obj.short_name
-        elif self._obj.full_name:
-            return self._obj.full_name
+        if self.short_name:
+            return self.short_name
+        elif self.full_name:
+            return self.full_name
         else:
-            return self._obj.username
+            return self.username
+
+    @classmethod
+    def get_queryset(cls, info: api.InfoType) -> models.QuerySet[accounts_models.User]:
+        return accounts_models.User.objects.for_user(info.context.user)
 
 
 # We need to redefine 'node' and 'edges' below because otherwise Strawberry thinks they
@@ -72,41 +73,33 @@ class User(
 
 
 @strawberry.type
-class UserEdge(relay.Edge[User]):
-    node: User
+class UserEdge(relay.Edge[UserNode]):
+    node: UserNode
 
 
 @strawberry.type(description="A connection to a list of users.")
 class UserConnection(
-    relay.DjangoConnection[User, accounts_models.User],
+    relay.DjangoConnection[UserNode, accounts_models.User],
     name="user",
     pluralized_name="users",
 ):
     edges: list[Optional[UserEdge]]
-    nodes: list[Optional[User]]
-
-
-def resolve_user_connection(
-    info: api.InfoType, filter: Optional[UserFilter] = None, **kwargs: Any
-) -> Optional[UserConnection]:
-    queryset = accounts_models.User.objects.all()
-    if filter is not None:
-        queryset = queryset.filter(filter.build_query(""))
-    return UserConnection.from_queryset(queryset, info, **kwargs)
+    nodes: list[Optional[UserNode]]
 
 
 @strawberry.type
 class Query:
-    users: Optional[UserConnection] = relay.ConnectionField(  # type: ignore
-        description="All users available on this server."
-    )(resolve_user_connection)
+    users: Optional[UserConnection] = relay.DjangoConnectionField(  # type: ignore
+        filter_type=UserFilter,
+        description="All users available on this server.",
+    )
 
     @strawberry.field(
         description="The user that is currently accessing the API. For anonymous "
         "sessions, this will be `null`."
     )
-    def me(self, info: api.InfoType) -> Optional[User]:
-        if info.context.user.is_authenticated:
-            return User(info.context.user)
+    def me(self, info: api.InfoType) -> Optional[UserNode]:
+        if api.check_authentication(info):
+            return UserNode.from_obj(info.context.user)
         else:
             return None

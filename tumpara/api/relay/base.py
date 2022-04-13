@@ -3,11 +3,12 @@ from __future__ import annotations
 import abc
 import base64
 import binascii
+import dataclasses
 import datetime
 import decimal
 import typing
 from collections.abc import Collection
-from typing import Any, ClassVar, Generic, Optional, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Optional, TypeVar, cast
 
 import strawberry
 import strawberry.types.types
@@ -16,6 +17,9 @@ from django.utils import encoding
 from strawberry.field import StrawberryAnnotation, StrawberryField
 
 from ..utils import InfoType
+
+if TYPE_CHECKING:
+    from _typeshed import Self
 
 _Node = TypeVar("_Node", bound="Node")
 _DjangoNode = TypeVar("_DjangoNode", bound="DjangoNode")
@@ -109,25 +113,10 @@ class NonGenericTypeDefinition(strawberry.types.types.TypeDefinition):
     is_generic = False
 
 
-class DjangoNodeField(StrawberryField):
-    @property
-    def arguments(self) -> list[strawberry.arguments.StrawberryArgument]:
-        return []
-
-    def get_result(self, source: Any, *args: Any, **kwargs: Any) -> Any:
-        assert isinstance(source, DjangoNode)
-        assert isinstance(source._obj, models.Model)
-        return super().get_result(source._obj, *args, **kwargs)
-
-
 @strawberry.interface
 class DjangoNode(Generic[_Model], Node, abc.ABC):
     _model: ClassVar[type[_Model]]
-
-    def __init__(self, obj: _Model):
-        if not isinstance(obj, self._model):
-            raise
-        self._obj = obj
+    _pk: str = dataclasses.field()  # This field should not be in the API.
 
     def __init_subclass__(cls, **kwargs):
         model: Optional[type[_Model]] = None
@@ -186,7 +175,7 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
             if model_field.null:
                 type_annotation = Optional[type_annotation]
 
-            api_field = DjangoNodeField(
+            api_field = StrawberryField(
                 python_name=field_name,
                 type_annotation=StrawberryAnnotation(type_annotation),
                 description=encoding.force_str(model_field.help_text),
@@ -197,10 +186,49 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
         super().__init_subclass__(**kwargs)
 
     @classmethod
-    def get_node_from_key(cls, info: InfoType, *key: str) -> Any:
+    def from_obj(cls: type[Self], obj: _Model) -> Self:
+        """Create a node instance from a Django model object."""
+        kwargs = dict[str, Any]()
+        for field in dataclasses.fields(cls):
+            if not isinstance(field, StrawberryField):
+                continue
+            if field.base_resolver is not None:
+                # This field has its own resolver.
+                continue
+            kwargs[field.name] = getattr(obj, field.name)
+        return cls(_pk=obj.pk, **kwargs)
+
+    @classmethod
+    def get_queryset(cls, info: InfoType) -> models.QuerySet[_Model]:
+        """Return the default queryset for fetching model objects.
+
+        This queryset must respect view permissions for the current user. That means
+        anything where the user does not have the ``app.view_something`` permission
+        must not be included in this queryset. If this method is not implemented a
+        manual permission check will be done.
+        """
+        raise NotImplementedError
+
+    @classmethod
+    def get_node_from_key(cls: type[Self], info: InfoType, *key: str) -> Optional[Self]:
+        from tumpara.accounts.utils import build_permission_name
+
         assert len(key) == 1, "invalid key format"
-        obj = cls._model._default_manager.get(pk=key[0])
-        return cls(obj)
+        if not info.context.user.has_perm(build_permission_name(cls._model, "view")):
+            return None
+
+        try:
+            obj = cls.get_queryset(info).get(pk=key[0])
+        except NotImplementedError:
+            # We don't have a queryset that respects permissions, so we need to check
+            # ourselves.
+            obj = cls._model._default_manager.get(pk=key[0])
+            if not info.context.user.has_perm(
+                build_permission_name(cls._model, "view"), obj
+            ):
+                return None
+
+        return cls.from_obj(obj)
 
     @classmethod
     def get_key_for_node(cls, node: Any, info: InfoType) -> str | tuple[str, ...]:
@@ -209,7 +237,7 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
         For Django objects, the default implementation will return the primary key.
         """
         if isinstance(node, DjangoNode):
-            return str(node._obj.pk)
+            return str(node._pk)
         else:
             return super().get_key_for_node(node, info)
 
@@ -229,11 +257,6 @@ def resolve_node(info: InfoType, id: strawberry.ID) -> Optional[Node]:
             "get_node_from_key() must return an object that is compatible with "
             "is_type_of() "
         )
-
-    if isinstance(node, models.Model) and not info.context.user.has_perm(
-        build_permission_name(node, "view"), node
-    ):
-        return None
 
     return cast(Node, node)
 

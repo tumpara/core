@@ -9,6 +9,9 @@ import strawberry.annotation
 import strawberry.arguments
 from django.db import models
 from strawberry.field import StrawberryField
+from strawberry.type import StrawberryOptional
+
+from tumpara.api import filtering
 
 from ..utils import InfoType
 from .base import DjangoNode, _DjangoNode, _Model, _Node, decode_key, encode_key
@@ -311,7 +314,7 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
             def __iter__(self):
                 for obj in queryset:
                     assert isinstance(obj, cls._model)
-                    yield cls._node(obj)
+                    yield cls._node.from_obj(obj)
 
             def __len__(self):
                 return queryset.count()
@@ -326,6 +329,13 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
 
 
 class ConnectionField(StrawberryField):
+    """Connection field that automatically adds the ``after``, ``before``, ``first``
+    and ``last`` arguments.
+
+    When providing a resolver, you can pass these remaining keyword arguments directly
+    to :meth:`Connection.from_sequence`, without needing to define them.
+    """
+
     @property
     def arguments(self) -> list[strawberry.arguments.StrawberryArgument]:
         arguments_map = {
@@ -381,3 +391,80 @@ class ConnectionField(StrawberryField):
             del arguments_map["kwargs"]
 
         return list(arguments_map.values())
+
+
+class DjangoConnectionField(ConnectionField):
+    """Connection field for Django connections.
+
+    The default resolver will use :meth:`DjangoNode.get_queryset` instead of
+    Strawberry's default :func:`getattr` implementation. Override this behaviour by
+    providing another resolver (by calling the field).
+
+    The optional ``filter`` argument can be specified to support filtering results.
+    This should be an input type that has a ``build_query`` method that matches that
+    of other filter types.
+    """
+
+    def __init__(
+        self,
+        description: Optional[str] = None,
+        filter_type: Optional[type[filtering.GenericFilter]] = None,
+        **kwargs: Any,
+    ):
+        super().__init__(description=description, **kwargs)
+        self.filter_type = filter_type
+
+    @property
+    def arguments(self) -> list[strawberry.arguments.StrawberryArgument]:
+        arguments = super().arguments
+        if self.filter_type is None:
+            return arguments
+
+        for argument in arguments:
+            assert (
+                argument.python_name != "filter"
+            ), "DjangoConnectionField resolvers must not have a 'filter' argument"
+
+        return [
+            *arguments,
+            strawberry.arguments.StrawberryArgument(
+                python_name="filter",
+                graphql_name=None,
+                type_annotation=strawberry.annotation.StrawberryAnnotation(
+                    Optional[self.filter_type]
+                ),
+                description="Filter to narrow down results.",
+            ),
+        ]
+
+    def get_result(
+        self, source: Any, info: InfoType, args: list[Any], kwargs: dict[str, Any]
+    ) -> Any:
+        if self.base_resolver:
+            return self.base_resolver(*args, **kwargs)
+
+        connection_type = self.type
+        # If our type is optional, we want the actual content type.
+        if isinstance(connection_type, StrawberryOptional):
+            connection_type = connection_type.of_type
+        assert issubclass(connection_type, DjangoConnection), (
+            f"Django connection fields must have resolve to a DjangoConnection type, "
+            f"got {type(connection_type)}"
+        )
+
+        try:
+            queryset = connection_type._node.get_queryset(info)
+
+            if (
+                self.filter_type is not None
+                and (filter := kwargs.pop("filter", None)) is not None
+            ):
+                # Since we are filtering objects directly in the queryset (and not some
+                # subfield), the field name is an empty string here:
+                queryset = queryset.filter(filter.build_query(""))
+
+            assert len(args) == 0
+            kwargs.setdefault("info", info)
+            return connection_type.from_queryset(queryset, **kwargs)
+        except NotImplementedError:
+            pass

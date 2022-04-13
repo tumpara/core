@@ -22,6 +22,17 @@ __all__ = ["AnonymousUser", "User", "Joinable", "UserMembership"]
 
 
 class UserManager(auth_models.UserManager["User"]):
+    def for_user(self, user: AnonymousUser | User) -> models.QuerySet[User]:
+        """Return a queryset of users that are visible for a given other user.
+
+        The resulting queryset contains all objects where the provided user has the
+        ``accounts.view_user`` permission.
+        """
+        if user.is_authenticated and user.is_active:
+            return self.all()
+        else:
+            return self.none()
+
     def create_superuser(
         self,
         username: str,

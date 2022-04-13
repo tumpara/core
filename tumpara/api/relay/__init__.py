@@ -6,13 +6,21 @@ from .base import (
     get_node_origin,
     resolve_node,
 )
-from .connection import Connection, ConnectionField, DjangoConnection, Edge, PageInfo
+from .connection import (
+    Connection,
+    ConnectionField,
+    DjangoConnection,
+    DjangoConnectionField,
+    Edge,
+    PageInfo,
+)
 
 __all__ = [
     "Connection",
     "ConnectionField",
     "decode_key",
     "DjangoConnection",
+    "DjangoConnectionField",
     "DjangoNode",
     "Edge",
     "encode_key",

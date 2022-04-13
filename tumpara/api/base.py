@@ -17,7 +17,7 @@ class Token:
     key: Optional[str] = strawberry.field(
         description=str(api_models.Token._meta.get_field("key").help_text)
     )
-    user: accounts_api.User = strawberry.field(
+    user: accounts_api.UserNode = strawberry.field(
         description=str(api_models.Token._meta.get_field("user").help_text)
     )
     expiry_timestamp: datetime.datetime = strawberry.field(
