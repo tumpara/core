@@ -13,7 +13,7 @@ from tumpara.accounts import api as accounts_api
 from tumpara.libraries import api as libraries_api
 
 from . import base as base_api
-from . import relay
+from .relay import schema as relay_api
 from .utils import ApiContext
 from .views import ApiView
 
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 __all__ = ["schema", "urlpatterns"]
 
 Query = strawberry.tools.merge_types(
-    "Query", (base_api.Query, relay.base.Query, accounts_api.Query, libraries_api.Query)
+    "Query", (base_api.Query, relay_api.Query, accounts_api.Query, libraries_api.Query)
 )
 Mutation = strawberry.tools.merge_types(
     "Mutation", (base_api.Mutation, libraries_api.Mutation)

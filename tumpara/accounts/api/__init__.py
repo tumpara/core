@@ -1,4 +1,4 @@
-from typing import Any, Optional, cast
+from typing import Optional
 
 import strawberry
 from django.db import models

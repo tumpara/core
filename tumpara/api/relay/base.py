@@ -6,7 +6,16 @@ import binascii
 import dataclasses
 import typing
 from collections.abc import Collection
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, Optional, TypeVar, cast
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    ClassVar,
+    Generic,
+    Optional,
+    TypeVar,
+    cast,
+)
 
 import strawberry
 import strawberry.types.types
@@ -253,14 +262,7 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
         return str(node.pk)
 
 
-def resolve_node(info: InfoType, id: strawberry.ID) -> Optional[Node]:
-    type_name, *key = decode_key(str(id))
+def resolve_node(info: InfoType, node_id: str) -> Optional[Node]:
+    type_name, *key = decode_key(node_id)
     origin, _ = get_node_origin(type_name, info)
     return origin.get_node_from_key(info, *key)
-
-
-@strawberry.type
-class Query:
-    node: Optional[Node] = strawberry.field(
-        resolver=resolve_node, description="Resolve a node by its ID."
-    )

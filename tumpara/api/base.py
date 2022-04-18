@@ -1,5 +1,5 @@
 import datetime
-from typing import Any, Optional, cast
+from typing import Annotated, Any, Optional, cast
 
 import strawberry
 from django.contrib import auth
@@ -111,7 +111,27 @@ class Mutation:
         description="Login as a user and create a token for API usage."
     )
     def create_token(
-        self, info: InfoType, credentials: list[str], name: Optional[str]
+        self,
+        info: InfoType,
+        credentials: Annotated[
+            list[str],
+            strawberry.argument(
+                description="Credentials to log in with. This must be a list with "
+                "length at least one. The first entry here denotes the authentication "
+                "method to use, which can be retrieved with the "
+                "`authenticationMethods` query. Other values in this list depend on "
+                "authentication method.\n\n"
+                "When logging in with a username and password, pass them as a 2-tuple "
+                "in that order."
+            ),
+        ],
+        name: Annotated[
+            Optional[str],
+            strawberry.argument(
+                description="Name of the token. Most of the time, this will be the "
+                "name of the client application."
+            ),
+        ],
     ) -> Optional[CreateTokenResult]:
         if len(credentials) == 0:
             return UnknownAuthenticationMethodError(method="")
