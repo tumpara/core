@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional, Protocol
+import collections
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Optional, Protocol, Union
 
 import django.dispatch
 from django.db import models
@@ -11,9 +13,23 @@ if TYPE_CHECKING:
 __all__ = ["new_file", "files_changed"]
 
 
+# This dictionary maps all known library context values to some object that doesn't
+# change. The problem is that Django uses the id() of the sender to filter registered
+# receivers. That works fine when the sender is a class or a model instance, but two
+# Python strings with the same content don't necessarily need to be the same object.
+# Therefor the new file signal might filter out receivers for some senders only because
+# the id doesn't match, even though they are actually the same sender. We use this map
+# to keep track of all the senders we know and make sure that equal strings actually
+# get the same id.
+# An alternative would have been to keep a record of the strings and internalized them
+# with sys.intern, but this works as well:
+context_references = collections.defaultdict[Optional[str], Optional[object]](object)
+context_references[None] = None
+
+
 class NewFileReceiver(Protocol):
     def __call__(
-        self, sender: str, path: str, library: libraries_models.Library, **kwargs: Any
+        self, context: str, path: str, library: libraries_models.Library, **kwargs: Any
     ) -> Optional[libraries_models.Record | models.Model]:
         ...
 
@@ -26,7 +42,40 @@ class NewFileSignal(django.dispatch.Signal):
         weak: bool = True,
         dispatch_uid: Optional[str] = None,
     ) -> None:
-        super().connect(receiver, sender, weak=weak, dispatch_uid=dispatch_uid)
+        super().connect(
+            receiver, context_references[sender], weak=weak, dispatch_uid=dispatch_uid
+        )
+
+    def disconnect(
+        self,
+        receiver: Optional[Callable] = None,
+        sender: Optional[object] = None,
+        dispatch_uid: Optional[str] = None,
+    ) -> bool:
+        return super().disconnect(receiver, context_references[sender], dispatch_uid)
+
+    def has_listeners(self, sender: Optional[str]) -> bool:  # type: ignore
+        return super().has_listeners(context_references[sender])
+
+    def send(  # type: ignore
+        self, context: str, path: str, library: libraries_models.Library
+    ) -> list[tuple[Callable, Optional[str]]]:
+        return super().send(
+            sender=context_references[context],
+            context=context,
+            path=path,
+            library=library,
+        )
+
+    def send_robust(  # type: ignore
+        self, context: str, path: str, library: libraries_models.Library
+    ) -> list[tuple[Callable, Union[ValueError, str]]]:
+        return super().send_robust(
+            sender=context_references[context],
+            context=context,
+            path=path,
+            library=library,
+        )
 
 
 new_file = NewFileSignal()

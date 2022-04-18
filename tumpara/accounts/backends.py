@@ -79,7 +79,7 @@ class JoinablesBackend(BaseBackend):
     :attr:`tumpara.accounts.models.Joinable.change_permission_name` and the like) with
     the object's primary key using a double underscore.
 
-    .. note:
+    .. note::
         These special permissions only work when using ``.has_perms()`` (note the *s*).
         When checking permissions on a single object, use ``.has_perm()`` with the
         normal permission name and pass the object -- which is the syntax preferred by

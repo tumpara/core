@@ -4,8 +4,6 @@ import abc
 import base64
 import binascii
 import dataclasses
-import datetime
-import decimal
 import typing
 from collections.abc import Collection
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Optional, TypeVar, cast
@@ -14,9 +12,10 @@ import strawberry
 import strawberry.types.types
 from django.db import models
 from django.utils import encoding
+from django.utils.functional import cached_property
 from strawberry.field import StrawberryAnnotation, StrawberryField
 
-from ..utils import InfoType
+from ..utils import InfoType, NonGenericTypeDefinition, type_annotation_for_django_field
 
 if TYPE_CHECKING:
     from _typeshed import Self
@@ -105,18 +104,17 @@ class Node(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
-    def get_node_from_key(cls, info: InfoType, *key: str) -> Any:
+    def get_node_from_key(cls: type[Self], info: InfoType, *key: str) -> Optional[Self]:
         """Resolve an instance of this node type from the global ID's key."""
-
-
-class NonGenericTypeDefinition(strawberry.types.types.TypeDefinition):
-    is_generic = False
 
 
 @strawberry.interface
 class DjangoNode(Generic[_Model], Node, abc.ABC):
     _model: ClassVar[type[_Model]]
-    _pk: str = dataclasses.field()  # This field should not be in the API.
+    # The following two fields are not be exposed via GraphQL. Instead, they are only
+    # here so that resolvers have access.
+    pk: strawberry.Private[str]
+    _obj: strawberry.Private[Optional[_Model]]
 
     def __init_subclass__(cls, **kwargs):
         model: Optional[type[_Model]] = None
@@ -134,9 +132,7 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
         ), f"DjangoNode classes must be initialized with a Django model (got {model!r})"
         cls._model = model
 
-        # Patch the is_generic field because we know that our type isn't actually
-        # generic anymore and Strawberry doesn't currently support this situation:
-        # https://github.com/strawberry-graphql/strawberry/issues/1195
+        # Patch the is_generic field (see the class' docstring for details).
         cls._type_definition.__class__ = NonGenericTypeDefinition  # type: ignore
 
         if "fields" not in kwargs or not isinstance(kwargs["fields"], Collection):
@@ -148,32 +144,7 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
 
             model_field = model._meta.get_field(field_name)
             assert isinstance(model_field, models.Field)
-
-            if model_field.choices:
-                raise ValueError("converting fields with choices is not supported yet")
-
-            type_annotation: object
-            if isinstance(model_field, models.BooleanField):
-                type_annotation = bool
-            elif isinstance(model_field, (models.CharField, models.TextField)):
-                type_annotation = str
-            elif isinstance(model_field, models.IntegerField):
-                type_annotation = int
-            elif isinstance(model_field, models.FloatField):
-                type_annotation = float
-            elif isinstance(model_field, models.DecimalField):
-                type_annotation = decimal.Decimal
-            elif isinstance(model_field, models.DateField):
-                type_annotation = datetime.date
-            elif isinstance(model_field, models.DateTimeField):
-                type_annotation = datetime.datetime
-            elif isinstance(model_field, models.TimeField):
-                type_annotation = datetime.time
-            else:
-                raise TypeError(f"unknown field type: {type(model_field)}")
-
-            if model_field.null:
-                type_annotation = Optional[type_annotation]
+            type_annotation = type_annotation_for_django_field(model_field)
 
             api_field = StrawberryField(
                 python_name=field_name,
@@ -185,18 +156,59 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
 
         super().__init_subclass__(**kwargs)
 
+    @cached_property
+    def obj(self) -> _Model:
+        """The model object this node refers to.
+
+        If possible, it is preferred to use the primary key attribute :attr:`pk` of the
+        node instead. The object may not always be available and might cause another
+        database query.
+        """
+        if self._obj is None:
+            self._obj = self._model._default_manager.get(pk=self.pk)
+        return self._obj
+
     @classmethod
-    def from_obj(cls: type[Self], obj: _Model) -> Self:
-        """Create a node instance from a Django model object."""
-        kwargs = dict[str, Any]()
+    def field_names(cls) -> Collection[str]:
+        """Return the names of all fields required to initialize a node."""
+        result = [
+            # The primary key field would be filtered out in the following loop, so we
+            # include it here.
+            "pk",
+        ]
         for field in dataclasses.fields(cls):
             if not isinstance(field, StrawberryField):
                 continue
             if field.base_resolver is not None:
                 # This field has its own resolver.
                 continue
-            kwargs[field.name] = getattr(obj, field.name)
-        return cls(_pk=obj.pk, **kwargs)
+            result.append(field.name)
+        return result
+
+    @classmethod
+    def from_obj(cls: type[Self], obj: _Model) -> Self:
+        """Create a node instance from a Django model object.
+
+        If possible, consider using :meth:`from_queryset` instead.
+        """
+        kwargs = {
+            field_name: getattr(obj, field_name) for field_name in cls.field_names()
+        }
+        return cls(_obj=obj, **kwargs)
+
+    @classmethod
+    def from_queryset(cls: type[Self], queryset: models.QuerySet[_Model]) -> Self:
+        """Create a node instance from a single-entry queryset.
+
+        The provided queryset should:
+
+        - Contain exactly one item (:meth:`~models.QuerySet.count` should return 1).
+        - Already be filtered according to the appropriate permissions. No further
+          checks will be performed.
+        """
+        assert queryset.model is cls._model
+        values = queryset.values(cls.field_names()).get()
+        return cls(_obj=None, **values)
 
     @classmethod
     def get_queryset(cls, info: InfoType) -> models.QuerySet[_Model]:
@@ -204,8 +216,9 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
 
         This queryset must respect view permissions for the current user. That means
         anything where the user does not have the ``app.view_something`` permission
-        must not be included in this queryset. If this method is not implemented a
-        manual permission check will be done.
+        must not be included in this queryset. If this method is not implemented, the
+        default manager will be used and the permission check will be performed on each
+        object individually.
         """
         raise NotImplementedError
 
@@ -231,34 +244,19 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
         return cls.from_obj(obj)
 
     @classmethod
-    def get_key_for_node(cls, node: Any, info: InfoType) -> str | tuple[str, ...]:
+    def get_key_for_node(cls, node: Any, info: InfoType) -> str:
         """Extract the key used to generate a unique ID for an instance of this Node.
 
         For Django objects, the default implementation will return the primary key.
         """
-        if isinstance(node, DjangoNode):
-            return str(node._pk)
-        else:
-            return super().get_key_for_node(node, info)
+        assert isinstance(node, cls)
+        return str(node.pk)
 
 
 def resolve_node(info: InfoType, id: strawberry.ID) -> Optional[Node]:
-    from tumpara.accounts.utils import build_permission_name
-
     type_name, *key = decode_key(str(id))
     origin, _ = get_node_origin(type_name, info)
-    node = origin.get_node_from_key(info, *key)
-
-    if node is None:
-        return None
-
-    if hasattr(origin, "is_type_of"):
-        assert origin.is_type_of(node, info), (  # type: ignore
-            "get_node_from_key() must return an object that is compatible with "
-            "is_type_of() "
-        )
-
-    return cast(Node, node)
+    return origin.get_node_from_key(info, *key)
 
 
 @strawberry.type

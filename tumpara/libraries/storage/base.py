@@ -14,6 +14,10 @@ from .. import scanner
 WatchGenerator = Generator[Optional[scanner.Event], Literal[None, False] | int, None]
 
 
+class StorageValidationError(ValidationError):
+    pass
+
+
 class LibraryStorage(django_storage.Storage, abc.ABC):
     """Base class for storage backends used by :class:`tumpara.storage.models.Library`.
 
@@ -176,8 +180,9 @@ class LibraryStorageManager:
         parsed_uri = urllib.parse.urlparse(uri)
         scheme = parsed_uri.scheme
         if scheme not in self.schemes:
-            raise ValidationError(
-                f"no supported library storage backend found for scheme {scheme!r}"
+            raise StorageValidationError(
+                f"no supported library storage backend found for scheme {scheme!r}",
+                code="unsupported_storage_scheme",
             )
         return self.schemes[scheme](parsed_uri)
 

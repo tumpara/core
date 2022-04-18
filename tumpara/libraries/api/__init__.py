@@ -1,3 +1,4 @@
+import enum
 from typing import Any, Optional
 
 import strawberry
@@ -9,33 +10,27 @@ from tumpara.libraries import models as libraries_models
 from tumpara.libraries import storage
 
 
-@strawberry.type(description="A library containing media.")
-class Library(relay.Node):
-    @classmethod
-    def is_type_of(cls, obj: Any, info: api.InfoType) -> bool:
-        return isinstance(obj, libraries_models.Library)
-
-    @classmethod
-    def get_node_from_key(cls, info: api.InfoType, *key: str) -> Any:
-        assert len(key) == 1, "invalid key format"
-        return libraries_models.Library.objects.get(pk=key[0])
+@strawberry.type(name="Library", description="A library containing media.")
+class LibraryNode(
+    relay.DjangoNode[libraries_models.Library],
+    fields=["source", "context"],
+):
+    pass
 
 
 @strawberry.type
-class LibraryEdge(relay.Edge[Library]):
-    node: Library = strawberry.field(
-        description="The library object connected to this edge."
-    )
+class LibraryEdge(relay.Edge[LibraryNode]):
+    node: LibraryNode
 
 
 @strawberry.type(description="A connection to a list of libraries.")
 class LibraryConnection(
-    relay.DjangoConnection[Library, libraries_models.Library],
+    relay.DjangoConnection[LibraryNode, libraries_models.Library],
     name="library",
     pluralized_name="libraries",
 ):
     edges: list[Optional[LibraryEdge]]
-    nodes: list[Optional[Library]]
+    nodes: list[Optional[LibraryNode]]
 
 
 def resolve_libraries_connection(
@@ -68,23 +63,59 @@ class Query:
             return False
 
 
-class CreateLibraryForm(forms.ModelForm):
+@strawberry.enum
+class LibraryVisibility(enum.Enum):
+    PUBLIC = libraries_models.Visibility.PUBLIC
+    INTERNAL = libraries_models.Visibility.INTERNAL
+    MEMBERS = libraries_models.Visibility.MEMBERS
+    OWNERS = libraries_models.Visibility.OWNERS
+
+
+class LibraryForm(forms.ModelForm):
     class Meta:
         model = libraries_models.Library
         fields = ["source", "default_visibility"]
 
 
-@strawberry.input
-class CreateLibraryInput:
-    source: str
+class CreateLibraryForm(forms.ModelForm):
+    class Meta(LibraryForm.Meta):
+        fields = LibraryForm.Meta.fields + ["context"]
+
+
+@strawberry.input(description="Edit an existing library.")
+class EditLibraryInput(api.EditFormInput[LibraryForm]):
+    default_visibility: Optional[LibraryVisibility]
+
+
+@strawberry.input(description="Create a new library.")
+class CreateLibraryInput(api.CreateFormInput[CreateLibraryForm]):
+    default_visibility: LibraryVisibility
+
+
+LibraryMutationResult = strawberry.union(
+    "LibraryMutationResult", (LibraryNode, api.FormError, api.NodeError)
+)
+
+
+def resolve_library_form(
+    info: api.InfoType, input: CreateLibraryInput | EditLibraryInput
+) -> Optional[LibraryMutationResult]:
+    form = input.prepare(info)
+    if not isinstance(form, LibraryForm):
+        return form
+    return LibraryNode.from_obj(form.save())
 
 
 @strawberry.type
 class Mutation:
-    @strawberry.field(description="Create a new library")
-    def manage_library(
-        self,
-        info: api.InfoType,
-        id: Optional[strawberry.ID],
-    ):
-        pass
+    @strawberry.field(description=CreateLibraryInput._type_definition.description)
+    def create_library(
+        self, info: api.InfoType, input: CreateLibraryInput
+    ) -> Optional[LibraryMutationResult]:
+        return resolve_library_form(info, input)
+
+    @strawberry.field(description=EditLibraryInput._type_definition.description)
+    def edit_library(
+        self, info: api.InfoType, input: EditLibraryInput
+    ) -> Optional[LibraryMutationResult]:
+        return resolve_library_form(info, input)

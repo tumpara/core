@@ -36,9 +36,9 @@ class GenericHandler(models.Model):
 
     @staticmethod
     def handle_new_file(
-        sender: str, path: str, library: libraries_models.Library, **kwargs: Any
+        context: str, path: str, library: libraries_models.Library, **kwargs: Any
     ) -> Optional[GenericHandler]:
-        if sender != "test_storage":
+        if context != "test_storage":
             return None
         with library.storage.open(path, "rb") as file_io:
             content = file_io.read()

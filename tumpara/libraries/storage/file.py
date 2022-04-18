@@ -7,12 +7,11 @@ from typing import Literal
 
 import inotify_simple
 import inotifyrecursive
-from django.core.exceptions import ValidationError
 from django.core.files import storage as django_storage
 from inotifyrecursive import flags as inotify_flags
 
 from .. import scanner
-from .base import LibraryStorage, WatchGenerator
+from .base import LibraryStorage, StorageValidationError, WatchGenerator
 
 __all__ = ["FileSystemLibraryStorage"]
 _logger = logging.getLogger(__name__)
@@ -25,12 +24,14 @@ class FileSystemLibraryStorage(LibraryStorage, django_storage.FileSystemStorage)
 
     def check(self) -> None:
         if not os.path.exists(self.base_location):
-            raise ValidationError(
-                f"The specified path {self.base_location} does not exist."
+            raise StorageValidationError(
+                f"The specified path {self.base_location} does not exist.",
+                code="ENOENT",
             )
         if not os.path.isdir(self.base_location):
-            raise ValidationError(
-                f"The specified path {self.base_location} is not a directory."
+            raise StorageValidationError(
+                f"The specified path {self.base_location} is not a directory.",
+                code="ENOTDIR",
             )
 
     def watch(self) -> WatchGenerator:

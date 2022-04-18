@@ -155,7 +155,7 @@ class FileEvent(Event):
         # documentation for details).
         else:
             result = libraries_signals.new_file.send_robust(
-                sender=library.context,
+                context=library.context,
                 path=self.path,
                 library=library,
             )

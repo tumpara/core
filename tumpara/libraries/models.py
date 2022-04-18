@@ -20,7 +20,7 @@ _logger = logging.getLogger(__name__)
 
 
 class Visibility:
-    """Visibility settings shared by"""
+    """Visibility settings shared by libraries and library records."""
 
     PUBLIC = 0
     INTERNAL = 1
