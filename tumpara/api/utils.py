@@ -85,14 +85,38 @@ def type_annotation_for_django_field(field: models.Field | forms.Field) -> objec
     return type_annotation
 
 
-def is_type_optional(type_annotation: object) -> bool:
-    """Check whether the given type annotation is an optional."""
+def extract_optional_type(type_annotation: object) -> object:
+    """Extract the inner type of an optional."""
     origin = typing.get_origin(type_annotation)
     if origin is Optional:
-        return True
-    elif origin is Union and type(None) in typing.get_args(type_annotation):
-        return True
+        return typing.get_args(type_annotation)[0]
+    elif origin is Union:
+        inner_types = list[object]()
+        seen_none = False
+        for inner_type in typing.get_args(type_annotation):
+            if inner_type is type(None):
+                seen_none = True
+                continue
+            inner_types.append(inner_type)
+
+        if not seen_none:
+            raise TypeError("provided union type did not contain None")
+
+        assert len(inner_types) > 0
+        if len(inner_types) == 1:
+            return inner_types[0]
+        else:
+            return Union[inner_types]
     else:
+        raise TypeError("provided type was not an optional")
+
+
+def is_type_optional(type_annotation: object) -> bool:
+    """Check whether the given type annotation is an optional."""
+    try:
+        extract_optional_type(type_annotation)
+        return True
+    except TypeError:
         return False
 
 

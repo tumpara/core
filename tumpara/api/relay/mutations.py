@@ -5,7 +5,7 @@ import dataclasses
 import enum
 import inspect
 import typing
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, Optional, TypeVar
+from typing import Any, ClassVar, Generic, Optional, TypeVar
 
 import strawberry.arguments
 from django import forms
@@ -13,16 +13,8 @@ from django.core.exceptions import ValidationError
 from django.utils import encoding
 from strawberry.field import StrawberryAnnotation, StrawberryField
 
-from . import relay
-from .utils import (
-    InfoType,
-    NonGenericTypeDefinition,
-    is_type_optional,
-    type_annotation_for_django_field,
-)
-
-if TYPE_CHECKING:
-    from _typeshed import Self
+from ..utils import InfoType, is_type_optional, type_annotation_for_django_field
+from .base import DjangoNode, resolve_node
 
 _Form = TypeVar("_Form", bound="forms.BaseForm")
 _ModelForm = TypeVar("_ModelForm", bound="forms.ModelForm")
@@ -91,13 +83,14 @@ class DjangoFormInput(Generic[_Form], abc.ABC):
             if hasattr(cls, field_name):
                 continue
 
+            assert isinstance(form_field, forms.Field)
+
             try:
                 # When there is already an annotation (but no matching field), use that.
                 # This might be the case for enums or other complex type that need to
                 # be modeled individually and are not generated automatically.
                 type_annotation = cls.__annotations__[field_name]
             except KeyError:
-                assert isinstance(form_field, forms.Field)
                 type_annotation = cls._get_field_type_annotation(form_field)
                 cls.__annotations__[field_name] = type_annotation
 
@@ -243,10 +236,10 @@ class EditFormInput(Generic[_ModelForm], DjangoFormInput[_ModelForm], abc.ABC):
     ) -> _ModelForm | FormError | NodeError:
         from tumpara.accounts.utils import build_permission_name
 
-        node = relay.resolve_node(info, self.id)
+        node = resolve_node(info, self.id)
         if node is None:
             return NodeError(requested_id=self.id)
-        assert isinstance(node, relay.DjangoNode)
+        assert isinstance(node, DjangoNode)
         assert isinstance(node.obj, self._form._meta.model)
         if not info.context.user.has_perm(
             build_permission_name(node.obj, "change"), node.obj

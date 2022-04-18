@@ -4,17 +4,16 @@ import strawberry
 from django.db import models
 
 from tumpara import api
-from tumpara.api import filtering, relay
 
 from .. import models as accounts_models
 
 
 @strawberry.input(description="Filtering options when querying `User` objects.")
 class UserFilter:
-    username: Optional[filtering.StringFilter] = None
-    full_name: Optional[filtering.StringFilter] = None
-    short_name: Optional[filtering.StringFilter] = None
-    any_name: Optional[filtering.StringFilter] = strawberry.field(
+    username: Optional[api.StringFilter] = None
+    full_name: Optional[api.StringFilter] = None
+    short_name: Optional[api.StringFilter] = None
+    any_name: Optional[api.StringFilter] = strawberry.field(
         default=None, description="Filter based on any of the name fields."
     )
     is_active: Optional[bool] = None
@@ -50,7 +49,7 @@ class UserFilter:
 
 @strawberry.type(name="User", description="A user with an account on this server.")
 class UserNode(
-    relay.DjangoNode[accounts_models.User],
+    api.DjangoNode[accounts_models.User],
     fields=["username", "full_name", "short_name", "email", "is_active"],
 ):
     @strawberry.field(description="Name to display for the user.")
@@ -73,13 +72,13 @@ class UserNode(
 
 
 @strawberry.type
-class UserEdge(relay.Edge[UserNode]):
+class UserEdge(api.Edge[UserNode]):
     node: UserNode
 
 
 @strawberry.type(description="A connection to a list of users.")
 class UserConnection(
-    relay.DjangoConnection[UserNode, accounts_models.User],
+    api.DjangoConnection[UserNode, accounts_models.User],
     name="user",
     pluralized_name="users",
 ):
@@ -89,7 +88,7 @@ class UserConnection(
 
 @strawberry.type
 class Query:
-    users: Optional[UserConnection] = relay.DjangoConnectionField(  # type: ignore
+    users: Optional[UserConnection] = api.DjangoConnectionField(  # type: ignore
         filter_type=UserFilter,
         description="All users available on this server.",
     )

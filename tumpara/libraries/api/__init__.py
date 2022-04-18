@@ -5,27 +5,26 @@ import strawberry
 from django import forms
 
 from tumpara import api
-from tumpara.api import relay
 from tumpara.libraries import models as libraries_models
 from tumpara.libraries import storage
 
 
 @strawberry.type(name="Library", description="A library containing media.")
 class LibraryNode(
-    relay.DjangoNode[libraries_models.Library],
+    api.DjangoNode[libraries_models.Library],
     fields=["source", "context"],
 ):
     pass
 
 
 @strawberry.type
-class LibraryEdge(relay.Edge[LibraryNode]):
+class LibraryEdge(api.Edge[LibraryNode]):
     node: LibraryNode
 
 
 @strawberry.type(description="A connection to a list of libraries.")
 class LibraryConnection(
-    relay.DjangoConnection[LibraryNode, libraries_models.Library],
+    api.DjangoConnection[LibraryNode, libraries_models.Library],
     name="library",
     pluralized_name="libraries",
 ):
@@ -44,7 +43,7 @@ def resolve_libraries_connection(
 
 @strawberry.type
 class Query:
-    libraries = relay.ConnectionField(  # type: ignore
+    libraries = api.ConnectionField(  # type: ignore
         description="All libraries that are available."
     )(resolve_libraries_connection)
 

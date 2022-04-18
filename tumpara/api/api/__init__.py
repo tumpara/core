@@ -5,31 +5,18 @@ import strawberry
 from django.contrib import auth
 from django.utils import timezone
 
+from tumpara import api
 from tumpara.accounts import api as accounts_api
 from tumpara.accounts import models as accounts_models
 
-from . import models as api_models
-from .utils import InfoType
+from .. import models as api_models
 
 
-@strawberry.type(description=api_models.Token.__doc__ or "")
-class Token:
-    key: Optional[str] = strawberry.field(
-        description=str(api_models.Token._meta.get_field("key").help_text)
-    )
-    user: accounts_api.UserNode = strawberry.field(
-        description=str(api_models.Token._meta.get_field("user").help_text)
-    )
-    expiry_timestamp: datetime.datetime = strawberry.field(
-        description=str(api_models.Token._meta.get_field("expiry_timestamp").help_text)
-    )
-    name: str = strawberry.field(
-        description=str(api_models.Token._meta.get_field("name").help_text)
-    )
-
-    @classmethod
-    def is_type_of(cls, obj: Any, info: InfoType) -> bool:
-        return isinstance(obj, api_models.Token)
+@strawberry.type(name="Token", description=api_models.Token.__doc__ or "")
+class TokenNode(
+    api.DjangoNode[api_models.Token], fields=["key", "user", "expiry_timestamp", "name"]
+):
+    user: accounts_api.UserNode
 
 
 @strawberry.type(
@@ -89,7 +76,7 @@ class UnknownAuthenticationMethodError:
 
 CreateTokenResult = strawberry.union(
     "CreateTokenResult",
-    types=(Token, InvalidCredentialsError, UnknownAuthenticationMethodError),
+    types=(TokenNode, InvalidCredentialsError, UnknownAuthenticationMethodError),
 )
 
 
@@ -104,6 +91,17 @@ class Query:
     ) -> list[Optional[AuthenticationMethod]]:
         return [PasswordAuthentication()]
 
+    @strawberry.field(description="Resolve a node by its ID.")
+    def node(
+        self,
+        info: api.InfoType,
+        node_id: Annotated[
+            strawberry.ID,
+            strawberry.argument(name="id", description="The global ID to resolve."),
+        ],
+    ) -> Optional[api.Node]:
+        return api.resolve_node(info, str(node_id))
+
 
 @strawberry.type
 class Mutation:
@@ -112,7 +110,7 @@ class Mutation:
     )
     def create_token(
         self,
-        info: InfoType,
+        info: api.InfoType,
         credentials: Annotated[
             list[str],
             strawberry.argument(
@@ -129,9 +127,9 @@ class Mutation:
             Optional[str],
             strawberry.argument(
                 description="Name of the token. Most of the time, this will be the "
-                "name of the client application."
+                "name of the client application.",
             ),
-        ],
+        ] = api.UNSET,
     ) -> Optional[CreateTokenResult]:
         if len(credentials) == 0:
             return UnknownAuthenticationMethodError(method="")
@@ -162,4 +160,4 @@ class Mutation:
             expiry_timestamp=timezone.now() + timezone.timedelta(days=7),
             name=name or "",
         )
-        return cast(Token, token)
+        return TokenNode.from_obj(token)

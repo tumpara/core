@@ -6,17 +6,9 @@ import binascii
 import dataclasses
 import typing
 from collections.abc import Collection
-from typing import (
-    TYPE_CHECKING,
-    Annotated,
-    Any,
-    ClassVar,
-    Generic,
-    Optional,
-    TypeVar,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Optional, TypeVar, cast
 
+import django.db.models.fields.related
 import strawberry
 import strawberry.types.types
 from django.db import models
@@ -24,7 +16,12 @@ from django.utils import encoding
 from django.utils.functional import cached_property
 from strawberry.field import StrawberryAnnotation, StrawberryField
 
-from ..utils import InfoType, NonGenericTypeDefinition, type_annotation_for_django_field
+from ..utils import (
+    InfoType,
+    NonGenericTypeDefinition,
+    extract_optional_type,
+    type_annotation_for_django_field,
+)
 
 if TYPE_CHECKING:
     from _typeshed import Self
@@ -120,6 +117,7 @@ class Node(abc.ABC):
 @strawberry.interface
 class DjangoNode(Generic[_Model], Node, abc.ABC):
     _model: ClassVar[type[_Model]]
+    _related_field_nodes: ClassVar[dict[str, type[DjangoNode[Any]]]]
     # The following two fields are not be exposed via GraphQL. Instead, they are only
     # here so that resolvers have access.
     pk: strawberry.Private[str]
@@ -140,6 +138,7 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
             model, models.Model
         ), f"DjangoNode classes must be initialized with a Django model (got {model!r})"
         cls._model = model
+        cls._related_field_nodes = {}
 
         # Patch the is_generic field (see the class' docstring for details).
         cls._type_definition.__class__ = NonGenericTypeDefinition  # type: ignore
@@ -153,7 +152,29 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
 
             model_field = model._meta.get_field(field_name)
             assert isinstance(model_field, models.Field)
-            type_annotation = type_annotation_for_django_field(model_field)
+
+            try:
+                # Re-use existing annotations. This might be the case for non-scalar
+                # field types like relationships.
+                type_annotation = cls.__annotations__[field_name]
+            except KeyError:
+                type_annotation = type_annotation_for_django_field(model_field)
+
+            if isinstance(model_field, models.ForeignKey):
+                # Validate that the user-provided types for related fields match up.
+                # This is used by from_obj() to recursively resolve related objects.
+                try:
+                    inner_type = extract_optional_type(type_annotation)
+                except TypeError:
+                    inner_type = type_annotation
+                assert issubclass(inner_type, DjangoNode)
+                assert model_field.remote_field.model is inner_type._model
+                cls._related_field_nodes[field_name] = type_annotation
+            elif isinstance(model_field, django.db.models.fields.related.RelatedField):
+                raise TypeError(
+                    "Related fields are not supported for automatic schema mapping. "
+                    "Please provide a custom field with resolver instead."
+                )
 
             api_field = StrawberryField(
                 python_name=field_name,
@@ -200,9 +221,12 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
 
         If possible, consider using :meth:`from_queryset` instead.
         """
-        kwargs = {
-            field_name: getattr(obj, field_name) for field_name in cls.field_names()
-        }
+        kwargs = dict[str, Any]()
+        for field_name in cls.field_names():
+            value = getattr(obj, field_name)
+            if field_name in cls._related_field_nodes:
+                value = cls._related_field_nodes[field_name].from_obj(value)
+            kwargs[field_name] = value
         return cls(_obj=obj, **kwargs)
 
     @classmethod
