@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
+import types
 import typing
 from typing import TYPE_CHECKING, Optional, Union
 
@@ -87,10 +88,13 @@ def type_annotation_for_django_field(field: models.Field | forms.Field) -> objec
 
 def extract_optional_type(type_annotation: object) -> object:
     """Extract the inner type of an optional."""
+    # Make sure the type annotation is actually resolved.
+    assert not isinstance(type_annotation, str)
+
     origin = typing.get_origin(type_annotation)
     if origin is Optional:
         return typing.get_args(type_annotation)[0]
-    elif origin is Union:
+    elif origin in (Union, types.UnionType):
         inner_types = list[object]()
         seen_none = False
         for inner_type in typing.get_args(type_annotation):
@@ -106,13 +110,19 @@ def extract_optional_type(type_annotation: object) -> object:
         if len(inner_types) == 1:
             return inner_types[0]
         else:
-            return Union[inner_types]
+            result = Union[inner_types[0], inner_types[1]]
+            for inner_type in inner_types[2:]:
+                result = result | inner_type
+            return result
     else:
         raise TypeError("provided type was not an optional")
 
 
 def is_type_optional(type_annotation: object) -> bool:
     """Check whether the given type annotation is an optional."""
+    # Make sure the type annotation is actually resolved.
+    assert not isinstance(type_annotation, str)
+
     try:
         extract_optional_type(type_annotation)
         return True

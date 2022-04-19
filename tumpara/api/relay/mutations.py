@@ -89,7 +89,7 @@ class DjangoFormInput(Generic[_Form], abc.ABC):
                 # When there is already an annotation (but no matching field), use that.
                 # This might be the case for enums or other complex type that need to
                 # be modeled individually and are not generated automatically.
-                type_annotation = cls.__annotations__[field_name]
+                type_annotation = typing.get_type_hints(cls)[field_name]
             except KeyError:
                 type_annotation = cls._get_field_type_annotation(form_field)
                 cls.__annotations__[field_name] = type_annotation

@@ -132,7 +132,11 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
                 super().__init_subclass__(**kwargs)
                 return
             elif origin is DjangoNode:
-                (model,) = typing.get_args(base)
+                try:
+                    (model,) = typing.get_args(base)
+                except ValueError:
+                    model = None
+                break
 
         assert model is not None and issubclass(
             model, models.Model
@@ -156,7 +160,7 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
             try:
                 # Re-use existing annotations. This might be the case for non-scalar
                 # field types like relationships.
-                type_annotation = cls.__annotations__[field_name]
+                type_annotation = typing.get_type_hints(cls)[field_name]
             except KeyError:
                 type_annotation = type_annotation_for_django_field(model_field)
 
@@ -169,7 +173,7 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
                     inner_type = type_annotation
                 assert issubclass(inner_type, DjangoNode)
                 assert model_field.remote_field.model is inner_type._model
-                cls._related_field_nodes[field_name] = type_annotation
+                cls._related_field_nodes[field_name] = inner_type
             elif isinstance(model_field, django.db.models.fields.related.RelatedField):
                 raise TypeError(
                     "Related fields are not supported for automatic schema mapping. "
@@ -224,7 +228,7 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
         kwargs = dict[str, Any]()
         for field_name in cls.field_names():
             value = getattr(obj, field_name)
-            if field_name in cls._related_field_nodes:
+            if value is not None and field_name in cls._related_field_nodes:
                 value = cls._related_field_nodes[field_name].from_obj(value)
             kwargs[field_name] = value
         return cls(_obj=obj, **kwargs)
