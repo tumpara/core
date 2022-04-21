@@ -5,6 +5,7 @@ import strawberry
 from django import forms
 
 from tumpara import api
+from tumpara.accounts import models as accounts_models
 from tumpara.libraries import models as libraries_models
 from tumpara.libraries import storage
 
@@ -14,7 +15,7 @@ class LibraryNode(
     api.DjangoNode[libraries_models.Library],
     fields=["source", "context"],
 ):
-    pass
+    _obj: strawberry.Private[libraries_models.Library]
 
 
 @strawberry.type
@@ -38,14 +39,14 @@ def resolve_libraries_connection(
     queryset = libraries_models.Library.objects.for_user(
         "libraries.view_library", info.context.user
     )
-    return LibraryConnection.from_queryset(queryset, info, **kwargs)
+    return LibraryConnection.from_queryset(queryset, info, **kwargs)  # type: ignore
 
 
 @strawberry.type
 class Query:
-    libraries = api.ConnectionField(  # type: ignore
-        description="All libraries that are available."
-    )(resolve_libraries_connection)
+    libraries = api.ConnectionField(description="All libraries that are available.")(
+        resolve_libraries_connection
+    )
 
     @strawberry.field(
         description="Check whether a given library source URI is valid. This query is "
@@ -70,20 +71,20 @@ class LibraryVisibility(enum.Enum):
     OWNERS = libraries_models.Visibility.OWNERS
 
 
-class LibraryForm(forms.ModelForm):
+class LibraryForm(forms.ModelForm[libraries_models.Library]):
     class Meta:
         model = libraries_models.Library
         fields = ["source", "default_visibility"]
 
 
-class CreateLibraryForm(forms.ModelForm):
+class CreateLibraryForm(LibraryForm):
     class Meta(LibraryForm.Meta):
         fields = LibraryForm.Meta.fields + ["context"]
 
 
 @strawberry.input(description="Edit an existing library.")
 class EditLibraryInput(api.EditFormInput[LibraryForm]):
-    default_visibility: Optional[LibraryVisibility]
+    default_visibility: Optional[LibraryVisibility]  # type: ignore
 
 
 @strawberry.input(description="Create a new library.")
@@ -96,25 +97,33 @@ LibraryMutationResult = strawberry.union(
 )
 
 
-def resolve_library_form(
-    info: api.InfoType, input: CreateLibraryInput | EditLibraryInput
-) -> Optional[LibraryMutationResult]:
-    form = input.prepare(info)
-    if not isinstance(form, LibraryForm):
-        return form
-    return LibraryNode.from_obj(form.save())
-
-
 @strawberry.type
 class Mutation:
-    @strawberry.field(description=CreateLibraryInput._type_definition.description)
+    @strawberry.field(
+        description=CreateLibraryInput._type_definition.description,  # type: ignore
+    )
     def create_library(
         self, info: api.InfoType, input: CreateLibraryInput
     ) -> Optional[LibraryMutationResult]:
-        return resolve_library_form(info, input)
+        form = input.prepare(info)
+        if not isinstance(form, CreateLibraryForm):
+            return form
 
-    @strawberry.field(description=EditLibraryInput._type_definition.description)
+        obj = form.save()
+        assert isinstance(obj, libraries_models.Library)
+
+        assert isinstance(info.context.user, accounts_models.User)
+        obj.add_membership(info.context.user, owner=True)
+
+        return LibraryNode(obj)
+
+    @strawberry.field(
+        description=EditLibraryInput._type_definition.description,  # type: ignore
+    )
     def edit_library(
         self, info: api.InfoType, input: EditLibraryInput
     ) -> Optional[LibraryMutationResult]:
-        return resolve_library_form(info, input)
+        form = input.prepare(info)
+        if not isinstance(form, LibraryForm):
+            return form
+        return LibraryNode(form.save())

@@ -54,8 +54,8 @@ autodoc_default_options = {
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "django": (
-        "http://docs.djangoproject.com/en/4.0/",
-        "http://docs.djangoproject.com/en/4.0/_objects/",
+        "https://docs.djangoproject.com/en/4.0/",
+        "https://docs.djangoproject.com/en/4.0/_objects/",
     ),
     "hypothesis": ("https://hypothesis.readthedocs.io/en/latest/", None),
     "pytest": ("https://docs.pytest.org/en/7.1.x/", None),

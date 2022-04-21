@@ -18,6 +18,9 @@ class TokenNode(
 ):
     user: accounts_api.UserNode
 
+    def __init__(self, _obj: api_models.Token):
+        self._obj = _obj
+
 
 @strawberry.type(
     description="Information on password authentication.\n\n"
@@ -108,7 +111,7 @@ class Mutation:
     @strawberry.mutation(
         description="Login as a user and create a token for API usage."
     )
-    def create_token(
+    def create_token(  # type: ignore
         self,
         info: api.InfoType,
         credentials: Annotated[
@@ -160,4 +163,4 @@ class Mutation:
             expiry_timestamp=timezone.now() + timezone.timedelta(days=7),
             name=name or "",
         )
-        return TokenNode.from_obj(token)
+        return TokenNode(token)

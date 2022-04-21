@@ -4,7 +4,7 @@ import datetime
 import decimal
 import types
 import typing
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import strawberry.types.info
 import strawberry.types.types
@@ -45,7 +45,9 @@ def check_authentication(info: InfoType) -> Optional[accounts_models.User]:
         return None
 
 
-def type_annotation_for_django_field(field: models.Field | forms.Field) -> object:
+def type_annotation_for_django_field(
+    field: models.Field[Any, Any] | forms.Field
+) -> object:
     """Return the correct type annotation for the API field, given a Django field.
 
     :param field: The Django field for which the equivalent should be returned. This may
@@ -110,7 +112,7 @@ def extract_optional_type(type_annotation: object) -> object:
         if len(inner_types) == 1:
             return inner_types[0]
         else:
-            result = Union[inner_types[0], inner_types[1]]
+            result: object = Union[inner_types[0], inner_types[1]]
             for inner_type in inner_types[2:]:
                 result = result | inner_type
             return result
@@ -131,7 +133,11 @@ def is_type_optional(type_annotation: object) -> bool:
 
 
 def get_field_description(
-    form: forms.BaseForm | type[forms.BaseForm], field_name: str
+    form: forms.Form
+    | type[forms.Form]
+    | forms.ModelForm[Any]
+    | type[forms.ModelForm[Any]],
+    field_name: str,
 ) -> str:
     """Extract the help text from a form field."""
     field = form.base_fields[field_name]

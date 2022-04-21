@@ -23,8 +23,9 @@ class UserViewingBackend(BaseBackend):
             or not cast(User, user_obj).is_authenticated
         ):
             return set()
+        assert isinstance(user_obj, User)
 
-        permissions: set[str]()
+        permissions = set[str]()
 
         if isinstance(obj, User):
             permissions = {build_permission_name(obj, "view")}

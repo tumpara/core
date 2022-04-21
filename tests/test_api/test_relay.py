@@ -40,7 +40,7 @@ def create_connection(
     last: Optional[int] = None,
 ) -> api.Connection[Any]:
     return Connection.from_sequence(
-        dataset,
+        dataset,  # type: ignore
         after=api.encode_key("Connection", after) if isinstance(after, int) else after,
         before=api.encode_key("Connection", before)
         if isinstance(before, int)

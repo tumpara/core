@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import dataclasses
+import inspect
 import typing
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, Optional, Union
+from collections.abc import Iterator, Sequence
+from typing import Any, ClassVar, Generic, Optional, TypeVar, Union, cast
 
 import strawberry.annotation
 import strawberry.arguments
@@ -16,8 +17,8 @@ from tumpara.api import filtering
 from ..utils import InfoType
 from .base import DjangoNode, _DjangoNode, _Model, _Node, decode_key, encode_key
 
-if TYPE_CHECKING:
-    from _typeshed import Self
+_DjangoConnection = TypeVar("_DjangoConnection", bound="DjangoConnection[Any, Any]")
+_Connection = TypeVar("_Connection", bound="Connection[Any]")
 
 
 @strawberry.type(
@@ -55,10 +56,12 @@ class Edge(Generic[_Node]):
         description="A cursor used for pagination in the corresponding connection."
     )
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, **kwargs: Any):
         # Delay the field initialization code, see this method in the Connection class
         # for details.
-        cls.node = strawberry.field(description="The node connected to the edge.")
+        cls.node = strawberry.field(  # type: ignore
+            description="The node connected to the edge.",
+        )
 
         super().__init_subclass__(**kwargs)
 
@@ -120,8 +123,8 @@ class Connection(Generic[_Node]):
         super().__init_subclass__(**kwargs)
 
     @classmethod
-    def empty(cls: type[Self], total_count: int = 0) -> Self:
-        return cls(  # type: ignore
+    def empty(cls: type[_Connection], total_count: int = 0) -> _Connection:
+        return cls(
             page_info=PageInfo(
                 has_next_page=False,
                 has_previous_page=False,
@@ -144,7 +147,7 @@ class Connection(Generic[_Node]):
                 arg for arg in typing.get_args(optional_annotation) if arg is not None
             )
             assert issubclass(inner_annotation, Edge)
-            return inner_annotation
+            return cast(type[Edge[_Node]], inner_annotation)
         except Exception as error:
             raise TypeError(
                 "Could not extract edge type from annotations - make sure the 'edges' "
@@ -154,14 +157,14 @@ class Connection(Generic[_Node]):
 
     @classmethod
     def from_sequence(
-        cls: type[Self],
+        cls: type[_Connection],
         sequence: Sequence[_Node],
         *,
         after: Optional[str] = None,
         before: Optional[str] = None,
         first: Optional[int] = None,
         last: Optional[int] = None,
-    ) -> Self:
+    ) -> _Connection:
         after_index: Optional[int] = None
         if after is not None:
             try:
@@ -237,7 +240,7 @@ class Connection(Generic[_Node]):
             for index, item in enumerate(sequence[slice_start:slice_stop])
         ]
         # MyPy doesn't get that cls is actually a dataclass:
-        return cls(  # type: ignore
+        return cls(
             page_info=PageInfo(
                 has_next_page=has_next_page,
                 has_previous_page=has_previous_page,
@@ -246,17 +249,17 @@ class Connection(Generic[_Node]):
             ),
             total_count=sequence_length,
             edges=edges,
-            nodes=(edge.node if edge is not None else None for edge in edges),
+            nodes=[edge.node if edge is not None else None for edge in edges],
         )
 
 
 class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
     """A connection superclass for connections with Django models."""
 
-    _node: ClassVar[type[_DjangoNode]]
-    _model: ClassVar[type[_Model]]
+    _node: ClassVar[type]
+    _model: ClassVar[type]
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, **kwargs: Any):
         node: Optional[type[_DjangoNode]] = None
         model: Optional[type[_Model]] = None
 
@@ -276,7 +279,7 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
             f"(got {model!r})"
         )
         assert (
-            node._model is model
+            node._get_model_type() is model
         ), "a DjangoConnection must point to the same model as the accompanying node"
         cls._node = node
         cls._model = model
@@ -284,8 +287,18 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
         super().__init_subclass__(**kwargs)
 
     @classmethod
+    def _get_node_type(cls) -> type[_DjangoNode]:
+        assert issubclass(cls._node, DjangoNode)
+        return cast(type[_DjangoNode], cls._node)
+
+    @classmethod
+    def _get_model_type(cls) -> type[_Model]:
+        assert issubclass(cls._model, models.Model)
+        return cast(type[_Model], cls._model)
+
+    @classmethod
     def from_queryset(
-        cls: type[Self],
+        cls: type[_DjangoConnection],
         queryset: models.QuerySet[_Model],
         info: InfoType,
         *,
@@ -293,7 +306,7 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
         before: Optional[str] = None,
         first: Optional[int] = None,
         last: Optional[int] = None,
-    ) -> Self:
+    ) -> _DjangoConnection:
         from tumpara.accounts.utils import build_permission_name
 
         if not info.context.user.has_perm(
@@ -305,22 +318,22 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
         # we only have a queryset (which yields model instances), we need to transform
         # that accordingly.
         class NodeSequence:
-            def __getitem__(self, item):
+            def __getitem__(self, item: int | slice) -> NodeSequence:
                 nonlocal queryset
                 assert isinstance(item, slice)
                 queryset = queryset[item]
                 return self
 
-            def __iter__(self):
+            def __iter__(self) -> Iterator[_Node]:
                 for obj in queryset:
-                    assert isinstance(obj, cls._model)
-                    yield cls._node.from_obj(obj)
+                    assert isinstance(obj, cls._get_model_type())
+                    yield cls._get_node_type()(obj)
 
-            def __len__(self):
+            def __len__(self) -> int:
                 return queryset.count()
 
         return cls.from_sequence(
-            NodeSequence(),
+            cast(Sequence[DjangoNode[_Model]], NodeSequence()),
             after=after,
             before=before,
             first=first,
@@ -447,13 +460,15 @@ class DjangoConnectionField(ConnectionField):
         # If our type is optional, we want the actual content type.
         if isinstance(connection_type, StrawberryOptional):
             connection_type = connection_type.of_type
-        assert issubclass(connection_type, DjangoConnection), (
+        assert inspect.isclass(connection_type) and issubclass(
+            connection_type, DjangoConnection
+        ), (
             f"Django connection fields must have resolve to a DjangoConnection type, "
             f"got {type(connection_type)}"
         )
 
         try:
-            queryset = connection_type._node.get_queryset(info)
+            queryset = connection_type._get_node_type().get_queryset(info)
 
             if (
                 self.filter_type is not None

@@ -46,10 +46,10 @@ class NewFileSignal(django.dispatch.Signal):
             receiver, context_references[sender], weak=weak, dispatch_uid=dispatch_uid
         )
 
-    def disconnect(
+    def disconnect(  # type: ignore
         self,
-        receiver: Optional[Callable] = None,
-        sender: Optional[object] = None,
+        receiver: Optional[NewFileReceiver] = None,
+        sender: Optional[str] = None,
         dispatch_uid: Optional[str] = None,
     ) -> bool:
         return super().disconnect(receiver, context_references[sender], dispatch_uid)
@@ -59,7 +59,7 @@ class NewFileSignal(django.dispatch.Signal):
 
     def send(  # type: ignore
         self, context: str, path: str, library: libraries_models.Library
-    ) -> list[tuple[Callable, Optional[str]]]:
+    ) -> list[tuple[NewFileReceiver, Optional[str]]]:
         return super().send(
             sender=context_references[context],
             context=context,
@@ -69,7 +69,7 @@ class NewFileSignal(django.dispatch.Signal):
 
     def send_robust(  # type: ignore
         self, context: str, path: str, library: libraries_models.Library
-    ) -> list[tuple[Callable, Union[ValueError, str]]]:
+    ) -> list[tuple[NewFileReceiver, Union[ValueError, str]]]:
         return super().send_robust(
             sender=context_references[context],
             context=context,

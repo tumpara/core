@@ -13,6 +13,7 @@ from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 
 from tumpara.accounts import models as accounts_models
+from tumpara.accounts.models import JoinableQueryset
 
 from . import scanner, storage
 
@@ -37,6 +38,13 @@ class Visibility:
 
 def validate_library_source(source: str) -> None:
     storage.backends.build(source).check()
+
+
+class LibraryQueryset(JoinableQueryset["Library"]):
+    pass
+
+
+LibraryManager = models.Manager.from_queryset(LibraryQueryset)
 
 
 class Library(accounts_models.Joinable):
@@ -66,6 +74,8 @@ class Library(accounts_models.Joinable):
         default=Visibility.MEMBERS,
         help_text=_("Default visibility value for records where it is not defined."),
     )
+
+    objects = LibraryManager()
 
     class Meta:
         verbose_name = _("library")

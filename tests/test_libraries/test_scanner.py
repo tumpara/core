@@ -17,13 +17,15 @@ from .test_event_handling import library  # noqa: F401
 @pytest.mark.django_db
 def test_scanner_worker(
     monkeypatch: pytest.MonkeyPatch, library: libraries_models.Library
-):
+) -> None:
     """The scanner worker successfully processes a series of events."""
     TestingStorage.set("foo", "content")
     TestingStorage.set("bar", "content")
     TestingStorage.set("baz", "content")
 
-    event_queue = multiprocessing.JoinableQueue()
+    event_queue: multiprocessing.JoinableQueue[
+        scanner.Event
+    ] = multiprocessing.JoinableQueue()
     event_queue.put(scanner.FileEvent("foo"))
     event_queue.put(scanner.FileEvent("bar"))
     event_queue.put(scanner.FileEvent("baz"))

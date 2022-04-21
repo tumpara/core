@@ -36,6 +36,7 @@ def execute_sync(
     query: str,
     authentication: Optional[accounts_models.User | api_models.Token] = None,
     /,
+    operation_name: Optional[str] = None,
     **variables: Any,
 ) -> strawberry.types.execution.ExecutionResult:
     """Shorthand for directly executing a query against the GraphQL schema.
@@ -66,7 +67,12 @@ def execute_sync(
             token=None,
         )
 
-    return schema.execute_sync(query, variable_values=variables, context_value=context)
+    return schema.execute_sync(
+        query,
+        variable_values=variables,
+        context_value=context,
+        operation_name=operation_name,
+    )
 
 
 urlpatterns = [

@@ -5,7 +5,7 @@ import pytest
 from tumpara.api import utils
 
 
-def test_is_optional():
+def test_is_optional() -> None:
     assert utils.is_type_optional(Optional[str])
     assert utils.is_type_optional(int | None)
     assert utils.is_type_optional(None | float)
@@ -17,7 +17,7 @@ def test_is_optional():
     assert not utils.is_type_optional(float | int)
 
 
-def test_extract_optional_type():
+def test_extract_optional_type() -> None:
     assert utils.extract_optional_type(Optional[str]) is str
     assert utils.extract_optional_type(int | None) is int
     assert utils.extract_optional_type(None | float) is float

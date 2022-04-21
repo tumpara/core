@@ -5,19 +5,20 @@ import dataclasses
 import enum
 import inspect
 import typing
-from typing import Any, ClassVar, Generic, Optional, TypeVar
+from typing import Any, ClassVar, Generic, Optional, TypeVar, cast
 
 import strawberry.arguments
 from django import forms
 from django.core.exceptions import ValidationError
+from django.db import models
 from django.utils import encoding
 from strawberry.field import StrawberryAnnotation, StrawberryField
 
 from ..utils import InfoType, is_type_optional, type_annotation_for_django_field
 from .base import DjangoNode, resolve_node
 
-_Form = TypeVar("_Form", bound="forms.BaseForm")
-_ModelForm = TypeVar("_ModelForm", bound="forms.ModelForm")
+_Form = TypeVar("_Form", bound="forms.Form | forms.ModelForm[Any]")
+_ModelForm = TypeVar("_ModelForm", bound="forms.ModelForm[Any]")
 
 
 @strawberry.type(
@@ -56,9 +57,9 @@ class NodeError:
 
 @dataclasses.dataclass
 class DjangoFormInput(Generic[_Form], abc.ABC):
-    _form: ClassVar[type[_Form]]
+    _form: ClassVar[type]
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, **kwargs: Any):
         form_class: Optional[type[_Form]] = None
 
         for base in cls.__orig_bases__:  # type: ignore
@@ -70,15 +71,17 @@ class DjangoFormInput(Generic[_Form], abc.ABC):
                 (form_class,) = typing.get_args(base)
 
         if not hasattr(cls, "_form"):
-            cls._form = form_class
-        assert form_class is not None and issubclass(form_class, forms.BaseForm), (
+            cls._form = cast(type[_Form], form_class)
+        assert cls._form is not None and issubclass(
+            cls._form, (forms.Form, forms.ModelForm)
+        ), (
             f"DjangoFormType classes must be initialized with a Django form (got "
             f"{form_class!r}"
         )
 
         api_fields_with_default = list[StrawberryField]()
 
-        for field_name, form_field in form_class.base_fields.items():
+        for field_name, form_field in cls._form.base_fields.items():
             # Skip fields that have already been defined.
             if hasattr(cls, field_name):
                 continue
@@ -137,12 +140,8 @@ class DjangoFormInput(Generic[_Form], abc.ABC):
 
         super().__init_subclass__(**kwargs)
 
-    @classmethod
-    def _get_field_type_annotation(cls, form_field: forms.Field) -> object:
-        return type_annotation_for_django_field(form_field)
-
     def _create_form(
-        self, info: InfoType, data: dict[Any, Any]
+        self, info: InfoType, data: dict[Any, Any], **kwargs: Any
     ) -> _Form | FormError | NodeError:
         processed_data = dict[Any, Any]()
         for key, value in data.items():
@@ -152,7 +151,7 @@ class DjangoFormInput(Generic[_Form], abc.ABC):
                 processed_data[key] = value.value
             else:
                 processed_data[key] = value
-        return self._form(processed_data)
+        return cast(_Form, self._get_form_type()(processed_data, **kwargs))
 
     def prepare(self, info: InfoType) -> _Form | FormError | NodeError:
         """Create an actual (potentially bound) instance of the form that contains all
@@ -168,7 +167,7 @@ class DjangoFormInput(Generic[_Form], abc.ABC):
             API caller.
         """
         form = self._create_form(info, dataclasses.asdict(self))
-        if not isinstance(form, self._form):
+        if not isinstance(form, self._get_form_type()):
             return form
 
         if not form.is_valid():
@@ -185,11 +184,18 @@ class DjangoFormInput(Generic[_Form], abc.ABC):
 
         return form
 
+    @classmethod
+    def _get_field_type_annotation(cls, form_field: forms.Field) -> object:
+        return type_annotation_for_django_field(form_field)
+
+    @classmethod
+    def _get_form_type(cls) -> type[_Form]:
+        assert issubclass(cls._form, (forms.Form, forms.ModelForm))
+        return cast(type[_Form], cls._form)
+
 
 @dataclasses.dataclass
 class DjangoModelFormInput(Generic[_ModelForm], DjangoFormInput[_ModelForm], abc.ABC):
-    _form: ClassVar[type[_ModelForm]]
-
     def __init_subclass__(cls, **kwargs: Any):
         super().__init_subclass__(**kwargs)
         if any(
@@ -203,24 +209,28 @@ class DjangoModelFormInput(Generic[_ModelForm], DjangoFormInput[_ModelForm], abc
             f"form (got {cls._form!r})"
         )
 
+    @classmethod
+    def _get_model_type(cls) -> type[models.Model]:
+        return cls._get_form_type()._meta.model  # type: ignore
+
 
 @dataclasses.dataclass
 class CreateFormInput(Generic[_ModelForm], DjangoModelFormInput[_ModelForm], abc.ABC):
     def _create_form(
-        self, info: InfoType, data: dict[Any, Any]
+        self, info: InfoType, data: dict[Any, Any], **kwargs: Any
     ) -> _ModelForm | FormError | NodeError:
         from tumpara.accounts.utils import build_permission_name
 
         if not info.context.user.has_perm(
-            build_permission_name(self._form._meta.model, "add")
+            build_permission_name(self._get_model_type(), "add")
         ):
             return NodeError(requested_id=None)
 
-        return super()._create_form(info, data)
+        return super()._create_form(info, data, **kwargs)
 
 
 @dataclasses.dataclass
-class EditFormInput(Generic[_ModelForm], DjangoFormInput[_ModelForm], abc.ABC):
+class EditFormInput(Generic[_ModelForm], DjangoModelFormInput[_ModelForm], abc.ABC):
     id: strawberry.ID = strawberry.field(description="ID of the object to update.")
 
     @classmethod
@@ -232,7 +242,7 @@ class EditFormInput(Generic[_ModelForm], DjangoFormInput[_ModelForm], abc.ABC):
         return type_annotation
 
     def _create_form(
-        self, info: InfoType, data: dict[Any, Any]
+        self, info: InfoType, data: dict[Any, Any], **kwargs: Any
     ) -> _ModelForm | FormError | NodeError:
         from tumpara.accounts.utils import build_permission_name
 
@@ -240,16 +250,18 @@ class EditFormInput(Generic[_ModelForm], DjangoFormInput[_ModelForm], abc.ABC):
         if node is None:
             return NodeError(requested_id=self.id)
         assert isinstance(node, DjangoNode)
-        assert isinstance(node.obj, self._form._meta.model)
+        assert isinstance(node.obj, self._get_model_type())
         if not info.context.user.has_perm(
             build_permission_name(node.obj, "change"), node.obj
         ):
             return NodeError(requested_id=self.id)
 
-        return self._form(
+        return super()._create_form(
+            info,
             {
                 key: getattr(node.obj, key) if value is None else value
                 for key, value in data.items()
             },
             instance=node.obj,
+            **kwargs,
         )

@@ -4,8 +4,8 @@ from tumpara.libraries import signals as libraries_signals
 from tumpara.libraries import storage
 
 
-class TestStorageConfig(AppConfig):
-    name = "tests.test_storage"
+class TestLibrariesConfig(AppConfig):
+    name = "tests.test_libraries"
 
     def ready(self) -> None:
         from .models import GenericHandler

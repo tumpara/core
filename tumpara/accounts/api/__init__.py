@@ -52,6 +52,13 @@ class UserNode(
     api.DjangoNode[accounts_models.User],
     fields=["username", "full_name", "short_name", "email", "is_active"],
 ):
+    username: str
+    short_name: str
+    full_name: str
+
+    def __init__(self, _obj: accounts_models.User):
+        self._obj = _obj
+
     @strawberry.field(description="Name to display for the user.")
     def display_name(self) -> str:
         if self.short_name:
@@ -99,6 +106,7 @@ class Query:
     )
     def me(self, info: api.InfoType) -> Optional[UserNode]:
         if api.check_authentication(info):
-            return UserNode.from_obj(info.context.user)
+            assert isinstance(info.context.user, accounts_models.User)
+            return UserNode(info.context.user)
         else:
             return None

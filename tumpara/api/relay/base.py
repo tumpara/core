@@ -4,6 +4,7 @@ import abc
 import base64
 import binascii
 import dataclasses
+import inspect
 import typing
 from collections.abc import Collection
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Optional, TypeVar, cast
@@ -26,9 +27,9 @@ from ..utils import (
 if TYPE_CHECKING:
     from _typeshed import Self
 
-_Node = TypeVar("_Node", bound="Node")
-_DjangoNode = TypeVar("_DjangoNode", bound="DjangoNode")
-_Model = TypeVar("_Model", bound="models.Model")
+_Node = TypeVar("_Node", bound="Node", covariant=True)
+_Model = TypeVar("_Model", bound="models.Model", covariant=True)
+_DjangoNode = TypeVar("_DjangoNode", bound="DjangoNode[Any]", covariant=True)
 
 
 def decode_key(value: str) -> tuple[str, ...]:
@@ -87,43 +88,41 @@ class Node(abc.ABC):
     """An object that can be globally referenced with an ID."""
 
     @strawberry.field(description="The ID of the object.")
-    def id(root: Any, info: InfoType) -> strawberry.ID:
+    def id(self, info: InfoType) -> strawberry.ID:
         type_name = info.path.typename
         assert isinstance(
             type_name, str
         ), "could not determine type name for resolving node ID"
 
         origin, type_definition = get_node_origin(type_name, info)
-        key = origin.get_key_for_node(root, info)
+        key = self.get_key(info)
         key_tuple = (key,) if isinstance(key, str) else key
 
         return cast(strawberry.ID, encode_key(type_definition.name, *key_tuple))
 
-    @classmethod
-    def get_key_for_node(cls, node: Any, info: InfoType) -> str | tuple[str, ...]:
+    def get_key(self, info: InfoType) -> str | tuple[str, ...]:
         """Extract the key used to generate a unique ID for an instance of this Node."""
         raise NotImplementedError(
-            f"Cannot generate a global ID for object of type {type(node)!r}. If "
+            f"Cannot generate a global ID for object of type {type(self)!r}. If "
             f"this is not intentional, extend the Node type and override the "
             f"'get_key_for_node' method."
         )
 
     @classmethod
     @abc.abstractmethod
-    def get_node_from_key(cls: type[Self], info: InfoType, *key: str) -> Optional[Self]:
+    def from_key(cls: type[Self], info: InfoType, *key: str) -> Optional[Self]:
         """Resolve an instance of this node type from the global ID's key."""
 
 
 @strawberry.interface
 class DjangoNode(Generic[_Model], Node, abc.ABC):
-    _model: ClassVar[type[_Model]]
+    _model: ClassVar[type[models.Model]]
     _related_field_nodes: ClassVar[dict[str, type[DjangoNode[Any]]]]
-    # The following two fields are not be exposed via GraphQL. Instead, they are only
-    # here so that resolvers have access.
-    pk: strawberry.Private[str]
-    _obj: strawberry.Private[Optional[_Model]]
+    # The following field is not exposed through GraphQL. It is used by DjangoNodeField
+    # to resolve attribute values.
+    _obj: strawberry.Private[_Model]
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, **kwargs: Any):
         model: Optional[type[_Model]] = None
 
         for base in cls.__orig_bases__:  # type: ignore
@@ -142,7 +141,7 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
             model, models.Model
         ), f"DjangoNode classes must be initialized with a Django model (got {model!r})"
         cls._model = model
-        cls._related_field_nodes = {}
+        cls._related_field_nodes = dict[str, type[DjangoNode[Any]]]()
 
         # Patch the is_generic field (see the class' docstring for details).
         cls._type_definition.__class__ = NonGenericTypeDefinition  # type: ignore
@@ -166,13 +165,14 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
 
             if isinstance(model_field, models.ForeignKey):
                 # Validate that the user-provided types for related fields match up.
-                # This is used by from_obj() to recursively resolve related objects.
                 try:
                     inner_type = extract_optional_type(type_annotation)
                 except TypeError:
                     inner_type = type_annotation
+                assert inspect.isclass(inner_type)
                 assert issubclass(inner_type, DjangoNode)
-                assert model_field.remote_field.model is inner_type._model
+                # For some reason, mypy thinks inner_type is <nothing> here.
+                assert model_field.remote_field.model is inner_type._get_model_type()  # type: ignore
                 cls._related_field_nodes[field_name] = inner_type
             elif isinstance(model_field, django.db.models.fields.related.RelatedField):
                 raise TypeError(
@@ -185,25 +185,66 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
                 type_annotation=StrawberryAnnotation(type_annotation),
                 description=encoding.force_str(model_field.help_text),
             )
+            # Django fields don't need to be in the constructor because they have a
+            # resolver that handles that.
+            api_field.init = False
             setattr(cls, field_name, api_field)
             cls.__annotations__[field_name] = type_annotation
 
         super().__init_subclass__(**kwargs)
 
-    @cached_property
-    def obj(self) -> _Model:
-        """The model object this node refers to.
+    def __getattribute__(self, name: str) -> Any:
+        # Proxy attribute access to the model object. This is required so that the
+        # fields work.
+        if name.startswith("_") or name not in self._get_field_names():
+            return super().__getattribute__(name)
 
-        If possible, it is preferred to use the primary key attribute :attr:`pk` of the
-        node instead. The object may not always be available and might cause another
-        database query.
+        if name in self._related_field_nodes:
+            obj = getattr(self._obj, name)
+            node_type = self._related_field_nodes[name]
+            assert issubclass(node_type, DjangoNode)
+            if obj is None:
+                return None
+            else:
+                assert isinstance(obj, node_type._get_model_type())
+                return node_type(obj)
+        else:
+            return getattr(self._obj, name)
+
+    def get_key(self, info: InfoType) -> str:
+        """Extract the key used to generate a unique ID for an instance of this Node.
+
+        For Django objects, the default implementation will return the primary key.
         """
-        if self._obj is None:
-            self._obj = self._model._default_manager.get(pk=self.pk)
-        return self._obj
+        return str(self._obj.pk)
 
     @classmethod
-    def field_names(cls) -> Collection[str]:
+    def from_key(
+        cls: type[_DjangoNode], info: InfoType, *key: str
+    ) -> Optional[_DjangoNode]:
+        from tumpara.accounts.utils import build_permission_name
+
+        model = cls._get_model_type()
+
+        assert len(key) == 1, "invalid key format"
+        if not info.context.user.has_perm(build_permission_name(model, "view")):
+            return None
+
+        try:
+            obj = cls.get_queryset(info).get(pk=key[0])
+        except NotImplementedError:
+            # We don't have a queryset that respects permissions, so we need to check
+            # ourselves.
+            obj = model._default_manager.get(pk=key[0])
+            if not info.context.user.has_perm(
+                build_permission_name(model, "view"), obj
+            ):
+                return None
+
+        return cls(obj)
+
+    @classmethod
+    def _get_field_names(cls) -> Collection[str]:
         """Return the names of all fields required to initialize a node."""
         result = [
             # The primary key field would be filtered out in the following loop, so we
@@ -220,32 +261,9 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
         return result
 
     @classmethod
-    def from_obj(cls: type[Self], obj: _Model) -> Self:
-        """Create a node instance from a Django model object.
-
-        If possible, consider using :meth:`from_queryset` instead.
-        """
-        kwargs = dict[str, Any]()
-        for field_name in cls.field_names():
-            value = getattr(obj, field_name)
-            if value is not None and field_name in cls._related_field_nodes:
-                value = cls._related_field_nodes[field_name].from_obj(value)
-            kwargs[field_name] = value
-        return cls(_obj=obj, **kwargs)
-
-    @classmethod
-    def from_queryset(cls: type[Self], queryset: models.QuerySet[_Model]) -> Self:
-        """Create a node instance from a single-entry queryset.
-
-        The provided queryset should:
-
-        - Contain exactly one item (:meth:`~models.QuerySet.count` should return 1).
-        - Already be filtered according to the appropriate permissions. No further
-          checks will be performed.
-        """
-        assert queryset.model is cls._model
-        values = queryset.values(cls.field_names()).get()
-        return cls(_obj=None, **values)
+    def _get_model_type(cls) -> type[_Model]:
+        assert issubclass(cls._model, models.Model)
+        return cast(type[_Model], cls._model)
 
     @classmethod
     def get_queryset(cls, info: InfoType) -> models.QuerySet[_Model]:
@@ -259,38 +277,8 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
         """
         raise NotImplementedError
 
-    @classmethod
-    def get_node_from_key(cls: type[Self], info: InfoType, *key: str) -> Optional[Self]:
-        from tumpara.accounts.utils import build_permission_name
-
-        assert len(key) == 1, "invalid key format"
-        if not info.context.user.has_perm(build_permission_name(cls._model, "view")):
-            return None
-
-        try:
-            obj = cls.get_queryset(info).get(pk=key[0])
-        except NotImplementedError:
-            # We don't have a queryset that respects permissions, so we need to check
-            # ourselves.
-            obj = cls._model._default_manager.get(pk=key[0])
-            if not info.context.user.has_perm(
-                build_permission_name(cls._model, "view"), obj
-            ):
-                return None
-
-        return cls.from_obj(obj)
-
-    @classmethod
-    def get_key_for_node(cls, node: Any, info: InfoType) -> str:
-        """Extract the key used to generate a unique ID for an instance of this Node.
-
-        For Django objects, the default implementation will return the primary key.
-        """
-        assert isinstance(node, cls)
-        return str(node.pk)
-
 
 def resolve_node(info: InfoType, node_id: str) -> Optional[Node]:
     type_name, *key = decode_key(node_id)
     origin, _ = get_node_origin(type_name, info)
-    return origin.get_node_from_key(info, *key)
+    return origin.from_key(info, *key)

@@ -38,11 +38,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
-def pytest_configure(config: pytest.Config):
+def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "slow: mark test as slow to run")
 
 
-def pytest_collection_modifyitems(config: pytest.Config, items: Sequence[pytest.Item]):
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: Sequence[pytest.Item]
+) -> None:
     if not config.getoption("--run-slow"):
         skip_marker = pytest.mark.skip(
             reason="Won't run expensive test unless --run-slow is given."

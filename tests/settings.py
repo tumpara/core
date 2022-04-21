@@ -5,7 +5,7 @@ from tumpara.settings.testing import *
 INSTALLED_APPS += [
     "tests.test_accounts",
     "tests.test_api",
-    "tests.test_storage",
+    "tests.test_libraries",
 ]
 
 
