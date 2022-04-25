@@ -4,7 +4,8 @@ import datetime
 import decimal
 import types
 import typing
-from typing import TYPE_CHECKING, Any, Optional, Union
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Annotated, Any, Optional, TypeVar, Union
 
 import strawberry.types.info
 import strawberry.types.types
@@ -15,7 +16,11 @@ from django.utils import encoding
 from .views import ApiContext
 
 if TYPE_CHECKING:
+    import strawberry.arguments
+
     from tumpara.accounts import models as accounts_models
+
+_T = TypeVar("_T")
 
 InfoType = strawberry.types.info.Info[ApiContext, None]
 
@@ -142,3 +147,41 @@ def get_field_description(
     """Extract the help text from a form field."""
     field = form.base_fields[field_name]
     return encoding.force_str(field.help_text)
+
+
+def with_argument_annotation(
+    **annotations: strawberry.arguments.StrawberryArgumentAnnotation,
+) -> Callable[[_T], _T]:
+    """Add the given annotations to specific arguments on a resolver.
+
+    This should be used as a decorator on resolver methods, before applying
+    :func:`strawberry.field` or :func:`strawberry.mutation`. The reason that this exists
+    even though ``Annotated[int, strawberry.argument(...)]`` works is because the
+    project also uses the django_stubs plugin for MyPy. This specific plugin seems to
+    assume that :class:`~typing.Annotated` will always have a non-optional type as the
+    first argument and subsequently crashes when using an annotation that is optional.
+
+    To use this decorator, pass the object returned by :func:`strawberry.argument` as
+    the keyword arguments for everything that should be decorated. The existing
+    annotation will be wrapped in an :class:`~typing.Annotated` with the provided
+    augmentation.
+
+    See the implementation of the `create_token` mutation for an example.
+    """
+
+    def decorate(resolver: _T) -> _T:
+        for name, argument_annotation in annotations.items():
+            # We explicitly don't use typing.get_type_hints here because we don't
+            # actually need to resolve the end type.
+            if name not in resolver.__annotations__:
+                raise ValueError(
+                    f"could not augment GraphQL field argument because no existing "
+                    f"annotation exists: {name}"
+                )
+            resolver.__annotations__[name] = Annotated[
+                resolver.__annotations__[name],
+                argument_annotation,
+            ]
+        return resolver
+
+    return decorate

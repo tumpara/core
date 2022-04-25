@@ -1,5 +1,4 @@
-import datetime
-from typing import Annotated, Any, Optional, cast
+from typing import Annotated, Optional, cast
 
 import strawberry
 from django.contrib import auth
@@ -10,6 +9,7 @@ from tumpara.accounts import api as accounts_api
 from tumpara.accounts import models as accounts_models
 
 from .. import models as api_models
+from ..utils import with_argument_annotation
 
 
 @strawberry.type(name="Token", description=api_models.Token.__doc__ or "")
@@ -98,7 +98,7 @@ class Query:
     def node(
         self,
         info: api.InfoType,
-        node_id: Annotated[
+        node_id: Annotated[  # type: ignore
             strawberry.ID,
             strawberry.argument(name="id", description="The global ID to resolve."),
         ],
@@ -111,10 +111,16 @@ class Mutation:
     @strawberry.mutation(
         description="Login as a user and create a token for API usage."
     )
-    def create_token(  # type: ignore
+    @with_argument_annotation(
+        name=strawberry.argument(
+            description="Name of the token. Most of the time, this will be the "
+            "name of the client application.",
+        )
+    )
+    def create_token(
         self,
         info: api.InfoType,
-        credentials: Annotated[
+        credentials: Annotated[  # type: ignore
             list[str],
             strawberry.argument(
                 description="Credentials to log in with. This must be a list with "
@@ -126,13 +132,7 @@ class Mutation:
                 "in that order."
             ),
         ],
-        name: Annotated[
-            Optional[str],
-            strawberry.argument(
-                description="Name of the token. Most of the time, this will be the "
-                "name of the client application.",
-            ),
-        ] = api.UNSET,
+        name: Optional[str] = api.UNSET,
     ) -> Optional[CreateTokenResult]:
         if len(credentials) == 0:
             return UnknownAuthenticationMethodError(method="")

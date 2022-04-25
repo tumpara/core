@@ -19,7 +19,12 @@ from .relay.connection import (
     PageInfo,
 )
 from .relay.mutations import CreateFormInput, EditFormInput, FormError, NodeError
-from .utils import InfoType, check_authentication, get_field_description
+from .utils import (
+    InfoType,
+    check_authentication,
+    get_field_description,
+    with_argument_annotation,
+)
 
 __all__ = [
     "UNSET",
@@ -48,4 +53,5 @@ __all__ = [
     "filtering",
     "get_field_description",
     "relay",
+    "with_argument_annotation",
 ]
