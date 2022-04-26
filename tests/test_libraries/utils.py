@@ -215,17 +215,7 @@ class LibraryActionsStateMachine(hypothesis.stateful.RuleBasedStateMachine):
 
         assert file_queryset.count() == len(self.files)
         for content in self.files.values():
-            try:
-                handler = GenericHandler.objects.get(
-                    records__library=library, content=content
-                )
-            except GenericHandler.MultipleObjectsReturned:
-                raise
-            assert handler.initialized
-            record = libraries_models.Record.objects.get(
-                content_type=ContentType.objects.get_for_model(handler),
-                object_pk=handler.pk,
-            )
+            record = GenericHandler.objects.get(library=library, content=content)
             paths = {item[0] for item in self.files.items() if item[1] == content}
             assert record.files.filter(availability__isnull=False).count() == len(paths)
             for path in paths:

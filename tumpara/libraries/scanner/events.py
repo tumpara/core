@@ -160,9 +160,9 @@ class FileEvent(Event):
                 library=library,
             )
             responses = [
-                cast(libraries_models.Record | models.Model, response)
+                cast(libraries_models.Record, response)
                 for _, response in result
-                if isinstance(response, models.Model)
+                if isinstance(response, libraries_models.Record)
             ]
             if len(responses) == 0:
                 bail("no compatible file handler was found")
@@ -171,20 +171,9 @@ class FileEvent(Event):
                 bail("more than one compatible file handler was found")
                 return
             else:
-                response = responses[0]
-                if isinstance(response, libraries_models.Record):
-                    record = response
-                else:
-                    # This is the case where we got a content object from the signal
-                    # receiver (which may be unsaved). In that case, create (or find) a
-                    # record for it.
-                    if response._state.adding:
-                        response.save()
-                    record, _ = libraries_models.Record.objects.get_or_create(
-                        library=library,
-                        content_type=ContentType.objects.get_for_model(response),
-                        object_pk=response.pk,
-                    )
+                record = responses[0]
+                if record._state.adding:
+                    record.save()
 
                 file = libraries_models.File.objects.create(
                     record=record,
@@ -209,8 +198,9 @@ class FileEvent(Event):
             file.save()
 
         if need_change_signal:
+            resolved_record = file.record.resolve_instance()
             libraries_signals.files_changed.send_robust(
-                sender=file.record.content_type.model_class(), record=file.record
+                sender=type(resolved_record), record=resolved_record
             )
 
 
@@ -292,8 +282,9 @@ class FileMovedEvent(Event):
                 f"is in an ignored directory. Records were marked unavailable."
             )
             for record in touched_records:
+                resolved_record = record.resolve_instance()
                 libraries_signals.files_changed.send_robust(
-                    sender=record.content_type.model_class(), record=record
+                    sender=type(resolved_record), record=resolved_record
                 )
         else:
             affected_rows = file_queryset.update(
@@ -349,8 +340,9 @@ class FileRemovedEvent(Event):
             _logger.debug(f"Removed {self.path} in {library}.")
 
         for record in touched_records:
+            resolved_record = record.resolve_instance()
             libraries_signals.files_changed.send_robust(
-                sender=record.content_type.model_class(), record=record
+                sender=type(resolved_record), record=resolved_record
             )
 
 
@@ -389,8 +381,9 @@ class DirectoryMovedEvent(Event):
             )
 
             for record in touched_records:
+                resolved_record = record.resolve_instance()
                 libraries_signals.files_changed.send_robust(
-                    sender=record.content_type.model_class(), record=record
+                    sender=type(resolved_record), record=resolved_record
                 )
         else:
             count = 0
@@ -436,8 +429,9 @@ class DirectoryRemovedEvent(Event):
         )
 
         for record in touched_records:
+            resolved_record = record.resolve_instance()
             libraries_signals.files_changed.send_robust(
-                sender=record.content_type.model_class(), record=record
+                sender=type(resolved_record), record=resolved_record
             )
 
 
@@ -477,6 +471,7 @@ class ScanEvent(Event):
         )
 
         for record in touched_records:
+            resolved_record = record.resolve_instance()
             libraries_signals.files_changed.send_robust(
-                sender=record.content_type.model_class(), record=record
+                sender=type(resolved_record), record=resolved_record
             )

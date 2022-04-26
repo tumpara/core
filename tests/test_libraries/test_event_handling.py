@@ -40,10 +40,10 @@ def test_basic_file_scanning(
     assert file.library == library
     assert file.path == "foo"
     assert file.availability is not None
-    content = file.record.content_object
-    assert isinstance(content, GenericHandler)
-    assert content.initialized
-    assert content.content == b"hello"
+    record = file.record.resolve_instance()
+    assert isinstance(record, GenericHandler)
+    assert record.initialized
+    assert record.content == b"hello"
 
     with monkeypatch.context() as patch_context:
         patch_context.setattr(
@@ -58,9 +58,9 @@ def test_basic_file_scanning(
         scanner.FileModifiedEvent("foo").commit(library)
         assert libraries_models.File.objects.count() == 1
         file.refresh_from_db()
-        content = file.record.content_object
-        assert isinstance(content, GenericHandler)
-        assert content.content == b"bye"
+        record = file.record.resolve_instance()
+        assert isinstance(record, GenericHandler)
+        assert record.content == b"bye"
 
 
 @pytest.mark.django_db
@@ -148,9 +148,9 @@ def test_refinding_files(library: libraries_models.Library) -> None:
     bar_file = libraries_models.File.objects.get(path="bar")
     assert not bar_file.available
     bar_digest = bar_file.digest
-    bar_content = bar_file.record.content_object
-    assert isinstance(bar_content, GenericHandler)
-    assert bar_content.content == b"bar"
+    bar_record = bar_file.record.resolve_instance()
+    assert isinstance(bar_record, GenericHandler)
+    assert bar_record.content == b"bar"
 
     # Move the first file's content to a different location and add it back in. Then the
     # existing file object should be used.
@@ -175,9 +175,9 @@ def test_refinding_files(library: libraries_models.Library) -> None:
     bar_file = bar_file  # Trick MyPy again, see above
     assert bar_file.available
     assert bar_file.digest != bar_digest
-    bar_content = bar_file.record.content_object
-    assert isinstance(bar_content, GenericHandler)
-    assert bar_content.content == b"whooo"
+    bar_record = bar_file.record.resolve_instance()
+    assert isinstance(bar_record, GenericHandler)
+    assert bar_record.content == b"whooo"
 
 
 @pytest.mark.django_db

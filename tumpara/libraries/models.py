@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import logging
 import os.path
-from typing import Any, Literal, NoReturn, Optional, overload
+from typing import Any, Literal, NoReturn, Optional, cast, overload
 
 from django.conf import settings
-from django.contrib.contenttypes import fields as contenttypes_fields
-from django.contrib.contenttypes import models as contenttypes_models
 from django.core.files import base as django_files
 from django.db import models
 from django.utils.functional import cached_property
@@ -200,9 +198,8 @@ class Record(models.Model):
     """A piece of content in a library.
 
     This model's purpose is mainly to facilitate listing of all content in a library and
-    provide a generalized permission model with visibility settings. The
-    ``content_type`` and ``content_pk`` refer to the model that implements any
-    actual content.
+    provide a generalized permission model with visibility settings. Records that hold
+    actual content should be implemented by subclassing :class:`RecordModel`.
 
     Records may be linked to any number of :class:`File` objects. Although not strictly
     required (there may be library records that don't depend on a file), most will have
@@ -231,21 +228,55 @@ class Record(models.Model):
         help_text=_("Determines who can see this object."),
     )
 
-    content_type = models.ForeignKey(
-        contenttypes_models.ContentType, on_delete=models.CASCADE
-    )
-    object_pk = models.PositiveIntegerField()
-    content_object = contenttypes_fields.GenericForeignKey("content_type", "object_pk")
-
     class Meta:
         verbose_name = _("library")
         verbose_name_plural = _("libraries")
-        constraints = [
-            models.UniqueConstraint(
-                fields=["content_type", "object_pk"],
-                name="record_unique_for_content_type",
-            ),
-        ]
+
+    def resolve_instance(self) -> Record:
+        """Resolve the actual instance of this record.
+
+        This will go through all known subclasses and see which type implements the
+        record. Performance-wise this is very much suboptimal, as a lot of database
+        queries are required. It is recommended to call this on models coming from a
+        queryset where :meth:`models.QuerySet.select_related` was used to prefetch
+        data for the concrete :class:`Record` implementations.
+
+        Further note that this assumes that subclasses add a related descriptor on this
+        parent class named something like ``photo_instance``. This is done automatically
+        by subclassing :class:`RecordModel` instead of :class:`Record` directly.
+        """
+        for field in self._meta.get_fields():
+            if not (
+                field.name.endswith("_instance")
+                and isinstance(field, models.OneToOneRel)
+                and issubclass(field.related_model, type(self))
+            ):
+                # This field is not applicable because it is not the other side of a
+                # OneToOneField from a subclass with parent_link set.
+                continue
+            try:
+                subtype = cast(Record, getattr(self, field.name))
+                # Resolve recursively because this might go a few levels deep.
+                return subtype.resolve_instance()
+            except field.related_model.DoesNotExist:
+                pass
+
+        # We found nothing, so let's go with the instance we already have.
+        return self
+
+
+class RecordModel(Record):
+    record = models.OneToOneField(
+        Record,
+        on_delete=models.CASCADE,
+        primary_key=True,
+        parent_link=True,
+        related_name="%(class)s_instance",
+        related_query_name="%(class)s_instance",
+    )
+
+    class Meta:
+        abstract = True
 
 
 class File(models.Model):

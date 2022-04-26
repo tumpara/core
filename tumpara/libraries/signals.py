@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import collections
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Optional, Protocol, Union
+from typing import TYPE_CHECKING, Any, Optional, Protocol, TypeVar, Union
 
 import django.dispatch
-from django.db import models
 
 if TYPE_CHECKING:
     from . import models as libraries_models
 
 __all__ = ["new_file", "files_changed"]
+
+_Record = TypeVar("_Record", bound="libraries_models.Record", contravariant=True)
 
 
 # This dictionary maps all known library context values to some object that doesn't
@@ -30,7 +30,7 @@ context_references[None] = None
 class NewFileReceiver(Protocol):
     def __call__(
         self, context: str, path: str, library: libraries_models.Library, **kwargs: Any
-    ) -> Optional[libraries_models.Record | models.Model]:
+    ) -> Optional[libraries_models.Record]:
         ...
 
 
@@ -83,9 +83,9 @@ new_file = NewFileSignal()
 
 When you register a receiver, it should use the provided parameters to decide if the new
 file can (or should) be handled. Do this by returning a model instance to the
-:class:`~tumpara.libraries.models.Record` or its content object that should handle the
-file. The file will then be attached to the library record. You may also return an
-unsaved content object. In that case, a new record object will be created.
+:class:`~tumpara.libraries.models.Record` subclass that should handle the file. The file
+will then be attached to that record. You may also return an unsaved record, in which
+case it will be saved.
 
 If no receiver claims a file by returning a value other than ``None``, the new file will
 be ignored. If more than one receiver claims a file it will also be ignored.
@@ -102,19 +102,17 @@ known files. In that case, the new file will be added to the existing
 :type library: ~tumpara.libraries.models.Library
 :return: If the file cannot (or should not) be handled by the receiver, return ``None``.
     Otherwise return a model instance of the library
-    :class:`tumpara.libraries.models.Record` the file should be linked to. You may also
-    return an instance of an another model type. It will be treated as the content
-    object for a record, which will be created if it does not exist.
+    :class:`tumpara.libraries.models.Record` the file should be linked to.
 
 :meta hide-value:
 """
 
 
-class FilesChangedReceiver(Protocol):
+class FilesChangedReceiver(Protocol[_Record]):
     def __call__(
         self,
-        sender: type[models.Model],
-        record: libraries_models.Record,
+        sender: type[_Record],
+        record: _Record,
         **kwargs: Any,
     ) -> None:
         ...
@@ -123,8 +121,8 @@ class FilesChangedReceiver(Protocol):
 class FilesChangedSignal(django.dispatch.Signal):
     def connect(  # type: ignore
         self,
-        receiver: FilesChangedReceiver,
-        sender: Optional[type[models.Model]] = None,
+        receiver: FilesChangedReceiver[Any],
+        sender: Optional[type[libraries_models.Record]] = None,
         weak: bool = True,
         dispatch_uid: Optional[str] = None,
     ) -> None:
@@ -143,8 +141,8 @@ files no longer be applicable (for example if it has been edited and is now unre
 or doesn't fit the library content object anymore) the
 :class:`tumpara.libraries.models.File` object should be deleted.
 
-:param sender: The type of content object in the library record.
-:type sender: type[models.Model]
+:param sender: The type of library record.
+:type sender: type[tumpara.libraries.models.Record]
 :param record: Library record that had files changed.
 :type record: ~tumpara.libraries.models.Record
 
