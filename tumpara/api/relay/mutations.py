@@ -98,7 +98,7 @@ class DjangoFormInput(Generic[_Form], abc.ABC):
                 cls.__annotations__[field_name] = type_annotation
 
             if is_type_optional(type_annotation):
-                default_value = strawberry.arguments.UNSET
+                default_value = None
             elif form_field.initial is not None:
                 # For non-optional arguments, we can try and see if the model field has
                 # defined a default value. Note that the 'initial' property doesn't
@@ -230,7 +230,7 @@ class CreateFormInput(Generic[_ModelForm], DjangoModelFormInput[_ModelForm], abc
 
 
 @dataclasses.dataclass
-class EditFormInput(Generic[_ModelForm], DjangoModelFormInput[_ModelForm], abc.ABC):
+class UpdateFormInput(Generic[_ModelForm], DjangoModelFormInput[_ModelForm], abc.ABC):
     id: strawberry.ID = strawberry.field(description="ID of the object to update.")
 
     @classmethod
@@ -250,18 +250,18 @@ class EditFormInput(Generic[_ModelForm], DjangoModelFormInput[_ModelForm], abc.A
         if node is None:
             return NodeError(requested_id=self.id)
         assert isinstance(node, DjangoNode)
-        assert isinstance(node.obj, self._get_model_type())
+        assert isinstance(node._obj, self._get_model_type())
         if not info.context.user.has_perm(
-            build_permission_name(node.obj, "change"), node.obj
+            build_permission_name(node._obj, "change"), node._obj
         ):
             return NodeError(requested_id=self.id)
 
         return super()._create_form(
             info,
             {
-                key: getattr(node.obj, key) if value is None else value
+                key: getattr(node._obj, key) if value is None else value
                 for key, value in data.items()
             },
-            instance=node.obj,
+            instance=node._obj,
             **kwargs,
         )

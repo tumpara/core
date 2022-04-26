@@ -18,7 +18,7 @@ from .relay.connection import (
     Edge,
     PageInfo,
 )
-from .relay.mutations import CreateFormInput, EditFormInput, FormError, NodeError
+from .relay.mutations import CreateFormInput, FormError, NodeError, UpdateFormInput
 from .utils import (
     InfoType,
     check_authentication,
@@ -35,7 +35,6 @@ __all__ = [
     "DjangoConnectionField",
     "DjangoNode",
     "Edge",
-    "EditFormInput",
     "FloatFilter",
     "FormError",
     "GenericFilter",
@@ -45,6 +44,7 @@ __all__ = [
     "NodeError",
     "PageInfo",
     "StringFilter",
+    "UpdateFormInput",
     "decode_key",
     "encode_key",
     "get_node_origin",

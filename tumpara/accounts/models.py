@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Collection, Generic, Optional, TypeVar, c
 import django.contrib.auth
 import django.contrib.auth.validators
 from django.contrib.auth import models as auth_models
-from django.contrib.auth.models import AnonymousUser
+from django.contrib.auth.models import AnonymousUser, Permission
 from django.contrib.contenttypes import fields as contenttypes_fields
 from django.contrib.contenttypes import models as contenttypes_models
 from django.core.exceptions import PermissionDenied
@@ -18,7 +18,14 @@ from .utils import build_permission_name
 if TYPE_CHECKING:
     from .backends import JoinablesBackend  # noqa: F401
 
-__all__ = ["AnonymousUser", "User", "Joinable", "JoinableQueryset", "UserMembership"]
+__all__ = [
+    "AnonymousUser",
+    "User",
+    "Joinable",
+    "JoinableQueryset",
+    "Permission",
+    "UserMembership",
+]
 
 
 class UserManager(auth_models.UserManager["User"]):

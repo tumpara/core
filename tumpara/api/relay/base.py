@@ -14,7 +14,6 @@ import strawberry
 import strawberry.types.types
 from django.db import models
 from django.utils import encoding
-from django.utils.functional import cached_property
 from strawberry.field import StrawberryAnnotation, StrawberryField
 
 from ..utils import (
@@ -227,15 +226,18 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
         model = cls._get_model_type()
 
         assert len(key) == 1, "invalid key format"
-        if not info.context.user.has_perm(build_permission_name(model, "view")):
-            return None
 
         try:
             obj = cls.get_queryset(info).get(pk=key[0])
+        except model.DoesNotExist:
+            return None
         except NotImplementedError:
             # We don't have a queryset that respects permissions, so we need to check
             # ourselves.
-            obj = model._default_manager.get(pk=key[0])
+            try:
+                obj = model._default_manager.get(pk=key[0])
+            except model.DoesNotExist:
+                return None
             if not info.context.user.has_perm(
                 build_permission_name(model, "view"), obj
             ):

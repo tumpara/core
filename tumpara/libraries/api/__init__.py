@@ -82,14 +82,14 @@ class CreateLibraryForm(LibraryForm):
         fields = LibraryForm.Meta.fields + ["context"]
 
 
-@strawberry.input(description="Edit an existing library.")
-class EditLibraryInput(api.EditFormInput[LibraryForm]):
-    default_visibility: Optional[LibraryVisibility]  # type: ignore
-
-
 @strawberry.input(description="Create a new library.")
 class CreateLibraryInput(api.CreateFormInput[CreateLibraryForm]):
     default_visibility: LibraryVisibility
+
+
+@strawberry.input(description="Change an existing library.")
+class UpdateLibraryInput(api.UpdateFormInput[LibraryForm]):
+    default_visibility: Optional[LibraryVisibility]  # type: ignore
 
 
 LibraryMutationResult = strawberry.union(
@@ -118,10 +118,10 @@ class Mutation:
         return LibraryNode(obj)
 
     @strawberry.field(
-        description=EditLibraryInput._type_definition.description,  # type: ignore
+        description=UpdateLibraryInput._type_definition.description,  # type: ignore
     )
-    def edit_library(
-        self, info: api.InfoType, input: EditLibraryInput
+    def update_library(
+        self, info: api.InfoType, input: UpdateLibraryInput
     ) -> Optional[LibraryMutationResult]:
         form = input.prepare(info)
         if not isinstance(form, LibraryForm):
