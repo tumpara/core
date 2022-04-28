@@ -83,8 +83,8 @@ CreateTokenResult = strawberry.union(
 )
 
 
-@strawberry.type
-class Query:
+@api.schema.query
+class _:
     @strawberry.field(
         description="List of available authentication methods. These can be used with "
         "the `createToken` mutation."
@@ -106,8 +106,8 @@ class Query:
         return api.resolve_node(info, str(node_id))
 
 
-@strawberry.type
-class Mutation:
+@api.schema.mutation
+class _:
     @strawberry.mutation(
         description="Login as a user and create a token for API usage."
     )

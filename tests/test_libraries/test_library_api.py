@@ -4,7 +4,6 @@ import pytest
 
 from tumpara import api
 from tumpara.accounts import models as accounts_models
-from tumpara.api import schema
 from tumpara.libraries import models as libraries_models
 
 mutation = """
@@ -40,7 +39,7 @@ mutation = """
 
 @pytest.mark.django_db
 def test_library_creating() -> None:
-    result = schema.execute_sync(
+    result = api.execute_sync(
         mutation,
         None,
         "CreateLibrary",
@@ -58,7 +57,7 @@ def test_library_creating() -> None:
 
     # As long as the user doesn't have permission to create a library, this should not
     # work:
-    result = schema.execute_sync(
+    result = api.execute_sync(
         mutation,
         user,
         "CreateLibrary",
@@ -80,7 +79,7 @@ def test_library_creating() -> None:
     # Get a new user object because of the permission cache.
     user = accounts_models.User.objects.get()
 
-    result = schema.execute_sync(
+    result = api.execute_sync(
         mutation,
         user,
         "CreateLibrary",
@@ -116,7 +115,7 @@ def test_library_editing() -> None:
     )
 
     superuser = accounts_models.User.objects.create_superuser("kevin")
-    library_id = schema.execute_sync(
+    library_id = api.execute_sync(
         """
             query {
                 libraries(first:1) {
@@ -130,7 +129,7 @@ def test_library_editing() -> None:
     ).data["libraries"]["nodes"][0]["id"]
 
     def assert_forbidden(user: Optional[accounts_models.User]):
-        result = schema.execute_sync(
+        result = api.execute_sync(
             mutation, user, "UpdateLibrary", input={"id": library_id}
         )
         assert result.errors is None
@@ -152,7 +151,7 @@ def test_library_editing() -> None:
     user = accounts_models.User.objects.get(username="bob")
 
     # Giving no options shouldn't update anything.
-    result = schema.execute_sync(
+    result = api.execute_sync(
         mutation,
         user,
         "UpdateLibrary",
@@ -164,7 +163,7 @@ def test_library_editing() -> None:
     assert library.default_visibility == libraries_models.Visibility.PUBLIC
 
     # Giving both options should update them.
-    result = schema.execute_sync(
+    result = api.execute_sync(
         mutation,
         user,
         "UpdateLibrary",
@@ -181,7 +180,7 @@ def test_library_editing() -> None:
     assert library.default_visibility == libraries_models.Visibility.INTERNAL
 
     # Validation errors should be passed along.
-    result = schema.execute_sync(
+    result = api.execute_sync(
         mutation,
         user,
         "UpdateLibrary",

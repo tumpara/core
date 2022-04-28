@@ -4,13 +4,13 @@ import dataclasses
 import inspect
 import typing
 from collections.abc import Callable, Iterator, Sequence
-from typing import Any, ClassVar, Generic, Literal, Optional, TypeVar, Union, cast
+from typing import Any, ClassVar, Generic, Optional, TypeVar, Union, cast
 
 import strawberry.annotation
 import strawberry.arguments
 from django.db import models
-from strawberry.field import UNRESOLVED, StrawberryField
-from strawberry.type import StrawberryOptional, StrawberryType
+from strawberry.field import StrawberryField
+from strawberry.type import StrawberryOptional
 
 from tumpara.api import filtering
 

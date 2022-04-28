@@ -11,8 +11,8 @@ from .users import UserConnection, UserFilter, UserNode
 __all__ = ["JoinableNode", "UserFilter", "UserNode"]
 
 
-@strawberry.type
-class Query:
+@api.schema.query
+class _:
     users: Optional[UserConnection] = api.DjangoConnectionField(  # type: ignore
         filter_type=UserFilter,
         description="All users available on this server.",
@@ -30,7 +30,7 @@ class Query:
             return None
 
 
-@strawberry.type
-class Mutation:
+@api.schema.mutation
+class _:
     def manage_memberships(self, input: ManageMembershipInput):
         pass

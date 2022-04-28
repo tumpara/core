@@ -19,6 +19,7 @@ from .relay.connection import (
     PageInfo,
 )
 from .relay.mutations import CreateFormInput, FormError, NodeError, UpdateFormInput
+from .schema import execute_sync, schema
 from .utils import (
     InfoType,
     check_authentication,
@@ -47,11 +48,13 @@ __all__ = [
     "UpdateFormInput",
     "decode_key",
     "encode_key",
+    "execute_sync",
     "get_node_origin",
     "resolve_node",
     "check_authentication",
     "filtering",
     "get_field_description",
     "relay",
+    "schema",
     "with_argument_annotation",
 ]

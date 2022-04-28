@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from tumpara.api import schema
+from tumpara import api
 
 from .utils import user_dataset  # noqa: F401
 from .utils import UserDataset
@@ -25,7 +25,7 @@ def test_user_list(
     user_dataset: UserDataset, filter: Mapping[str, Any], expected_users: Set[str]
 ) -> None:
     """Logged-in users can list and search all the users on the server."""
-    result = schema.execute_sync(
+    result = api.execute_sync(
         """query FilterUsers($filter: UserFilter) {
             users(first: 10, filter: $filter) {
                 nodes {
@@ -50,7 +50,7 @@ def test_user_list(
 @pytest.mark.django_db
 def test_anonymous_user_list(user_dataset: UserDataset) -> None:
     """Anonymous sessions cannot list users."""
-    result = schema.execute_sync(
+    result = api.execute_sync(
         """query AllUsers {
             users(first: 10) {
                 nodes { __typename }
@@ -64,7 +64,7 @@ def test_anonymous_user_list(user_dataset: UserDataset) -> None:
 @pytest.mark.django_db
 def test_user_fields(user_dataset: UserDataset) -> None:
     """Special fields like the display name are calculated correctly."""
-    result = schema.execute_sync(
+    result = api.execute_sync(
         """query AllUsers {
             users(first: 10) {
                 nodes {
@@ -91,7 +91,7 @@ def test_user_fields(user_dataset: UserDataset) -> None:
 @pytest.mark.django_db
 def test_user_access_by_id(user_dataset: UserDataset) -> None:
     """User profiles can be accessed by their node id, but only by logged-in users."""
-    result = schema.execute_sync(
+    result = api.execute_sync(
         """query UserIds {
             users(first: 10) {
                 nodes { id }
@@ -114,7 +114,7 @@ def test_user_access_by_id(user_dataset: UserDataset) -> None:
     }"""
 
     for node in nodes:
-        result = schema.execute_sync(query, user_dataset[0], id=node["id"])
+        result = api.execute_sync(query, user_dataset[0], id=node["id"])
         assert result.errors is None
         assert result.data is not None
         assert result.data["node"]["__typename"] == "User"
@@ -123,7 +123,7 @@ def test_user_access_by_id(user_dataset: UserDataset) -> None:
     assert seen_usernames == {user.username for user in user_dataset}
 
     for node in nodes:
-        result = schema.execute_sync(query, id=node["id"])
+        result = api.execute_sync(query, id=node["id"])
         assert result.errors is None
         assert result.data is not None
         assert result.data["node"] is None

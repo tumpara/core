@@ -6,9 +6,9 @@ import hypothesis
 import pytest
 from django.utils import timezone
 
+from tumpara import api
 from tumpara.accounts import models as accounts_models
 from tumpara.api import models as api_models
-from tumpara.api import schema
 from tumpara.testing import strategies as st
 
 from ..test_accounts.utils import user_dataset  # noqa: F401
@@ -37,7 +37,7 @@ def test_username_password_token(user_dataset: UserDataset) -> None:
     user.set_password(password)
     user.save()
 
-    result = schema.execute_sync(
+    result = api.execute_sync(
         create_token_mutation, username=user.username, password="wrong"
     )
     assert result.errors is None
@@ -48,7 +48,7 @@ def test_username_password_token(user_dataset: UserDataset) -> None:
     }
     assert not api_models.Token.objects.exists()
 
-    result = schema.execute_sync(
+    result = api.execute_sync(
         create_token_mutation, username=user.username, password=password
     )
     assert result.errors is None
@@ -77,13 +77,13 @@ def test_wrong_credentials_token(
     hypothesis.assume(password != wrong_password)
     user = accounts_models.User.objects.create_user(username, "", password)
 
-    first_result = schema.execute_sync(
+    first_result = api.execute_sync(
         create_token_mutation, username=username, password=wrong_password
     )
-    second_result = schema.execute_sync(
+    second_result = api.execute_sync(
         create_token_mutation, username=wrong_username, password=password
     )
-    third_result = schema.execute_sync(
+    third_result = api.execute_sync(
         create_token_mutation, username=wrong_username, password=wrong_password
     )
 
@@ -102,7 +102,7 @@ def test_invalid_method_token(
     django_executor: Any, method: str, extra_credentials: list[str]
 ) -> None:
     """Invalid authentication methods don't yield a token."""
-    result = schema.execute_sync(
+    result = api.execute_sync(
         """mutation TryAuthentication($credentials: [String!]!) {
             createToken(credentials: $credentials, name: "Test token") {
                 __typename
@@ -140,8 +140,8 @@ def test_api_context_user_from_token(user_dataset: UserDataset) -> None:
         expiry_timestamp=timezone.now() + timezone.timedelta(hours=1)
     )
 
-    first_result = schema.execute_sync(me_query, user)
-    second_result = schema.execute_sync(me_query, token)
+    first_result = api.execute_sync(me_query, user)
+    second_result = api.execute_sync(me_query, token)
 
     for result in (first_result, second_result):
         assert result.errors is None
@@ -151,7 +151,7 @@ def test_api_context_user_from_token(user_dataset: UserDataset) -> None:
 
 def test_anonymous_api_context() -> None:
     """Anonymous sessions are not logged in."""
-    result = schema.execute_sync(me_query)
+    result = api.execute_sync(me_query)
     assert result.errors is None
     assert result.data is not None
     assert result.data["me"] is None

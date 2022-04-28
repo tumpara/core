@@ -43,8 +43,8 @@ def resolve_libraries_connection(
     return LibraryConnection.from_queryset(queryset, info, **kwargs)  # type: ignore
 
 
-@strawberry.type
-class Query:
+@api.schema.query
+class _:
     libraries = api.ConnectionField(description="All libraries that are available.")(
         resolve_libraries_connection
     )
@@ -98,8 +98,8 @@ LibraryMutationResult = strawberry.union(
 )
 
 
-@strawberry.type
-class Mutation:
+@api.schema.mutation
+class _:
     @strawberry.field(
         description=CreateLibraryInput._type_definition.description,  # type: ignore
     )
