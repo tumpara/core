@@ -3,14 +3,14 @@ from __future__ import annotations
 import dataclasses
 import inspect
 import typing
-from collections.abc import Iterator, Sequence
-from typing import Any, ClassVar, Generic, Optional, TypeVar, Union, cast
+from collections.abc import Callable, Iterator, Sequence
+from typing import Any, ClassVar, Generic, Literal, Optional, TypeVar, Union, cast
 
 import strawberry.annotation
 import strawberry.arguments
 from django.db import models
-from strawberry.field import StrawberryField
-from strawberry.type import StrawberryOptional
+from strawberry.field import UNRESOLVED, StrawberryField
+from strawberry.type import StrawberryOptional, StrawberryType
 
 from tumpara.api import filtering
 
@@ -297,6 +297,16 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
         return cast(type[_Model], cls._model)
 
     @classmethod
+    def get_queryset(cls, info: InfoType) -> models.QuerySet[_Model]:
+        """Return the queryset that :class:`DjangoConnectionField` uses to resolve
+        model objects.
+
+        By default, this uses :meth:`DjangoNode.get_queryset` on the Django node. As
+        described there, make sure that this method handles permissions correctly.
+        """
+        return cls._get_node_type().get_queryset(info)
+
+    @classmethod
     def from_queryset(
         cls: type[_DjangoConnection],
         queryset: models.QuerySet[_Model],
@@ -409,9 +419,10 @@ class ConnectionField(StrawberryField):
 class DjangoConnectionField(ConnectionField):
     """Connection field for Django connections.
 
-    The default resolver will use :meth:`DjangoNode.get_queryset` instead of
-    Strawberry's default :func:`getattr` implementation. Override this behaviour by
-    providing another resolver (by calling the field).
+    The default resolver will use :meth:`DjangoConnection.get_queryset` instead of
+    Strawberry's default :func:`getattr` implementation. Provide another resolver by
+    using the field as a decorator. Note that resolvers for Django connection fields
+    should not return the connection, but rather a :class:`models.QuerySet`.
 
     The optional ``filter`` argument can be specified to support filtering results.
     This should be an input type that has a ``build_query`` method that matches that
@@ -420,12 +431,30 @@ class DjangoConnectionField(ConnectionField):
 
     def __init__(
         self,
+        connection_type: type[DjangoConnection] = None,
+        /,
         description: Optional[str] = None,
         filter_type: Optional[type[filtering.GenericFilter]] = None,
         **kwargs: Any,
     ):
+        if connection_type is not None:
+            kwargs.setdefault(
+                "type_annotation",
+                Optional[connection_type],
+            )
+
         super().__init__(description=description, **kwargs)
         self.filter_type = filter_type
+
+    def __call__(
+        self, resolver: Callable[[Any], models.QuerySet]
+    ) -> DjangoConnectionField:
+        super().__call__(resolver)
+        # Propagate our type annotation (if available) to the resolver. That way the
+        # resolver can return (type-checked) querysets and the API will still have the
+        # connection type.
+        self.base_resolver.annotations["return"] = self.type_annotation
+        return self
 
     @property
     def arguments(self) -> list[strawberry.arguments.StrawberryArgument]:
@@ -453,9 +482,6 @@ class DjangoConnectionField(ConnectionField):
     def get_result(
         self, source: Any, info: InfoType, args: list[Any], kwargs: dict[str, Any]
     ) -> Any:
-        if self.base_resolver:
-            return self.base_resolver(*args, **kwargs)
-
         connection_type = self.type
         # If our type is optional, we want the actual content type.
         if isinstance(connection_type, StrawberryOptional):
@@ -468,7 +494,15 @@ class DjangoConnectionField(ConnectionField):
         )
 
         try:
-            queryset = connection_type._get_node_type().get_queryset(info)
+            if self.base_resolver:
+                queryset = self.base_resolver(*args, **kwargs)
+            else:
+                queryset = connection_type.get_queryset(info)
+            assert isinstance(queryset, models.QuerySet)
+            assert issubclass(queryset.model, connection_type._get_model_type()), (
+                f"queryset model type {queryset.model} must match the connection model "
+                f"type {connection_type._get_model_type()}"
+            )
 
             if (
                 self.filter_type is not None
@@ -478,8 +512,9 @@ class DjangoConnectionField(ConnectionField):
                 # subfield), the field name is an empty string here:
                 queryset = queryset.filter(filter.build_query(""))
 
-            assert len(args) == 0
             kwargs.setdefault("info", info)
+            # It should be safe to ignore 'args' here, because that only contains the
+            # self / root / parent value for the original resolver.
             return connection_type.from_queryset(queryset, **kwargs)
         except NotImplementedError:
             pass

@@ -129,11 +129,14 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
             if origin is Generic:
                 super().__init_subclass__(**kwargs)
                 return
-            elif origin is DjangoNode:
+            elif issubclass(origin, DjangoNode):
                 try:
                     (model,) = typing.get_args(base)
                 except ValueError:
+                    continue
+                if not issubclass(model, models.Model):
                     model = None
+                    continue
                 break
 
         assert model is not None and issubclass(

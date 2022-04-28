@@ -3,7 +3,7 @@ from typing import Any
 import hypothesis
 import pytest
 
-from tumpara.accounts.models import AnonymousUser, User
+from tumpara.accounts.models import AnonymousUser, User, UserMembership
 from tumpara.testing import strategies as st
 
 from .models import JoinableThing
