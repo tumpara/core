@@ -1,4 +1,4 @@
-from typing import Generic, Optional, TypeVar
+from typing import Any, Generic, Optional, TypeVar
 
 import strawberry
 from django.contrib.contenttypes import models as contenttypes_models
@@ -7,6 +7,7 @@ from django.db import models
 from tumpara import api
 
 from .. import models as accounts_models
+from ..utils import build_permission_name
 from .users import UserNode
 
 _Joinable = TypeVar("_Joinable", bound="accounts_models.Joinable")
@@ -43,7 +44,9 @@ class JoinableNode(Generic[_Joinable], api.DjangoNode[_Joinable]):
         UserMembershipConnection,
         description="Users that are a member and have permission to view.",
     )
-    def members(self, info: api.InfoType) -> models.QuerySet[accounts_models.User]:
+    def members(
+        self, info: api.InfoType, **kwargs: Any
+    ) -> models.QuerySet[accounts_models.User]:
         return (
             UserNode.get_queryset(info)
             .filter(
@@ -54,6 +57,16 @@ class JoinableNode(Generic[_Joinable], api.DjangoNode[_Joinable]):
             )
             .annotate(_membership_is_owner=models.F("membership__is_owner"))
         )
+
+    @classmethod
+    def get_queryset(cls, info: api.InfoType) -> models.QuerySet[_Joinable]:
+        manager = cls._get_model_type()._default_manager
+        if not issubclass(manager._queryset_class, accounts_models.JoinableQueryset):
+            raise NotImplementedError
+        return manager.for_user(
+            build_permission_name(cls._get_model_type(), "view"),
+            info.context.user,
+        )  # type: ignore
 
 
 @strawberry.input

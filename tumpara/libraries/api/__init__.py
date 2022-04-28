@@ -1,5 +1,5 @@
 import enum
-from typing import Any, Optional
+from typing import Optional
 
 import strawberry
 from django import forms
@@ -34,19 +34,10 @@ class LibraryConnection(
     nodes: list[Optional[LibraryNode]]
 
 
-def resolve_libraries_connection(
-    info: api.InfoType, **kwargs: Any
-) -> Optional[LibraryConnection]:
-    queryset = libraries_models.Library.objects.for_user(
-        "libraries.view_library", info.context.user
-    )
-    return LibraryConnection.from_queryset(queryset, info, **kwargs)  # type: ignore
-
-
 @api.schema.query
 class _:
-    libraries = api.ConnectionField(description="All libraries that are available.")(
-        resolve_libraries_connection
+    libraries: Optional[LibraryConnection] = api.DjangoConnectionField(  # type: ignore
+        description="All libraries that are available."
     )
 
     @strawberry.field(

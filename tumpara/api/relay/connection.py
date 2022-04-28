@@ -317,12 +317,9 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
         first: Optional[int] = None,
         last: Optional[int] = None,
     ) -> _DjangoConnection:
-        from tumpara.accounts.utils import build_permission_name
-
-        if not info.context.user.has_perm(
-            build_permission_name(queryset.model, "view")
-        ):
-            return cls.empty()
+        # We don't check the generic view permission on the model here anymore because
+        # we assume that the connection's (which calls the node's) get_queryset method
+        # already filters accordingly.
 
         # Since Connection.from_sequence expects a sequence of nodes (the API type) and
         # we only have a queryset (which yields model instances), we need to transform
@@ -493,28 +490,31 @@ class DjangoConnectionField(ConnectionField):
             f"got {type(connection_type)}"
         )
 
-        try:
-            if self.base_resolver:
-                queryset = self.base_resolver(*args, **kwargs)
-            else:
+        if self.base_resolver:
+            queryset = self.base_resolver(*args, **kwargs)
+        else:
+            try:
                 queryset = connection_type.get_queryset(info)
-            assert isinstance(queryset, models.QuerySet)
-            assert issubclass(queryset.model, connection_type._get_model_type()), (
-                f"queryset model type {queryset.model} must match the connection model "
-                f"type {connection_type._get_model_type()}"
-            )
+            except NotImplementedError as error:
+                raise AssertionError(
+                    "cannot resolve a Django connection that does not define "
+                    "get_queryset()"
+                ) from error
+        assert isinstance(queryset, models.QuerySet)
+        assert issubclass(queryset.model, connection_type._get_model_type()), (
+            f"queryset model type {queryset.model} must match the connection model "
+            f"type {connection_type._get_model_type()}"
+        )
 
-            if (
-                self.filter_type is not None
-                and (filter := kwargs.pop("filter", None)) is not None
-            ):
-                # Since we are filtering objects directly in the queryset (and not some
-                # subfield), the field name is an empty string here:
-                queryset = queryset.filter(filter.build_query(""))
+        if (
+            self.filter_type is not None
+            and (filter := kwargs.pop("filter", None)) is not None
+        ):
+            # Since we are filtering objects directly in the queryset (and not some
+            # subfield), the field name is an empty string here:
+            queryset = queryset.filter(filter.build_query(""))
 
-            kwargs.setdefault("info", info)
-            # It should be safe to ignore 'args' here, because that only contains the
-            # self / root / parent value for the original resolver.
-            return connection_type.from_queryset(queryset, **kwargs)
-        except NotImplementedError:
-            pass
+        kwargs.setdefault("info", info)
+        # It should be safe to ignore 'args' here, because that only contains the
+        # self / root / parent value for the original resolver.
+        return connection_type.from_queryset(queryset, **kwargs)

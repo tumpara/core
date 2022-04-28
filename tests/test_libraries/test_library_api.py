@@ -38,6 +38,41 @@ mutation = """
 
 
 @pytest.mark.django_db
+def test_library_listing() -> None:
+    query = """
+        query ListLibraries {
+            libraries(first: 10) {
+                nodes {
+                    __typename
+                    context
+                }
+            }
+        }
+    """
+    libraries_models.Library.objects.create(source="testing://", context="test_storage")
+    libraries_models.Library.objects.create(
+        source="testing:///", context="test_storage"
+    )
+
+    result = api.execute_sync(query, None)
+    assert result.errors is None
+    assert result.data == {"libraries": {"nodes": []}}
+
+    superuser = accounts_models.User.objects.create_superuser("bob")
+
+    result = api.execute_sync(query, superuser)
+    assert result.errors is None
+    assert result.data == {
+        "libraries": {
+            "nodes": [
+                {"__typename": "Library", "context": "test_storage"},
+                {"__typename": "Library", "context": "test_storage"},
+            ]
+        }
+    }
+
+
+@pytest.mark.django_db
 def test_library_creating() -> None:
     result = api.execute_sync(
         mutation,
