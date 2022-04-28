@@ -19,12 +19,12 @@ if TYPE_CHECKING:
 
 
 class SchemaManager:
-    def __init__(self):
+    def __init__(self) -> None:
         self._schema: Optional[strawberry.Schema] = None
         self._queries = list[type]()
         self._mutations = list[type]()
 
-    def _ensure_schema_not_built(self):
+    def _ensure_schema_is_not_built(self) -> None:
         assert self._schema is None, (
             "Trying to register a new type with the already-built schema. This is "
             "disallowed because it is probably a bug. It means that the actual GraphQL "
@@ -40,14 +40,14 @@ class SchemaManager:
 
     def query(self, query_type: type) -> type:
         """Register a query type that will be merged into the final schema."""
-        self._ensure_schema_not_built()
+        self._ensure_schema_is_not_built()
         query_type = self._prep_type(query_type)
         self._queries.append(query_type)
         return query_type
 
     def mutation(self, mutation_type: type) -> type:
         """Register a mutation type that will be merged into the final schema."""
-        self._ensure_schema_not_built()
+        self._ensure_schema_is_not_built()
         mutation_type = self._prep_type(mutation_type)
         self._mutations.append(mutation_type)
         return mutation_type

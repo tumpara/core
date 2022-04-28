@@ -151,13 +151,13 @@ def get_field_description(
     if (
         inspect.isclass(form_or_model) and issubclass(form_or_model, forms.BaseForm)
     ) or isinstance(form_or_model, forms.BaseForm):
-        field = form_or_model.base_fields[field_name]
-        return encoding.force_str(field.help_text)
+        form_field = form_or_model.base_fields[field_name]
+        return encoding.force_str(form_field.help_text)
     elif (
         inspect.isclass(form_or_model) and issubclass(form_or_model, models.Model)
     ) or isinstance(form_or_model, models.Model):
-        field = form_or_model._meta.get_field(field_name)
-        return encoding.force_str(field.help_text)
+        model_field = form_or_model._meta.get_field(field_name)
+        return encoding.force_str(model_field.help_text)
     else:
         raise TypeError(
             f"expected form or model instance or class, got {form_or_model}"

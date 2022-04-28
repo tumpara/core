@@ -125,6 +125,7 @@ def test_library_creating() -> None:
         },
     )
     assert result.errors is None
+    assert result.data is not None
     assert result.data["createLibrary"]["__typename"] == "Library"
     _, library_pk = api.decode_key(result.data["createLibrary"]["id"])
     library = libraries_models.Library.objects.get()
@@ -150,7 +151,7 @@ def test_library_editing() -> None:
     )
 
     superuser = accounts_models.User.objects.create_superuser("kevin")
-    library_id = api.execute_sync(
+    result = api.execute_sync(
         """
             query {
                 libraries(first:1) {
@@ -161,9 +162,11 @@ def test_library_editing() -> None:
             }
         """,
         superuser,
-    ).data["libraries"]["nodes"][0]["id"]
+    )
+    assert result.data is not None
+    library_id = result.data["libraries"]["nodes"][0]["id"]
 
-    def assert_forbidden(user: Optional[accounts_models.User]):
+    def assert_forbidden(user: Optional[accounts_models.User]) -> None:
         result = api.execute_sync(
             mutation, user, "UpdateLibrary", input={"id": library_id}
         )
@@ -209,6 +212,7 @@ def test_library_editing() -> None:
         },
     )
     assert result.errors is None
+    assert result.data is not None
     assert result.data["updateLibrary"]["__typename"] == "Library"
     library.refresh_from_db()
     assert library.source == "testing:///hi"

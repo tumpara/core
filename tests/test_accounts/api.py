@@ -30,7 +30,7 @@ class JoinableThingConnection(
 
 
 @api.schema.query
-class _:
+class Query:
     joinable_things: Optional[
         JoinableThingConnection
     ] = api.DjangoConnectionField()  # type: ignore

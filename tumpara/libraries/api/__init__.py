@@ -35,7 +35,7 @@ class LibraryConnection(
 
 
 @api.schema.query
-class _:
+class Query:
     libraries: Optional[LibraryConnection] = api.DjangoConnectionField(  # type: ignore
         description="All libraries that are available."
     )
@@ -90,7 +90,7 @@ LibraryMutationResult = strawberry.union(
 
 
 @api.schema.mutation
-class _:
+class Mutation:
     @strawberry.field(
         description=CreateLibraryInput._type_definition.description,  # type: ignore
     )

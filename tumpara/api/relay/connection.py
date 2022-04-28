@@ -428,8 +428,7 @@ class DjangoConnectionField(ConnectionField):
 
     def __init__(
         self,
-        connection_type: type[DjangoConnection] = None,
-        /,
+        connection_type: Optional[type[DjangoConnection[Any, Any]]] = None,
         description: Optional[str] = None,
         filter_type: Optional[type[filtering.GenericFilter]] = None,
         **kwargs: Any,
@@ -444,9 +443,10 @@ class DjangoConnectionField(ConnectionField):
         self.filter_type = filter_type
 
     def __call__(
-        self, resolver: Callable[[Any], models.QuerySet]
+        self, resolver: Callable[Any, models.QuerySet[Any]]  # type: ignore
     ) -> DjangoConnectionField:
         super().__call__(resolver)
+        assert self.base_resolver is not None
         # Propagate our type annotation (if available) to the resolver. That way the
         # resolver can return (type-checked) querysets and the API will still have the
         # connection type.

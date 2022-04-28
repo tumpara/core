@@ -12,7 +12,7 @@ __all__ = ["JoinableNode", "UserFilter", "UserNode"]
 
 
 @api.schema.query
-class _:
+class Query:
     users: Optional[UserConnection] = api.DjangoConnectionField(  # type: ignore
         filter_type=UserFilter,
         description="All users available on this server.",
@@ -31,6 +31,6 @@ class _:
 
 
 @api.schema.mutation
-class _:
-    def manage_memberships(self, input: ManageMembershipInput):
+class Mutation:
+    def manage_memberships(self, input: ManageMembershipInput) -> None:
         pass
