@@ -13,6 +13,7 @@ import strawberry.types.types
 from django import forms
 from django.db import models
 from django.utils import encoding
+from strawberry.union import StrawberryUnion
 
 from .views import ApiContext
 

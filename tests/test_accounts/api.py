@@ -9,7 +9,7 @@ from tumpara.accounts import api as accounts_api
 from .models import JoinableThing
 
 
-@strawberry.type
+@strawberry.type(name="JoinableThing")
 class JoinableThingNode(accounts_api.JoinableNode[JoinableThing], fields=[]):
     pass
 

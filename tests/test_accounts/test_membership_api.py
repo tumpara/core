@@ -1,6 +1,7 @@
 import pytest
 
 from tumpara import api
+from tumpara.accounts import models as accounts_models
 
 from .models import JoinableThing
 from .utils import user_dataset  # noqa: F401
@@ -51,3 +52,77 @@ def test_membership_listing(user_dataset: UserDataset) -> None:
             ]
         }
     }
+
+
+@pytest.mark.django_db
+def test_membership_setting(user_dataset: UserDataset) -> None:
+    bob, carl, *_ = user_dataset
+    thing = JoinableThing.objects.create()
+    ids = {
+        "bob": api.encode_key("User", bob.pk),
+        "carl": api.encode_key("User", carl.pk),
+        "thing": api.encode_key("JoinableThing", thing.pk),
+    }
+    superuser = accounts_models.User.objects.create_superuser("admin")
+
+    result_fragment = """
+        fragment Result on ManageMembershipResult {
+            __typename
+            ... on NodeError {
+                requestedId
+            }
+        }
+    """
+    mutation = (
+        result_fragment
+        + """
+        mutation SetMemberships($bob: ID!, $carl: ID!, $thing: ID!) {
+            bob: manageMembership(
+                input: {joinableId: $thing, userId: $bob, status: false}
+            ) { ...Result }
+            carl: manageMembership(
+                input: {joinableId: $thing, userId: $carl, status: true}
+            ) { ...Result }
+        }
+    """
+    )
+
+    result = api.execute_sync(mutation, None, **ids)
+    assert result.errors is None
+    assert result.data == {
+        "bob": {"__typename": "NodeError", "requestedId": ids["thing"]},
+        "carl": {"__typename": "NodeError", "requestedId": ids["thing"]},
+    }
+
+    result = api.execute_sync(mutation, superuser, **ids)
+    assert result.errors is None
+    assert result.data == {
+        "bob": {"__typename": "ManageMembershipSuccess"},
+        "carl": {"__typename": "ManageMembershipSuccess"},
+    }
+
+    assert set(thing.user_memberships.values_list("user__username", "is_owner")) == {
+        ("bob", False),
+        ("carl", True),
+    }
+
+    result = api.execute_sync(
+        result_fragment
+        + """mutation RemoveMemberships($bob: ID!, $carl: ID!, $thing: ID!) {
+            bob: manageMembership(
+                input: {joinableId: $thing, userId: $bob, status: null}
+            ) { ...Result }
+            carl: manageMembership(
+                input: {joinableId: $thing, userId: $carl, status: null}
+            ) { ...Result }
+        }""",
+        carl,
+        **ids,
+    )
+    assert result.errors is None
+    assert result.data == {
+        "bob": {"__typename": "ManageMembershipSuccess"},
+        "carl": {"__typename": "ManageMembershipSuccess"},
+    }
+
+    assert thing.user_memberships.count() == 0

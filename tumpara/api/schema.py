@@ -7,6 +7,7 @@ import django.http
 import django.urls
 import django.utils
 import strawberry.django.views
+import strawberry.schema.schema
 import strawberry.tools
 import strawberry.types.execution
 
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 
 class SchemaManager:
     def __init__(self) -> None:
+        self.config = strawberry.schema.schema.StrawberryConfig()
         self._schema: Optional[strawberry.Schema] = None
         self._queries = list[type]()
         self._mutations = list[type]()
@@ -59,6 +61,7 @@ class SchemaManager:
                 "Mutation", tuple(self._mutations)
             )
             self._schema = strawberry.Schema(
+                config=self.config,
                 query=merged_query,
                 mutation=merged_mutation,
             )

@@ -1,3 +1,4 @@
+import typing
 from typing import Any, Generic, Optional, TypeVar
 
 import strawberry
@@ -38,7 +39,7 @@ class UserMembershipConnection(
     nodes: list[Optional[UserNode]]
 
 
-@strawberry.interface
+@strawberry.interface(name="Joinable")
 class JoinableNode(Generic[_Joinable], api.DjangoNode[_Joinable]):
     @api.DjangoConnectionField(
         UserMembershipConnection,
@@ -70,21 +71,3 @@ class JoinableNode(Generic[_Joinable], api.DjangoNode[_Joinable]):
             build_permission_name(cls._get_model_type(), "view"),
             info.context.user,
         )
-
-
-@strawberry.input
-class ManageMembershipInput:
-    id: strawberry.ID = strawberry.field(
-        description="ID of the node to modify permissions on. This must implement "
-        "`Joinable`."
-    )
-    set_member: Optional[strawberry.ID] = strawberry.field(
-        description="ID of a user to add as a non-owning member. If they are already "
-        "an owner, they will be demoted."
-    )
-    set_owner: Optional[strawberry.ID] = strawberry.field(
-        description="ID of a user to add as an owner."
-    )
-    remove_membership: Optional[strawberry.ID] = strawberry.field(
-        description="ID of a user whose membership will be removed."
-    )
