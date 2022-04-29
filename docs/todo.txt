@@ -1,0 +1,5 @@
+GraphQL Form error codes:
+
+- `unique` – The field should have been unique, but wasn't.
+- `invalid_choice` – GraphQL syntax should handle this.
+- `required` – The field was required and not set (normally GraphQL syntax should take care of this).

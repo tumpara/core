@@ -1,6 +1,7 @@
 import io
 import os.path
 import urllib.parse
+from collections.abc import Generator
 from typing import ClassVar
 
 from django.utils import timezone
@@ -19,10 +20,10 @@ class TestingStorage(storage.LibraryStorage):
     def __init__(self, parsed_uri: urllib.parse.ParseResult):
         pass
 
-    def check(self) -> bool:
-        return True
+    def check(self) -> None:
+        return
 
-    def open(self, name: str, mode: str = "rb") -> io.BytesIO:
+    def open(self, name: str, mode: str = "rb") -> io.BytesIO:  # type: ignore
         assert (
             mode == "rb"
         ), "the testing backend only supports opening files with mode 'rb'"
@@ -38,6 +39,9 @@ class TestingStorage(storage.LibraryStorage):
         if name not in self._data:
             raise FileNotFoundError(f"file path {name!r} not found in dataset")
         return self._data[name][0]
+
+    def get_created_time(self, name: str) -> timezone.datetime:
+        return self.get_modified_time(name)
 
     def exists(self, name: str) -> bool:
         return name in self._data
@@ -66,6 +70,14 @@ class TestingStorage(storage.LibraryStorage):
     def unset(cls, path: str) -> None:
         if path in cls._data:
             del cls._data[path]
+
+    @classmethod
+    def paths(cls) -> Generator[str, None, None]:
+        yield from cls._data.keys()
+
+    @classmethod
+    def get(cls, path: str) -> bytes | str:
+        return cls._data[path][1]
 
     @classmethod
     def clear(cls) -> None:

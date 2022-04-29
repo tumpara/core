@@ -6,12 +6,16 @@ import urllib.parse
 from collections.abc import Callable, Generator
 from typing import Literal, Optional, overload
 
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.core.files import storage as django_storage
 
 from .. import scanner
 
 WatchGenerator = Generator[Optional[scanner.Event], Literal[None, False] | int, None]
+
+
+class StorageValidationError(ValidationError):
+    pass
 
 
 class LibraryStorage(django_storage.Storage, abc.ABC):
@@ -124,7 +128,7 @@ class LibraryStorageManager:
 
         Use this as a decorator on the class:
 
-        .. code-block: python
+        .. code-block:: python
 
             from tumpara.libraries import storage
 
@@ -176,8 +180,9 @@ class LibraryStorageManager:
         parsed_uri = urllib.parse.urlparse(uri)
         scheme = parsed_uri.scheme
         if scheme not in self.schemes:
-            raise RuntimeError(
-                f"no supported library storage backend found for scheme {scheme!r}"
+            raise StorageValidationError(
+                f"no supported library storage backend found for scheme {scheme!r}",
+                code="unsupported_storage_scheme",
             )
         return self.schemes[scheme](parsed_uri)
 

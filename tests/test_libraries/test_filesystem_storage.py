@@ -6,20 +6,30 @@ the correct events are emitted in different situations.
 """
 
 import os
+import shutil
+import tempfile
 from urllib.parse import urlparse
 
 import hypothesis
 import hypothesis.control
+import hypothesis.stateful
+import inotify_simple
 import pytest
 from django.core.exceptions import ValidationError
 
+from tumpara import testing
+from tumpara.libraries import models as libraries_models
 from tumpara.libraries import scanner
 from tumpara.libraries.storage.base import WatchGenerator
-from tumpara.libraries.storage.file import FileSystemBackend
+from tumpara.libraries.storage.file import FileSystemLibraryStorage
 from tumpara.testing import strategies as st
 
-Context = tuple[str, list[str], list[str], FileSystemBackend]
-WatchContext = tuple[str, list[str], list[str], FileSystemBackend, WatchGenerator]
+from .utils import LibraryActionsStateMachine
+
+Context = tuple[str, list[str], list[str], FileSystemLibraryStorage]
+WatchContext = tuple[
+    str, list[str], list[str], FileSystemLibraryStorage, WatchGenerator
+]
 
 
 @st.composite
@@ -38,14 +48,14 @@ def contexts(draw: st.DrawFn) -> Context:
         with open(os.path.join(library_base, file_paths[i]), "w") as f:
             f.write(file_contents[i])
 
-    backend = FileSystemBackend(urlparse(f"file://{library_base}"))
-    return library_base, directories, file_paths, backend
+    storage = FileSystemLibraryStorage(urlparse(f"file://{library_base}"))
+    return library_base, directories, file_paths, storage
 
 
 @st.composite
 def watch_contexts(draw: st.DrawFn) -> WatchContext:
-    library_base, directories, file_paths, backend = draw(contexts())
-    generator = backend.watch()
+    library_base, directories, file_paths, storage = draw(contexts())
+    generator = storage.watch()
     # We need to get one item from the generator to get it going, since the
     # initialization code isn't actually run until we collect an item. The filesystem
     # backend explicitly sends an always-None response first for this.
@@ -58,7 +68,7 @@ def watch_contexts(draw: st.DrawFn) -> WatchContext:
         except (StopIteration, TypeError):
             pass
 
-    return library_base, directories, file_paths, backend, generator
+    return library_base, directories, file_paths, storage, generator
 
 
 base_settings = hypothesis.settings(
@@ -74,24 +84,24 @@ base_settings = hypothesis.settings(
 @hypothesis.given(st.temporary_directories())
 def test_check(path: str) -> None:
     """Backend raises errors when an invalid path is specified."""
-    FileSystemBackend(urlparse(f"file://{path}")).check()
+    FileSystemLibraryStorage(urlparse(f"file://{path}")).check()
 
     with pytest.raises(ValidationError, match="does not exist"):
-        FileSystemBackend(urlparse(f"file://{path}/invalid")).check()
+        FileSystemLibraryStorage(urlparse(f"file://{path}/invalid")).check()
 
     with open(f"{path}/file", "w") as f:
         f.write("Hello")
 
     with pytest.raises(ValidationError, match="is not a directory"):
-        FileSystemBackend(urlparse(f"file://{path}/file")).check()
+        FileSystemLibraryStorage(urlparse(f"file://{path}/file")).check()
 
 
 @base_settings
 @hypothesis.given(contexts())
 def test_walk_files(context: Context) -> None:
     """Walking files in the backend works as expected."""
-    library_base, _, files, backend = context
-    paths = list(backend.walk_files())
+    library_base, _, files, storage = context
+    paths = list(storage.walk_files())
 
     paths_set = set(paths)
     files_set = set(files)
@@ -102,7 +112,7 @@ def test_walk_files(context: Context) -> None:
 @hypothesis.given(watch_contexts(), st.data())
 def test_watch_file_edits(context: WatchContext, data: st.DataObject) -> None:
     """Events emitted from file edits are the correct FileModifiedEvent objects."""
-    library_base, _, files, backend, generator = context
+    library_base, _, files, storage, generator = context
 
     for path in data.draw(st.sets(st.sampled_from(files), min_size=2, max_size=6)):
         with open(os.path.join(library_base, path), "a") as f:
@@ -122,7 +132,7 @@ def test_watch_file_removal(
     """Events emitted when files are deleted or moved outside of the library are
     the correct FileRemovedEvent objects.
     """
-    library_base, _, files, backend, generator = context
+    library_base, _, files, storage, generator = context
 
     removed_files = data.draw(st.sets(st.sampled_from(files), min_size=2, max_size=6))
     for index, path in enumerate(removed_files):
@@ -150,7 +160,7 @@ def test_watch_directory_moving(
     """Events emitted when directories are moved in and out of the library are the
     correct :class:`scanner.FileEvent` and :class:`DirectoryRemovedEvent` objects.
     """
-    library_base, directories, files, backend, generator = context
+    library_base, directories, files, storage, generator = context
 
     new_directory = data.draw(st.directory_names(exclude=directories))
     new_files = data.draw(st.sets(st.filenames(), min_size=2, max_size=6))
@@ -165,7 +175,7 @@ def test_watch_directory_moving(
         os.path.join(secondary_base, new_directory),
         os.path.join(library_base, new_directory),
     )
-    # Prepend the new folder path to the filenames to make them paths relative to
+    # Prepend the new directory path to the filenames to make them paths relative to
     # the library root.
     new_files = {os.path.join(new_directory, path) for path in new_files}
     # Check that all events are present.
@@ -175,8 +185,8 @@ def test_watch_directory_moving(
         new_files.remove(event.path)
     assert len(new_files) == 0
 
-    # Move the folder outside of the library again. This should yield a
-    # FolderRemovedEvent.
+    # Move the directory outside the library again. This should yield a
+    # DirectoryRemovedEvent.
     os.rename(
         os.path.join(library_base, new_directory),
         os.path.join(secondary_base, new_directory),
@@ -194,7 +204,7 @@ def test_watch_moving_inside(context: WatchContext, data: st.DataObject) -> None
     """Events emitted when files and directories are moved inside the library are
     correct.
     """
-    library_base, directories, files, backend, generator = context
+    library_base, directories, files, storage, generator = context
 
     source_file = data.draw(st.sampled_from(files))
     target_directory = data.draw(st.sampled_from(directories))
@@ -254,3 +264,87 @@ def test_watch_creation(
         assert event.path == library_path
 
     assert generator.send("check_empty") is True  # type: ignore
+
+
+@pytest.mark.slow
+@pytest.mark.usefixtures("patch_exception_handling")
+@testing.state_machine(use_django_executor=True)
+class test_integration(LibraryActionsStateMachine):
+    """Complete test case for the scanning scenario with the filesystem backend."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.root = tempfile.mkdtemp()
+
+        self.library = libraries_models.Library.objects.create(
+            source=f"file://{self.root}",
+            context="test_storage",
+        )
+
+        # This library will be scanned by watching the backend because that yields
+        # slightly different events for some actions, and we want to test those as well.
+        self.watched_library = libraries_models.Library.objects.create(
+            source=f"file://{self.root}/",  # The slash fools the unique constraint
+            context="test_storage",
+        )
+        self.watch_events = self.watched_library.storage.watch()
+        assert next(self.watch_events) is None
+
+    def teardown(self) -> None:
+        shutil.rmtree(self.root)
+
+    def _add_file(self, path: str, content: bytes, data: st.DataObject) -> None:
+        full_path = os.path.join(self.root, path)
+        with open(full_path, "wb") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.utime(full_path)
+
+    def _add_directory(self, path: str, data: st.DataObject) -> None:
+        os.mkdir(os.path.join(self.root, path))
+
+    def _delete_file(self, path: str, data: st.DataObject) -> None:
+        os.unlink(os.path.join(self.root, path))
+
+    def _delete_directory(self, path: str, data: st.DataObject) -> None:
+        shutil.rmtree(os.path.join(self.root, path))
+
+    def _move_file(self, old_path: str, new_path: str, data: st.DataObject) -> None:
+        os.rename(os.path.join(self.root, old_path), os.path.join(self.root, new_path))
+
+    def _move_directory(
+        self, old_path: str, new_path: str, data: st.DataObject
+    ) -> None:
+        self._move_file(old_path, new_path, data)
+
+    def _change_file(self, path: str, content: bytes, data: st.DataObject) -> None:
+        # When modifying files, we sometimes need to actually make sure the OS has fired
+        # the corresponding events before continuing. That way we try to eliminate race
+        # conditions while testing. Also, we check the file timestamps - just to be
+        # sure.
+        inotify = inotify_simple.INotify()
+        inotify.add_watch(
+            os.path.dirname(os.path.join(self.root, path)), inotify_simple.flags.MODIFY
+        )
+        inotify.read(timeout=0)
+
+        before_time = self.watched_library.storage.get_modified_time(path)
+        self._add_file(path, content, data)
+        after_time = self.watched_library.storage.get_modified_time(path)
+        assert before_time < after_time
+
+        inotify.read()
+
+    @hypothesis.stateful.invariant()
+    def perform_scan(self) -> None:
+        """Run the scan on both libraries and make sure the state is OK."""
+        self.library.scan(watch=False, thread_count=1)
+        self.assert_library_state(self.library)
+
+        while True:
+            event = self.watch_events.send(0)
+            if event is None:
+                break
+            event.commit(self.watched_library)
+        self.assert_library_state(self.watched_library)

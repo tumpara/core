@@ -3,7 +3,7 @@ import functools
 import hypothesis
 from django.db.models import Q
 
-from tumpara.api.filtering import FloatFilter, IntFilter, StringFilter
+from tumpara.api import FloatFilter, IntFilter, StringFilter
 from tumpara.testing import strategies as st
 
 # Note: these tests basically only test if the Q object we get when evaluating the

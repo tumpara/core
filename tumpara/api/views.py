@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
+import strawberry
 import strawberry.django.context
 import strawberry.django.views
 from django.http import HttpRequest, HttpResponse, HttpResponseNotAllowed
@@ -14,6 +15,7 @@ if TYPE_CHECKING:
     from tumpara.accounts import models as accounts_models
 
     from . import models as api_models
+    from .schema import SchemaManager
 
 
 @dataclasses.dataclass
@@ -23,6 +25,33 @@ class ApiContext(strawberry.django.context.StrawberryDjangoContext):
 
 
 class ApiView(strawberry.django.views.GraphQLView):
+    schema_manager: Optional[SchemaManager] = None
+
+    def __init__(
+        self,
+        schema_manager: SchemaManager,
+        graphiql: bool = True,
+        subscriptions_enabled: bool = False,
+        **kwargs: Any,
+    ):
+        super().__init__(
+            schema=None,  # type: ignore
+            graphiql=graphiql,
+            subscriptions_enabled=subscriptions_enabled,
+            **kwargs,
+        )
+        self.schema_manager = schema_manager
+
+    @property  # type: ignore
+    def schema(self) -> strawberry.Schema:  # type: ignore
+        assert self.schema_manager is not None
+        return self.schema_manager.get()
+
+    @schema.setter
+    def schema(self, schema: Any) -> None:
+        # This assertion will hopefully fail if some upstream implementation fails.
+        assert schema is None
+
     @method_decorator(csrf.csrf_exempt)
     def dispatch(
         self, request: HttpRequest, *args: Any, **kwargs: Any

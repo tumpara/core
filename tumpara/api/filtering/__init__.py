@@ -1,7 +1,8 @@
-from .scalars import FloatFilter, IntFilter, StringFilter
+from typing import Protocol
 
-__all__ = [
-    "FloatFilter",
-    "IntFilter",
-    "StringFilter",
-]
+from django.db import models
+
+
+class GenericFilter(Protocol):
+    def build_query(self, field_name: str) -> models.Q:
+        ...

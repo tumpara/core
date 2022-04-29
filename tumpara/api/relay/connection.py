@@ -1,23 +1,24 @@
 from __future__ import annotations
 
 import dataclasses
+import inspect
 import typing
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Generic, Optional, TypeVar
+from collections.abc import Callable, Iterator, Sequence
+from typing import Any, ClassVar, Generic, Optional, TypeVar, Union, cast
 
 import strawberry.annotation
 import strawberry.arguments
 from django.db import models
 from strawberry.field import StrawberryField
+from strawberry.type import StrawberryOptional
 
-from .base import Node  # noqa: F401  # pylint: disable=unused-import
-from .base import decode_key, encode_key
+from tumpara.api import filtering
 
-if TYPE_CHECKING:
-    from _typeshed import Self
+from ..utils import InfoType
+from .base import DjangoNode, _DjangoNode, _Model, _Node, decode_key, encode_key
 
-_Node = TypeVar("_Node", bound="Node")
-_Model = TypeVar("_Model", bound="models.Model")
+_DjangoConnection = TypeVar("_DjangoConnection", bound="DjangoConnection[Any, Any]")
+_Connection = TypeVar("_Connection", bound="Connection[Any]")
 
 
 @strawberry.type(
@@ -50,10 +51,19 @@ class PageInfo:
 class Edge(Generic[_Node]):
     """An edge in a connection. This points to a single item in the dataset."""
 
-    node: _Node = strawberry.field(description="The node connected to the edge.")
+    node: _Node
     cursor: str = strawberry.field(
         description="A cursor used for pagination in the corresponding connection."
     )
+
+    def __init_subclass__(cls, **kwargs: Any):
+        # Delay the field initialization code, see this method in the Connection class
+        # for details.
+        cls.node = strawberry.field(  # type: ignore
+            description="The node connected to the edge.",
+        )
+
+        super().__init_subclass__(**kwargs)
 
 
 @strawberry.type
@@ -113,16 +123,48 @@ class Connection(Generic[_Node]):
         super().__init_subclass__(**kwargs)
 
     @classmethod
+    def empty(cls: type[_Connection], total_count: int = 0) -> _Connection:
+        return cls(
+            page_info=PageInfo(
+                has_next_page=False,
+                has_previous_page=False,
+                start_cursor=None,
+                end_cursor=None,
+            ),
+            total_count=total_count,
+            edges=[],
+            nodes=[],
+        )
+
+    @classmethod
+    def _get_edge_type(cls) -> type[Edge[_Node]]:
+        try:
+            field_annotation = typing.get_type_hints(cls)["edges"]
+            assert typing.get_origin(field_annotation) is list
+            optional_annotation = typing.get_args(field_annotation)[0]
+            assert typing.get_origin(optional_annotation) in (Optional, Union)
+            inner_annotation = next(
+                arg for arg in typing.get_args(optional_annotation) if arg is not None
+            )
+            assert issubclass(inner_annotation, Edge)
+            return cast(type[Edge[_Node]], inner_annotation)
+        except Exception as error:
+            raise TypeError(
+                "Could not extract edge type from annotations - make sure the 'edges' "
+                "field is annotated like this: list[Optional[SomeEdge]]. Also note "
+                "that the node type of the edge and the connection should match."
+            ) from error
+
+    @classmethod
     def from_sequence(
-        cls: type[Self],
+        cls: type[_Connection],
         sequence: Sequence[_Node],
-        size: Optional[int] = None,
         *,
         after: Optional[str] = None,
         before: Optional[str] = None,
         first: Optional[int] = None,
         last: Optional[int] = None,
-    ) -> Self:
+    ) -> _Connection:
         after_index: Optional[int] = None
         if after is not None:
             try:
@@ -146,7 +188,7 @@ class Connection(Generic[_Node]):
         if last is not None and last < 0:
             raise ValueError("'last' option must be non-negative")
 
-        sequence_length = size if size is not None else len(sequence)
+        sequence_length = len(sequence)
 
         # The following algorithm more or less follows the one provided in the Relay
         # specification:
@@ -164,17 +206,7 @@ class Connection(Generic[_Node]):
         slice_stop = max(0, min(slice_stop, sequence_length))
 
         if slice_stop is not None and slice_start >= slice_stop:
-            return cls(  # type: ignore
-                page_info=PageInfo(
-                    has_next_page=False,
-                    has_previous_page=False,
-                    start_cursor=None,
-                    end_cursor=None,
-                ),
-                total_count=sequence_length,
-                edges=[],
-                nodes=[],
-            )
+            return cls.empty(sequence_length)
 
         # See the specification again for this algorithm:
         # https://relay.dev/graphql/connections.htm#sec-undefined.PageInfo.Fields
@@ -202,12 +234,13 @@ class Connection(Generic[_Node]):
             #   [0, 1, 2, 3, 4][5-1:5] = [4]
             slice_start = max(slice_start, slice_stop - last)
 
+        edge_type = cls._get_edge_type()
         edges = [
-            Edge(node=item, cursor=encode_key("Connection", index + slice_start))
+            edge_type(node=item, cursor=encode_key("Connection", index + slice_start))
             for index, item in enumerate(sequence[slice_start:slice_stop])
         ]
         # MyPy doesn't get that cls is actually a dataclass:
-        return cls(  # type: ignore
+        return cls(
             page_info=PageInfo(
                 has_next_page=has_next_page,
                 has_previous_page=has_previous_page,
@@ -216,26 +249,98 @@ class Connection(Generic[_Node]):
             ),
             total_count=sequence_length,
             edges=edges,
-            nodes=(edge.node if edge is not None else None for edge in edges),
+            nodes=[edge.node if edge is not None else None for edge in edges],
         )
 
 
-class DjangoConnection(Generic[_Node, _Model], Connection[_Node]):
+class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
     """A connection superclass for connections with Django models."""
+
+    _node: ClassVar[type]
+    _model: ClassVar[type]
+
+    def __init_subclass__(cls, **kwargs: Any):
+        node: Optional[type[_DjangoNode]] = None
+        model: Optional[type[_Model]] = None
+
+        for base in cls.__orig_bases__:  # type: ignore
+            origin = typing.get_origin(base)
+            if origin is Generic:
+                super().__init_subclass__(**kwargs)
+                return
+            elif origin is DjangoConnection:
+                (node, model) = typing.get_args(base)
+
+        assert node is not None and issubclass(
+            node, DjangoNode
+        ), f"DjangoConnection classes must be created with a DjangoNode (got {node!r})"
+        assert model is not None and issubclass(model, models.Model), (
+            f"DjangoConnection classes must be created with a Django model "
+            f"(got {model!r})"
+        )
+        assert (
+            node._get_model_type() is model
+        ), "a DjangoConnection must point to the same model as the accompanying node"
+        cls._node = node
+        cls._model = model
+
+        super().__init_subclass__(**kwargs)
+
+    @classmethod
+    def _get_node_type(cls) -> type[_DjangoNode]:
+        assert issubclass(cls._node, DjangoNode)
+        return cast(type[_DjangoNode], cls._node)
+
+    @classmethod
+    def _get_model_type(cls) -> type[_Model]:
+        assert issubclass(cls._model, models.Model)
+        return cast(type[_Model], cls._model)
+
+    @classmethod
+    def get_queryset(cls, info: InfoType) -> models.QuerySet[_Model]:
+        """Return the queryset that :class:`DjangoConnectionField` uses to resolve
+        model objects.
+
+        By default, this uses :meth:`DjangoNode.get_queryset` on the Django node. As
+        described there, make sure that this method handles permissions correctly.
+        """
+        return cls._get_node_type().get_queryset(info)
 
     @classmethod
     def from_queryset(
-        cls: type[Self],
+        cls: type[_DjangoConnection],
         queryset: models.QuerySet[_Model],
+        info: InfoType,
         *,
         after: Optional[str] = None,
         before: Optional[str] = None,
         first: Optional[int] = None,
         last: Optional[int] = None,
-    ) -> Self:
-        return cls.from_sequence(  # type: ignore
-            queryset,
-            queryset.count(),
+    ) -> _DjangoConnection:
+        # We don't check the generic view permission on the model here anymore because
+        # we assume that the connection's (which calls the node's) get_queryset method
+        # already filters accordingly.
+
+        # Since Connection.from_sequence expects a sequence of nodes (the API type) and
+        # we only have a queryset (which yields model instances), we need to transform
+        # that accordingly.
+        class NodeSequence:
+            def __getitem__(self, item: int | slice) -> NodeSequence:
+                nonlocal queryset
+                assert isinstance(item, slice)
+                queryset = queryset[item]
+                return self
+
+            def __iter__(self) -> Iterator[_Node]:
+                for obj in queryset:
+                    assert isinstance(obj, cls._get_model_type())
+                    yield cls._get_node_type()(obj)
+
+            def __len__(self) -> int:
+                return queryset.count()
+
+        return cls.from_sequence(
+            cast(Sequence[DjangoNode[_Model]], NodeSequence()),
             after=after,
             before=before,
             first=first,
@@ -244,6 +349,13 @@ class DjangoConnection(Generic[_Node, _Model], Connection[_Node]):
 
 
 class ConnectionField(StrawberryField):
+    """Connection field that automatically adds the ``after``, ``before``, ``first``
+    and ``last`` arguments.
+
+    When providing a resolver, you can pass these remaining keyword arguments directly
+    to :meth:`Connection.from_sequence`, without needing to define them.
+    """
+
     @property
     def arguments(self) -> list[strawberry.arguments.StrawberryArgument]:
         arguments_map = {
@@ -299,3 +411,110 @@ class ConnectionField(StrawberryField):
             del arguments_map["kwargs"]
 
         return list(arguments_map.values())
+
+
+class DjangoConnectionField(ConnectionField):
+    """Connection field for Django connections.
+
+    The default resolver will use :meth:`DjangoConnection.get_queryset` instead of
+    Strawberry's default :func:`getattr` implementation. Provide another resolver by
+    using the field as a decorator. Note that resolvers for Django connection fields
+    should not return the connection, but rather a :class:`models.QuerySet`.
+
+    The optional ``filter`` argument can be specified to support filtering results.
+    This should be an input type that has a ``build_query`` method that matches that
+    of other filter types.
+    """
+
+    def __init__(
+        self,
+        connection_type: Optional[type[DjangoConnection[Any, Any]]] = None,
+        description: Optional[str] = None,
+        filter_type: Optional[type[filtering.GenericFilter]] = None,
+        **kwargs: Any,
+    ):
+        if connection_type is not None:
+            kwargs.setdefault(
+                "type_annotation",
+                Optional[connection_type],
+            )
+
+        super().__init__(description=description, **kwargs)
+        self.filter_type = filter_type
+
+    def __call__(
+        self, resolver: Callable[Any, models.QuerySet[Any]]  # type: ignore
+    ) -> DjangoConnectionField:
+        super().__call__(resolver)
+        assert self.base_resolver is not None
+        # Propagate our type annotation (if available) to the resolver. That way the
+        # resolver can return (type-checked) querysets and the API will still have the
+        # connection type.
+        self.base_resolver.annotations["return"] = self.type_annotation
+        return self
+
+    @property
+    def arguments(self) -> list[strawberry.arguments.StrawberryArgument]:
+        arguments = super().arguments
+        if self.filter_type is None:
+            return arguments
+
+        for argument in arguments:
+            assert (
+                argument.python_name != "filter"
+            ), "DjangoConnectionField resolvers must not have a 'filter' argument"
+
+        return [
+            *arguments,
+            strawberry.arguments.StrawberryArgument(
+                python_name="filter",
+                graphql_name=None,
+                type_annotation=strawberry.annotation.StrawberryAnnotation(
+                    Optional[self.filter_type]
+                ),
+                description="Filter to narrow down results.",
+            ),
+        ]
+
+    def get_result(
+        self, source: Any, info: InfoType, args: list[Any], kwargs: dict[str, Any]
+    ) -> Any:
+        connection_type = self.type
+        # If our type is optional, we want the actual content type.
+        if isinstance(connection_type, StrawberryOptional):
+            connection_type = connection_type.of_type
+        assert inspect.isclass(connection_type) and issubclass(
+            connection_type, DjangoConnection
+        ), (
+            f"Django connection fields must have resolve to a DjangoConnection type, "
+            f"got {type(connection_type)}"
+        )
+
+        if self.base_resolver:
+            queryset = self.base_resolver(*args, **kwargs)
+        else:
+            try:
+                queryset = connection_type.get_queryset(info)
+            except NotImplementedError as error:
+                raise AssertionError(
+                    "cannot resolve a Django connection that does not define "
+                    "get_queryset()"
+                ) from error
+        assert isinstance(queryset, models.QuerySet)
+        assert issubclass(queryset.model, connection_type._get_model_type()), (
+            f"queryset model type {queryset.model} must match the connection model "
+            f"type {connection_type._get_model_type()}"
+        )
+
+        if (
+            self.filter_type is not None
+            and (filter := kwargs.pop("filter", None)) is not None
+        ):
+            # Since we are filtering objects directly in the queryset (and not some
+            # subfield), the field name is an empty string here:
+            queryset = queryset.filter(filter.build_query(""))
+
+        kwargs.setdefault("info", info)
+        # It should be safe to ignore 'args' here, because that only contains the
+        # self / root / parent value for the original resolver.
+        return connection_type.from_queryset(queryset, **kwargs)

@@ -54,9 +54,11 @@ autodoc_default_options = {
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "django": (
-        "http://docs.djangoproject.com/en/4.0/",
-        "http://docs.djangoproject.com/en/4.0/_objects/",
+        "https://docs.djangoproject.com/en/4.0/",
+        "https://docs.djangoproject.com/en/4.0/_objects/",
     ),
+    "hypothesis": ("https://hypothesis.readthedocs.io/en/latest/", None),
+    "pytest": ("https://docs.pytest.org/en/7.1.x/", None),
 }
 
 
@@ -73,9 +75,7 @@ def process_docstring(app, what, name, obj, options, lines):
 
             # Add the model field to the end of the docstring so that it is documented.
             # This will use either the help text or the verbose name.
-            lines.append(
-                f":param {field.attname}: {help_text or verbose_name}"
-            )
+            lines.append(f":param {field.attname}: {help_text or verbose_name}")
 
             # Document the type as well. If the field is available through the
             # django.db.models module then that is used (because then Intersphinx can

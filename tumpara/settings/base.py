@@ -222,6 +222,7 @@ INSTALLED_APPS = [
     "django.contrib.gis",
     "django.contrib.sessions",
     "corsheaders",
+    "tumpara.setup",
     "tumpara.accounts",
     "tumpara.api",
     "tumpara.libraries",
@@ -263,6 +264,7 @@ ALLOWED_HOSTS = parse_env("TUMPARA_HOST", list[str](), lambda host: [host])
 
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
+    "tumpara.accounts.backends.UserViewingBackend",
     "tumpara.accounts.backends.JoinablesBackend",
 ]
 AUTH_USER_MODEL = "accounts.user"
@@ -270,6 +272,14 @@ AUTH_USER_MODEL = "accounts.user"
 
 # Password validation
 # https://docs.djangoproject.com/en/2.2/ref/settings/#auth-password-validators
+
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.ScryptPasswordHasher",
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+]
 
 AUTH_PASSWORD_VALIDATORS = [
     {

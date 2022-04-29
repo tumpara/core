@@ -3,8 +3,17 @@ from typing import Any, Optional
 import hypothesis
 import pytest
 
-from tumpara.api import relay
+from tumpara import api
 from tumpara.testing import strategies as st
+
+
+class Edge(api.Edge[api.Node]):
+    pass
+
+
+class Connection(api.Connection[api.Node], name="test", pluralized_name="tests"):
+    edges: list[Optional[Edge]]
+    nodes: list[Optional[api.Node]]
 
 
 @st.composite
@@ -29,13 +38,11 @@ def create_connection(
     before: Optional[int | str] = None,
     first: Optional[int] = None,
     last: Optional[int] = None,
-) -> relay.Connection[Any]:
-    return relay.Connection.from_sequence(
-        dataset,
-        after=relay.encode_key("Connection", after)
-        if isinstance(after, int)
-        else after,
-        before=relay.encode_key("Connection", before)
+) -> api.Connection[Any]:
+    return Connection.from_sequence(
+        dataset,  # type: ignore
+        after=api.encode_key("Connection", after) if isinstance(after, int) else after,
+        before=api.encode_key("Connection", before)
         if isinstance(before, int)
         else before,
         first=first,
@@ -162,11 +169,11 @@ def test_connection_building_errors() -> None:
     with pytest.raises(ValueError):
         create_connection([], after="thisisnotbase64")
     with pytest.raises(ValueError):
-        create_connection([], after=relay.encode_key("wrong_key", 15))
+        create_connection([], after=api.encode_key("wrong_key", 15))
     with pytest.raises(ValueError):
         create_connection([], before="thisisnotbase64")
     with pytest.raises(ValueError):
-        create_connection([], before=relay.encode_key("wrong_key", 15))
+        create_connection([], before=api.encode_key("wrong_key", 15))
     with pytest.raises(ValueError):
         create_connection([], first=-3)
     with pytest.raises(ValueError):

@@ -6,7 +6,7 @@ import hashlib
 import logging
 import os.path
 import re
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Optional, cast
 
 from django.db import models, transaction
 from django.utils import timezone
@@ -51,20 +51,27 @@ class FileEvent(Event):
 
         from .. import models as libraries_models
 
-        if library.check_path_ignored(self.path):
+        def bail(reason: str) -> None:
+            """Bail out and mark all file objects for this path as unavailable."""
             _logger.debug(
-                f"New file {self.path!r} in {library} - skipping because the file is "
-                f"in an ignored directory."
+                f"New file {self.path!r} in {library} - skipping because {reason}."
             )
             libraries_models.File.objects.filter(
                 path=self.path, record__library=library
             ).update(availability=None)
+
+        if library.check_path_ignored(self.path):
+            bail("the file is in an ignored directory")
             return
 
-        hasher = hashlib.blake2b(digest_size=32)
-        with library.storage.open(self.path, "rb") as content:
-            hasher.update(content.read())
-        digest = hasher.hexdigest()
+        try:
+            hasher = hashlib.blake2b(digest_size=32)
+            with library.storage.open(self.path, "rb") as content:
+                hasher.update(content.read())
+            digest = hasher.hexdigest()
+        except IOError:
+            bail("the file could not be read")
+            return
 
         # Fetch a list of existing records that might match this file.
         file_candidates = list(
@@ -73,149 +80,127 @@ class FileEvent(Event):
                 record__library=library,
             )
         )
+        candidates_by_path = {
+            file for file in file_candidates if file.path == self.path
+        }
+        candidates_by_digest = {
+            file for file in file_candidates if file.digest == digest
+        }
+        available_candidates = {file for file in file_candidates if file.available}
+        unavailable_candidates = {
+            file for file in file_candidates if not file.available
+        }
+        file: Optional[libraries_models.File] = None
+        need_change_signal = False
+        need_saving = False
 
-        done = False
+        # First case: we have a file object that already matches the description we
+        # have. This means that the file has not changed since the last time we scanned.
+        if candidates := candidates_by_path & candidates_by_digest:
+            file = candidates.pop()
+            need_saving = True
+            need_change_signal = True
 
-        # If this new file's digest matches one of the files we already have on record,
-        # This might mean that the file is unchanged. It might also mean that the new
-        # file is a copy  of something we already have on record.
-        for file in file_candidates:
-            if file.digest == digest:
-                if file.path == self.path:
-                    # The file is unchanged, so we are done here.
-                    file.availability = timezone.now()
-                    file.save()
-                    return
-
-                # First, check if an existing file object for this path exists. If that
-                # is already attached to the same record as we have here, we are done.
-                for other_file in file_candidates:
-                    if (
-                        other_file is not file
-                        and other_file.path == self.path
-                        and other_file.record == file.record
-                        and other_file.availability is not None
-                    ):
-                        return
-
-                file.record.files.create(
-                    # Note that we will definitely be creating a record with a unique
-                    # path inside the library here, because otherwise we would have
-                    # caught it in the earlier case.
-                    path=self.path,
-                    digest=digest,
-                    availability=timezone.now(),
-                )
-                libraries_signals.files_changed.send_robust(
-                    sender=file.record.content_type.model_class(), record=file.record
-                )
-
-                # Go through the other candidates with the same path and mark them
-                # unavailable (otherwise we might get duplicate records for the same
-                # path).
-                for other_file in file_candidates:
-                    if other_file is not file and other_file.path == self.path:
-                        other_file.availability = None
-                        other_file.save()
-                        pass
-
-                return
-
-        # If we already have a matching record for the file, we can use that. By
-        # assumption, such an entry will be unique.
-        for file in file_candidates:
-            if file.path == self.path and file.availability is not None:
-                if done:
-                    # Make sure we still only have at most one available file for a path
-                    # in the library.
-                    file.availability = None
-                    file.save()
+            for other_file in candidates:
+                if not other_file.available:
                     continue
-
-                file.availability = timezone.now()
-                changed = False
-                if file.digest != digest:
-                    file.digest = digest
-                    changed = True
-                file.save()
-
-                if changed:
-                    libraries_signals.files_changed.send_robust(
-                        sender=file.record.content_type.model_class(),
-                        record=file.record,
-                    )
-                done = True
-        if done:
-            return
-
-        # Since we didn't find a matching record in the last step, we go on and check
-        # for any old records that are currently unavailable but fit the description for
-        # our file. This step is important because it covers files that were renamed /
-        # moved as well as files that were edited.
-        for file in file_candidates:
-            if (
-                (file.path == self.path or file.digest == digest)
-                # This time we explicitly want unavailable records:
-                and file.availability is None
-            ):
-                file.path = self.path
-                file.digest = digest
-                file.availability = timezone.now()
-                file.save()
-                libraries_signals.files_changed.send_robust(
-                    sender=file.record.content_type.model_class(), record=file.record
+                _logger.warning(
+                    f"Got two matching file records for the same path in a library, "
+                    f"which should not happen. The file object {other_file} will be "
+                    f"marked unavailable. This is probably a bug."
                 )
-                return
+                other_file.availability = None
+                other_file.save()
 
-        # Since we couldn't place the file into any existing library record, we can now
-        # create a new one. To do that, we ask all the registered receivers of the
-        # `new_file` signal to see if we find some content object that is willing to
-        # take the file (see the signal's documentation for details).
-        result = libraries_signals.new_file.send_robust(
-            sender=library.context,
-            path=self.path,
-            library=library,
-        )
-        responses = [
-            cast(libraries_models.Record | models.Model, response)
-            for _, response in result
-            if isinstance(response, models.Model)
-        ]
-        if len(responses) == 0:
-            _logger.debug(
-                f"New file {self.path!r} in {library} - skipping because no "
-                f"compatible file handler was found."
-            )
-            return
-        elif len(responses) > 1:
-            _logger.warning(
-                f"New file {self.path!r} in {library} - skipping because more than one "
-                f"compatible file handler was found."
-            )
-            return
-        else:
-            response = responses[0]
-            if isinstance(response, libraries_models.Record):
-                record = response
-            else:
-                # This is the case where we got a content object from the signal
-                # receiver (which may be unsaved). In that case, create (or find) a
-                # record for it.
-                if response._state.adding:
-                    response.save()
-                record, _ = libraries_models.Record.objects.get_or_create(
-                    library=library,
-                    content_type=ContentType.objects.get_for_model(response),
-                    object_pk=response.pk,
-                )
+        # Second case: we have some other unavailable file object on record with the
+        # same digest. Then that old file object can be replaced with this new one.
+        elif candidates := candidates_by_digest & unavailable_candidates:
+            file = candidates.pop()
+            need_saving = True
+            need_change_signal = True
 
-            record.files.create(
+        # Third case: we have existing database entries that match the digest, but are
+        # currently available. Then we create a new file object in their record (all
+        # file objects with the same digest should always share a record).
+        elif candidates := candidates_by_digest & available_candidates:
+            file = libraries_models.File(
+                record=candidates.pop().record,
                 path=self.path,
                 digest=digest,
                 availability=timezone.now(),
             )
+            need_saving = True
+            need_change_signal = True
+
+        # Fourth case: we have an existing file object for this path that is marked
+        # as available. This is the case when a file is edited on disk.
+        elif candidates := candidates_by_path & available_candidates:
+            file = candidates.pop()
+            need_saving = True
+            need_change_signal = True
+
+        # Fifth case: we have an existing file object for this path that is marked as
+        # unavailable. Note that this case might be problematic because there might now
+        # be a file at that path that no longer matches the type of the one that was
+        # there before.
+        elif candidates := candidates_by_path & unavailable_candidates:
+            file = candidates.pop()
+            need_saving = True
+            need_change_signal = True
+
+        # Sixth case: we have a completely new file. Since we couldn't place the file
+        # into any existing library record, we can now create a new one. To do that,
+        # we ask all the registered receivers of the `new_file` signal to see if we
+        # find some content object that is willing to take the file (see the signal's
+        # documentation for details).
+        else:
+            result = libraries_signals.new_file.send_robust(
+                context=library.context,
+                path=self.path,
+                library=library,
+            )
+            responses = [
+                cast(libraries_models.Record, response)
+                for _, response in result
+                if isinstance(response, libraries_models.Record)
+            ]
+            if len(responses) == 0:
+                bail("no compatible file handler was found")
+                return
+            elif len(responses) > 1:
+                bail("more than one compatible file handler was found")
+                return
+            else:
+                record = responses[0]
+                if record._state.adding:
+                    record.save()
+
+                file = libraries_models.File.objects.create(
+                    record=record,
+                    path=self.path,
+                    digest=digest,
+                    availability=timezone.now(),
+                )
+                need_change_signal = True
+
+        # Mark all other files for that path that we might still have in the database
+        # as unavailable (because we just created a new one).
+        for other_file in candidates_by_path:
+            if other_file == file:
+                continue
+            other_file.availability = None
+            other_file.save()
+
+        if need_saving:
+            file.path = self.path
+            file.digest = digest
+            file.availability = timezone.now()
+            file.save()
+
+        if need_change_signal:
+            resolved_record = file.record.resolve_instance()
             libraries_signals.files_changed.send_robust(
-                sender=record.content_type.model_class(), record=record
+                sender=type(resolved_record), record=resolved_record
             )
 
 
@@ -258,9 +243,12 @@ class FileModifiedEvent(Event):
         if (
             file.availability is not None
             and file.availability > library.storage.get_modified_time(self.path)
+            and file.availability > library.storage.get_created_time(self.path)
         ):
             # The file seems to still be available and hasn't changed since the last
             # time we checked, so go ahead and call it a day.
+            file.availability = timezone.now()
+            file.save()
             return
         else:
             # Since the file was changed, we need to rescan it.
@@ -283,9 +271,9 @@ class FileMovedEvent(Event):
         file_queryset = libraries_models.File.objects.filter(
             record__library=library, path=self.old_path, availability__isnull=False
         )
-        touched_records = libraries_models.Record.objects.filter(
-            file__in=file_queryset
-        ).distinct()
+        touched_records = list(
+            libraries_models.Record.objects.filter(file__in=file_queryset).distinct()
+        )
 
         if library.check_path_ignored(self.new_path):
             affected_rows = file_queryset.update(availability=None)
@@ -293,8 +281,15 @@ class FileMovedEvent(Event):
                 f"Moving file {self.old_path!r} to {self.new_path!r}, but the new path "
                 f"is in an ignored directory. Records were marked unavailable."
             )
+            for record in touched_records:
+                resolved_record = record.resolve_instance()
+                libraries_signals.files_changed.send_robust(
+                    sender=type(resolved_record), record=resolved_record
+                )
         else:
-            affected_rows = file_queryset.update(path=self.new_path)
+            affected_rows = file_queryset.update(
+                path=self.new_path, availability=timezone.now()
+            )
             if affected_rows == 0:
                 _logger.debug(
                     f"Got a file moved event for {self.old_path!r} to "
@@ -312,10 +307,6 @@ class FileMovedEvent(Event):
                 "More than one file processed for file move event which should "
                 "have been unique."
             )
-        for record in touched_records:
-            libraries_signals.files_changed.send_robust(
-                sender=record.content_type.model_class(), record=record
-            )
 
 
 @dataclasses.dataclass
@@ -330,9 +321,9 @@ class FileRemovedEvent(Event):
         file_queryset = libraries_models.File.objects.filter(
             record__library=library, path=self.path, availability__isnull=False
         )
-        touched_records = libraries_models.Record.objects.filter(
-            file__in=file_queryset
-        ).distinct()
+        touched_records = list(
+            libraries_models.Record.objects.filter(file__in=file_queryset).distinct()
+        )
 
         affected_rows = file_queryset.update(availability=None)
         if affected_rows == 0:
@@ -349,8 +340,9 @@ class FileRemovedEvent(Event):
             _logger.debug(f"Removed {self.path} in {library}.")
 
         for record in touched_records:
+            resolved_record = record.resolve_instance()
             libraries_signals.files_changed.send_robust(
-                sender=record.content_type.model_class(), record=record
+                sender=type(resolved_record), record=resolved_record
             )
 
 
@@ -376,9 +368,9 @@ class DirectoryMovedEvent(Event):
         file_queryset = libraries_models.File.objects.filter(
             record__library=library, path__regex=path_regex
         )
-        touched_records = libraries_models.Record.objects.filter(
-            file__in=file_queryset
-        ).distinct()
+        touched_records = list(
+            libraries_models.Record.objects.filter(file__in=file_queryset).distinct()
+        )
 
         if library.check_path_ignored(self.new_path):
             affected_rows = file_queryset.update(availability=None)
@@ -387,22 +379,25 @@ class DirectoryMovedEvent(Event):
                 f"path is in an ignored directory. {affected_rows} records were marked "
                 f"unavailable."
             )
+
+            for record in touched_records:
+                resolved_record = record.resolve_instance()
+                libraries_signals.files_changed.send_robust(
+                    sender=type(resolved_record), record=resolved_record
+                )
         else:
             count = 0
             for file in file_queryset:
                 file.path = os.path.join(
                     self.new_path, os.path.relpath(file.path, self.old_path)
                 )
+                if file.availability is not None:
+                    file.availability = timezone.now()
                 file.save()
                 count += 1
             _logger.debug(
                 f"Got a directory moved event from {self.old_path!r} to "
                 f"{self.new_path!r} in {library} which affected {count} file(s)."
-            )
-
-        for record in touched_records:
-            libraries_signals.files_changed.send_robust(
-                sender=record.content_type.model_class(), record=record
             )
 
 
@@ -423,9 +418,9 @@ class DirectoryRemovedEvent(Event):
         file_queryset = libraries_models.File.objects.filter(
             record__library=library, path__regex=path_regex, availability__isnull=False
         )
-        touched_records = libraries_models.Record.objects.filter(
-            file__in=file_queryset
-        ).distinct()
+        touched_records = list(
+            libraries_models.Record.objects.filter(file__in=file_queryset).distinct()
+        )
 
         affected_rows = file_queryset.update(availability=None)
         _logger.debug(
@@ -434,6 +429,49 @@ class DirectoryRemovedEvent(Event):
         )
 
         for record in touched_records:
+            resolved_record = record.resolve_instance()
             libraries_signals.files_changed.send_robust(
-                sender=record.content_type.model_class(), record=record
+                sender=type(resolved_record), record=resolved_record
+            )
+
+
+class ScanEvent(Event):
+    """This event is sent after a full scan of the library.
+
+    The event object should be created before beginning the scan and committed after all
+    other events of the scan have been processed. It takes care of any leftover
+    :class:`libraries_models.File` objects that are no longer available.
+
+    .. warning::
+        When using multiprocessing, this event should be treated as a critical section!
+        Do not commit this when other threads are still processing events that are
+        assumed to be done. Instead, wait for those to finish first.
+    """
+
+    def __init__(self) -> None:
+        self.start_timestamp = timezone.now()
+
+    def commit(self, library: libraries_models.Library) -> None:
+        from .. import models as libraries_models
+
+        file_queryset = libraries_models.File.objects.filter(
+            # Since all events mark their touched files as available with a new
+            # timestamp, we can use that to find all the old records that are no
+            # longer available.
+            availability__lte=self.start_timestamp,
+            record__library=library,
+        )
+        touched_records = list(
+            libraries_models.Record.objects.filter(file__in=file_queryset).distinct()
+        )
+
+        affected_rows = file_queryset.update(availability=None)
+        _logger.debug(
+            f"Marked {affected_rows} file objects in {library} as no longer available."
+        )
+
+        for record in touched_records:
+            resolved_record = record.resolve_instance()
+            libraries_signals.files_changed.send_robust(
+                sender=type(resolved_record), record=resolved_record
             )

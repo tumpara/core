@@ -1,37 +1,59 @@
+from __future__ import annotations
+
+import logging
 import os.path
-from typing import Literal
+from typing import Any, Literal, NoReturn, Optional, cast, overload
 
 from django.conf import settings
-from django.contrib.contenttypes import fields as contenttypes_fields
-from django.contrib.contenttypes import models as contenttypes_models
+from django.core.exceptions import ValidationError
 from django.core.files import base as django_files
 from django.db import models
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 
 from tumpara.accounts import models as accounts_models
+from tumpara.accounts.models import JoinableQueryset
 
-from . import storage
+from . import scanner, storage
+
+_logger = logging.getLogger(__name__)
 
 
 class Visibility:
-    """Visibility settings shared by"""
+    """Visibility settings shared by libraries and library records."""
 
     PUBLIC = 0
     INTERNAL = 1
     MEMBERS = 2
     OWNERS = 3
+    INHERIT = 10
 
     VISIBILTY_CHOICES = [
         (PUBLIC, _("Public")),
         (INTERNAL, _("All logged-in users")),
         (MEMBERS, _("Library members")),
         (OWNERS, _("Only library owners")),
+        (INHERIT, _("Use the default value")),
     ]
 
 
 def validate_library_source(source: str) -> None:
     storage.backends.build(source).check()
+
+
+def validate_library_default_visibility(value: int) -> None:
+    if value == Visibility.INHERIT:
+        raise ValidationError(
+            "Libraries cannot inherit visibility values.",
+            code="no-library-visibility-inheritance",
+        )
+
+
+class LibraryQueryset(JoinableQueryset["Library"]):
+    pass
+
+
+LibraryManager = models.Manager.from_queryset(LibraryQueryset)
 
 
 class Library(accounts_models.Joinable):
@@ -59,8 +81,11 @@ class Library(accounts_models.Joinable):
         _("default visibility"),
         choices=Visibility.VISIBILTY_CHOICES,
         default=Visibility.MEMBERS,
+        validators=[validate_library_default_visibility],
         help_text=_("Default visibility value for records where it is not defined."),
     )
+
+    objects = LibraryManager()
 
     class Meta:
         verbose_name = _("library")
@@ -105,14 +130,88 @@ class Library(accounts_models.Joinable):
             for ignored_directory in self._ignored_directories
         )
 
+    @overload
+    def scan(
+        self, watch: Literal[False] = False, *, thread_count: Optional[int] = ...
+    ) -> None:
+        ...
+
+    @overload
+    def scan(
+        self, watch: Literal[True], *, thread_count: Optional[int] = ...
+    ) -> NoReturn:
+        ...
+
+    def scan(self, watch: bool = False, *, thread_count: Optional[int] = None) -> Any:
+        """Perform a full scan of file in this library.
+
+        This will make sure that all :class:`File` objects linked to a :class:`Record`
+        of this library are up-to-date. However, that does not mean that all files in
+        the database are actually readable - implementors are advised to check whether
+        the :attr:`File.availability` attribute is `None` and act accordingly.
+
+        :param watch: Whether to continue to watch for changes after the initial scan
+            has been completed. If this is set, this function will not return and idle
+            until new events come in.
+        :param thread_count: Number of processes to use for event handling. If this is
+            `None` (the default), a sane default will automatically be chosen.
+        """
+        _logger.info(
+            f"Scanning step 1 of 3 for {self}: Checking for ignored directories..."
+        )
+        try:
+            del self._ignored_directories
+        except AttributeError:
+            pass
+        self.check_path_ignored("/")
+        _logger.debug(
+            f"Found {len(self._ignored_directories)} folder(s) that will be ignored "
+            f"while scanning."
+        )
+
+        scan_event = scanner.ScanEvent()
+
+        def scan_events() -> storage.WatchGenerator:
+            for path in self.storage.walk_files(safe=True):
+                yield scanner.FileModifiedEvent(path=path)
+
+        _logger.info(f"Scanning step 2 of 3 for {self}: Searching for new content...")
+        scanner.run(self, scan_events(), thread_count=thread_count)
+
+        _logger.info(
+            f"Scanning step 3 of 3 for {self}: Removing obsolete database entries..."
+        )
+        scan_event.commit(self)
+
+        if not watch:
+            _logger.info(f"Finished scan for {self}.")
+            return
+        _logger.info(
+            f"Finished file scan for {self}. Continuing to watch for changes..."
+        )
+
+        def watch_events() -> storage.WatchGenerator:
+            # When watching, pass through all events from the storage backend's
+            # EventGenerator. The response needs to be handled separately to support
+            # stopping the generator.
+            generator = self.storage.watch()
+            response: Literal[None, False] | int = None
+            while response is not False:
+                response = yield generator.send(response)
+            try:
+                generator.send(False)
+            except StopIteration:
+                pass
+
+        scanner.run(self, watch_events(), thread_count=thread_count)
+
 
 class Record(models.Model):
     """A piece of content in a library.
 
     This model's purpose is mainly to facilitate listing of all content in a library and
-    provide a generalized permission model with visibility settings. The
-    ``content_type`` and ``content_pk`` refer to the model that implements any
-    actual content.
+    provide a generalized permission model with visibility settings. Records that hold
+    actual content should be implemented by subclassing :class:`RecordModel`.
 
     Records may be linked to any number of :class:`File` objects. Although not strictly
     required (there may be library records that don't depend on a file), most will have
@@ -122,6 +221,8 @@ class Record(models.Model):
     library = models.ForeignKey(
         Library,
         on_delete=models.CASCADE,
+        related_name="records",
+        related_query_name="record",
         verbose_name=_("library"),
         help_text=_(
             "Library the object is attached to. Users will have access depending on "
@@ -130,30 +231,60 @@ class Record(models.Model):
     )
     visibility = models.PositiveSmallIntegerField(
         _("visibility"),
-        choices=[
-            *Visibility.VISIBILTY_CHOICES,
-            (None, _("Use the library's default value")),
-        ],
-        null=True,
-        default=None,
+        choices=Visibility.VISIBILTY_CHOICES,
+        default=Visibility.INHERIT,
         help_text=_("Determines who can see this object."),
     )
-
-    content_type = models.ForeignKey(
-        contenttypes_models.ContentType, on_delete=models.CASCADE
-    )
-    object_pk = models.PositiveIntegerField()
-    content_object = contenttypes_fields.GenericForeignKey("content_type", "object_pk")
 
     class Meta:
         verbose_name = _("library")
         verbose_name_plural = _("libraries")
-        constraints = [
-            models.UniqueConstraint(
-                fields=["content_type", "object_pk"],
-                name="record_unique_for_content_type",
-            ),
-        ]
+
+    def resolve_instance(self) -> Record:
+        """Resolve the actual instance of this record.
+
+        This will go through all known subclasses and see which type implements the
+        record. Performance-wise this is very much suboptimal, as a lot of database
+        queries are required. It is recommended to call this on models coming from a
+        queryset where :meth:`models.QuerySet.select_related` was used to prefetch
+        data for the concrete :class:`Record` implementations.
+
+        Further note that this assumes that subclasses add a related descriptor on this
+        parent class named something like ``photo_instance``. This is done automatically
+        by subclassing :class:`RecordModel` instead of :class:`Record` directly.
+        """
+        for field in self._meta.get_fields():
+            if not (
+                field.name.endswith("_instance")
+                and isinstance(field, models.OneToOneRel)
+                and issubclass(field.related_model, type(self))
+            ):
+                # This field is not applicable because it is not the other side of a
+                # OneToOneField from a subclass with parent_link set.
+                continue
+            try:
+                subtype = cast(Record, getattr(self, field.name))
+                # Resolve recursively because this might go a few levels deep.
+                return subtype.resolve_instance()
+            except field.related_model.DoesNotExist:
+                pass
+
+        # We found nothing, so let's go with the instance we already have.
+        return self
+
+
+class RecordModel(Record):
+    record = models.OneToOneField(
+        Record,
+        on_delete=models.CASCADE,
+        primary_key=True,
+        parent_link=True,
+        related_name="%(class)s_instance",
+        related_query_name="%(class)s_instance",
+    )
+
+    class Meta:
+        abstract = True
 
 
 class File(models.Model):
@@ -203,12 +334,20 @@ class File(models.Model):
             models.UniqueConstraint(
                 fields=["record", "path"],
                 condition=models.Q(availability__isnull=False),
-                name="available_path_unique_per_record",
+                name="path_unique_per_record",
             ),
         ]
 
     def __str__(self) -> str:
         return f"{self.path} in {self.record.library}"
+
+    @property
+    def library(self) -> Library:
+        return self.record.library
+
+    @property
+    def available(self) -> bool:
+        return self.availability is not None
 
     @property
     def directory_name(self) -> str:

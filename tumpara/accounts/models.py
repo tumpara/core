@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Collection, Optional, cast
+from typing import TYPE_CHECKING, Any, Collection, Generic, Optional, TypeVar, cast
 
 import django.contrib.auth
 import django.contrib.auth.validators
 from django.contrib.auth import models as auth_models
-from django.contrib.auth.models import AnonymousUser
+from django.contrib.auth.models import AnonymousUser, Permission
 from django.contrib.contenttypes import fields as contenttypes_fields
 from django.contrib.contenttypes import models as contenttypes_models
 from django.core.exceptions import PermissionDenied
@@ -18,10 +18,28 @@ from .utils import build_permission_name
 if TYPE_CHECKING:
     from .backends import JoinablesBackend  # noqa: F401
 
-__all__ = ["AnonymousUser", "User", "Joinable", "UserMembership"]
+__all__ = [
+    "AnonymousUser",
+    "User",
+    "Joinable",
+    "JoinableQueryset",
+    "Permission",
+    "UserMembership",
+]
 
 
 class UserManager(auth_models.UserManager["User"]):
+    def for_user(self, user: AnonymousUser | User) -> models.QuerySet[User]:
+        """Return a queryset of users that are visible for a given other user.
+
+        The resulting queryset contains all objects where the provided user has the
+        ``accounts.view_user`` permission.
+        """
+        if user.is_authenticated and user.is_active:
+            return self.all()
+        else:
+            return self.none()
+
     def create_superuser(
         self,
         username: str,
@@ -215,8 +233,13 @@ class UserMembership(AbstractMembership):
         ]
 
 
-class JoinableQueryset(models.QuerySet["Joinable"]):
-    def for_user(self, permission: str, user: User | AnonymousUser) -> JoinableQueryset:
+_Joinable = TypeVar("_Joinable", bound="Joinable")
+
+
+class JoinableQueryset(Generic[_Joinable], models.QuerySet[_Joinable]):
+    def for_user(
+        self, permission: str, user: User | AnonymousUser
+    ) -> JoinableQueryset[_Joinable]:
         """Narrow down the queryset to only return elements where the given user has
         a specific permission."""
         if not user.is_authenticated or not user.is_active:
@@ -244,17 +267,12 @@ class JoinableQueryset(models.QuerySet["Joinable"]):
             raise ValueError(f"unsupported permission: {permission}")
 
 
-JoinableManager = models.Manager.from_queryset(JoinableQueryset)
-
-
 class Joinable(models.Model):
     """Base class to indicate that users should be able to become members of a model."""
 
     user_memberships = contenttypes_fields.GenericRelation(
         UserMembership, "object_pk", "content_type"
     )
-
-    objects = JoinableManager()
 
     class Meta:
         abstract = True

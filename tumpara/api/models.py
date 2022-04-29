@@ -27,7 +27,7 @@ class Token(models.Model):
     key = models.CharField(
         _("key"),
         max_length=32,
-        primary_key=True,
+        unique=True,
         default=functools.partial(crypto.get_random_string, 32),
     )
     user = models.ForeignKey(

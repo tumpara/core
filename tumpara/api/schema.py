@@ -1,39 +1,81 @@
 from __future__ import annotations
 
+import dataclasses
 from typing import TYPE_CHECKING, Any, Optional
 
 import django.http
 import django.urls
 import django.utils
 import strawberry.django.views
+import strawberry.schema.schema
 import strawberry.tools
 import strawberry.types.execution
 
-from tumpara.accounts import api as accounts_api
-
-from . import base as base_api
-from . import relay
 from .utils import ApiContext
-from .views import ApiView
 
 if TYPE_CHECKING:
     from tumpara.accounts import models as accounts_models
 
     from . import models as api_models
 
-__all__ = ["schema", "urlpatterns"]
 
-Query = strawberry.tools.merge_types(
-    "Query", (base_api.Query, relay.base.Query, accounts_api.Query)
-)
-Mutation = strawberry.tools.merge_types("Mutation", (base_api.Mutation,))
-schema = strawberry.Schema(query=Query, mutation=Mutation)
+class SchemaManager:
+    def __init__(self) -> None:
+        self.config = strawberry.schema.schema.StrawberryConfig()
+        self._schema: Optional[strawberry.Schema] = None
+        self._queries = list[type]()
+        self._mutations = list[type]()
+
+    def _ensure_schema_is_not_built(self) -> None:
+        assert self._schema is None, (
+            "Trying to register a new type with the already-built schema. This is "
+            "disallowed because it is probably a bug. It means that the actual GraphQL "
+            "schema has already been accessed before all types were registered."
+        )
+
+    @staticmethod
+    def _prep_type(given_type: type) -> type:
+        if dataclasses.is_dataclass(given_type):
+            return given_type
+        else:
+            return strawberry.type(given_type)
+
+    def query(self, query_type: type) -> type:
+        """Register a query type that will be merged into the final schema."""
+        self._ensure_schema_is_not_built()
+        query_type = self._prep_type(query_type)
+        self._queries.append(query_type)
+        return query_type
+
+    def mutation(self, mutation_type: type) -> type:
+        """Register a mutation type that will be merged into the final schema."""
+        self._ensure_schema_is_not_built()
+        mutation_type = self._prep_type(mutation_type)
+        self._mutations.append(mutation_type)
+        return mutation_type
+
+    def get(self) -> strawberry.Schema:
+        if self._schema is None:
+            merged_query = strawberry.tools.merge_types("Query", tuple(self._queries))
+            merged_mutation = strawberry.tools.merge_types(
+                "Mutation", tuple(self._mutations)
+            )
+            self._schema = strawberry.Schema(
+                config=self.config,
+                query=merged_query,
+                mutation=merged_mutation,
+            )
+        return self._schema
+
+
+schema = SchemaManager()
 
 
 def execute_sync(
     query: str,
     authentication: Optional[accounts_models.User | api_models.Token] = None,
     /,
+    operation_name: Optional[str] = None,
     **variables: Any,
 ) -> strawberry.types.execution.ExecutionResult:
     """Shorthand for directly executing a query against the GraphQL schema.
@@ -64,17 +106,9 @@ def execute_sync(
             token=None,
         )
 
-    return schema.execute_sync(query, variable_values=variables, context_value=context)
-
-
-urlpatterns = [
-    django.urls.path(
-        "api/graphql",
-        # Note: once we enable subscriptions here, the graphiql.html template needs
-        # to be updated from here:
-        # https://github.com/strawberry-graphql/strawberry/blob/68901da94c67a7bbd4901d0f0e524da5158442aa/strawberry/static/graphiql.html
-        # The subscription-specific stuff was removed because the template isn't
-        # currently rendered with any context if it is loaded from the app folder.
-        ApiView.as_view(schema=schema),
-    ),
-]
+    return schema.get().execute_sync(
+        query,
+        variable_values=variables,
+        context_value=context,
+        operation_name=operation_name,
+    )

@@ -1,6 +1,12 @@
-from .base import LibraryStorage, WatchGenerator, backends
+from .base import LibraryStorage, StorageValidationError, WatchGenerator, backends
 
-__all__ = ["LibraryStorage", "WatchGenerator", "backends", "register"]
+__all__ = [
+    "LibraryStorage",
+    "StorageValidationError",
+    "WatchGenerator",
+    "backends",
+    "register",
+]
 
 # Provide a shortcut for registering custom backends. This is also mentioned in the
 # documentation for backends.register().

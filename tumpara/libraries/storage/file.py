@@ -1,35 +1,37 @@
 import logging
 import os
+import os.path
+import urllib.parse
 from collections import deque
 from typing import Literal
-from urllib.parse import ParseResult
 
 import inotify_simple
 import inotifyrecursive
-from django.core.exceptions import ValidationError
 from django.core.files import storage as django_storage
 from inotifyrecursive import flags as inotify_flags
 
 from .. import scanner
-from .base import LibraryStorage, WatchGenerator
+from .base import LibraryStorage, StorageValidationError, WatchGenerator
 
-__all__ = ["FileSystemBackend"]
+__all__ = ["FileSystemLibraryStorage"]
 _logger = logging.getLogger(__name__)
 
 
-class FileSystemBackend(LibraryStorage, django_storage.FileSystemStorage):
+class FileSystemLibraryStorage(LibraryStorage, django_storage.FileSystemStorage):
     # pylint: disable-next=super-init-not-called
-    def __init__(self, parsed_uri: ParseResult):
+    def __init__(self, parsed_uri: urllib.parse.ParseResult):
         django_storage.FileSystemStorage.__init__(self, parsed_uri.path)
 
     def check(self) -> None:
         if not os.path.exists(self.base_location):
-            raise ValidationError(
-                f"The specified path {self.base_location} does not exist."
+            raise StorageValidationError(
+                f"The specified path {self.base_location} does not exist.",
+                code="ENOENT",
             )
         if not os.path.isdir(self.base_location):
-            raise ValidationError(
-                f"The specified path {self.base_location} is not a directory."
+            raise StorageValidationError(
+                f"The specified path {self.base_location} is not a directory.",
+                code="ENOTDIR",
             )
 
     def watch(self) -> WatchGenerator:
@@ -108,7 +110,7 @@ class FileSystemBackend(LibraryStorage, django_storage.FileSystemStorage):
                             inotify_flags.ISDIR in flags
                             and inotify_flags.ISDIR in next_flags
                         ):
-                            # A directory was moved inside of the library.
+                            # A directory was moved inside the library.
                             events.popleft()
                             response = yield scanner.DirectoryMovedEvent(
                                 old_path=path, new_path=next_path
@@ -117,9 +119,8 @@ class FileSystemBackend(LibraryStorage, django_storage.FileSystemStorage):
                         elif (
                             inotify_flags.ISDIR not in flags
                             and inotify_flags.ISDIR not in next_flags
-                            and os.path.isfile(next_absolute_path)
                         ):
-                            # A file was moved inside of the library.
+                            # A file was moved inside the library.
                             events.popleft()
                             response = yield scanner.FileMovedEvent(
                                 old_path=path, new_path=next_path
