@@ -100,6 +100,15 @@ def test_file_copying(library: libraries_models.Library) -> None:
     assert second_record.files.filter().count() == 1
     assert not second_record.files.filter(availability__isnull=False).exists()
 
+    # When moving back to the old content, the old file object should be marked as
+    # available again.
+    TestingStorage.set("baz", "content2")
+    scanner.FileEvent("baz").commit(library)
+    assert first_record.files.filter().count() == 3
+    assert first_record.files.filter(availability__isnull=False).count() == 2
+    assert second_record.files.filter().count() == 1
+    assert second_record.files.filter(availability__isnull=False).count() == 1
+
 
 @pytest.mark.django_db
 def test_file_unification(library: libraries_models.Library) -> None:
