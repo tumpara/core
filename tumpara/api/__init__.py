@@ -24,6 +24,7 @@ from .utils import (
     InfoType,
     check_authentication,
     get_field_description,
+    remove_duplicate_node_interface,
     with_argument_annotation,
 )
 
@@ -55,6 +56,7 @@ __all__ = [
     "filtering",
     "get_field_description",
     "relay",
+    "remove_duplicate_node_interface",
     "schema",
     "with_argument_annotation",
 ]

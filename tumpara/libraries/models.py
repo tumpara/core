@@ -5,6 +5,7 @@ import os.path
 from typing import Any, Literal, NoReturn, Optional, cast, overload
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.files import base as django_files
 from django.db import models
 from django.utils.functional import cached_property
@@ -25,17 +26,27 @@ class Visibility:
     INTERNAL = 1
     MEMBERS = 2
     OWNERS = 3
+    INHERIT = 10
 
     VISIBILTY_CHOICES = [
         (PUBLIC, _("Public")),
         (INTERNAL, _("All logged-in users")),
         (MEMBERS, _("Library members")),
         (OWNERS, _("Only library owners")),
+        (INHERIT, _("Use the default value")),
     ]
 
 
 def validate_library_source(source: str) -> None:
     storage.backends.build(source).check()
+
+
+def validate_library_default_visibility(value: int) -> None:
+    if value == Visibility.INHERIT:
+        raise ValidationError(
+            "Libraries cannot inherit visibility values.",
+            code="no-library-visibility-inheritance",
+        )
 
 
 class LibraryQueryset(JoinableQueryset["Library"]):
@@ -70,6 +81,7 @@ class Library(accounts_models.Joinable):
         _("default visibility"),
         choices=Visibility.VISIBILTY_CHOICES,
         default=Visibility.MEMBERS,
+        validators=[validate_library_default_visibility],
         help_text=_("Default visibility value for records where it is not defined."),
     )
 
@@ -219,12 +231,8 @@ class Record(models.Model):
     )
     visibility = models.PositiveSmallIntegerField(
         _("visibility"),
-        choices=[
-            *Visibility.VISIBILTY_CHOICES,
-            (None, _("Use the library's default value")),
-        ],
-        null=True,
-        default=None,
+        choices=Visibility.VISIBILTY_CHOICES,
+        default=Visibility.INHERIT,
         help_text=_("Determines who can see this object."),
     )
 

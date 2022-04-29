@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import decimal
 import inspect
@@ -13,7 +14,6 @@ import strawberry.types.types
 from django import forms
 from django.db import models
 from django.utils import encoding
-from strawberry.union import StrawberryUnion
 
 from .views import ApiContext
 
@@ -201,3 +201,38 @@ def with_argument_annotation(
         return resolver
 
     return decorate
+
+
+def remove_duplicate_node_interface(new_type: _T) -> _T:
+    """When inheriting from the node interface through multiple inheritance, Strawberry
+    may think that a type erroneously implements the interface twice. Use this decorator
+    to fix it.
+
+    Example:
+
+    .. code-block:: python
+
+        @api.remove_duplicate_node_interface
+        @strawberry.type
+        class SomeNode(accounts_api.JoinableNode, api.DjangoNode[SomeModel], ...):
+            ...
+    """
+    from .relay.base import Node
+
+    assert dataclasses.is_dataclass(new_type)
+    interfaces: list[
+        strawberry.types.types.TypeDefinition
+    ] = new_type._type_definition.interfaces  # type: ignore
+
+    seen_node_interface = False
+    current_index = 0
+    while current_index < len(interfaces):
+        if interfaces[current_index] is Node._type_definition:  # type: ignore
+            if not seen_node_interface:
+                seen_node_interface = True
+            else:
+                del interfaces[current_index]
+                current_index -= 1
+        current_index += 1
+
+    return new_type

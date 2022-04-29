@@ -79,7 +79,7 @@ class Mutation:
 
         user_node = api.resolve_node(info, input.user_id)
         if not isinstance(user_node, UserNode):
-            return api.NodeError(requested_id=input.user_node)
+            return api.NodeError(requested_id=input.user_id)
         user: accounts_models.User = user_node._obj
 
         if input.status is None:

@@ -113,7 +113,7 @@ class Node(abc.ABC):
         """Resolve an instance of this node type from the global ID's key."""
 
 
-@strawberry.interface
+@strawberry.type
 class DjangoNode(Generic[_Model], Node, abc.ABC):
     _model: ClassVar[type[models.Model]]
     _related_field_nodes: ClassVar[dict[str, type[DjangoNode[Any]]]]
@@ -129,7 +129,7 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
             if origin is Generic:
                 super().__init_subclass__(**kwargs)
                 return
-            elif inspect.isclass(origin) and issubclass(origin, DjangoNode):
+            elif origin is DjangoNode:
                 try:
                     (model,) = typing.get_args(base)
                 except ValueError:

@@ -40,7 +40,7 @@ class UserMembershipConnection(
 
 
 @strawberry.interface(name="Joinable")
-class JoinableNode(Generic[_Joinable], api.DjangoNode[_Joinable]):
+class JoinableNode(api.DjangoNode[accounts_models.Joinable], fields=[]):
     @api.DjangoConnectionField(
         UserMembershipConnection,
         description="Users that are a member and have permission to view.",

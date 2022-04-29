@@ -1,7 +1,6 @@
 from typing import Optional
 
 import strawberry
-from django.db import models
 
 from tumpara import api
 from tumpara.accounts import api as accounts_api
@@ -10,8 +9,10 @@ from .models import JoinableThing
 
 
 @strawberry.type(name="JoinableThing")
-class JoinableThingNode(accounts_api.JoinableNode[JoinableThing], fields=[]):
-    pass
+class JoinableThingNode(
+    accounts_api.JoinableNode, api.DjangoNode[JoinableThing], fields=[]
+):
+    _obj: strawberry.Private[JoinableThing]
 
 
 @strawberry.type
