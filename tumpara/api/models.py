@@ -6,7 +6,7 @@ from django.db import models
 from django.utils import crypto, timezone
 from django.utils.translation import gettext_lazy as _
 
-from tumpara.accounts import models as accounts_models
+from tumpara.accounts.models import User
 
 
 class TokenQueryset(models.QuerySet["Token"]):
@@ -31,7 +31,7 @@ class Token(models.Model):
         default=functools.partial(crypto.get_random_string, 32),
     )
     user = models.ForeignKey(
-        accounts_models.User,
+        User,
         on_delete=models.CASCADE,
         related_name="api_tokens",
         related_query_name="api_token",

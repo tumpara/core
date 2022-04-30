@@ -18,8 +18,8 @@ import pytest
 from django.core.exceptions import ValidationError
 
 from tumpara import testing
-from tumpara.libraries import models as libraries_models
 from tumpara.libraries import scanner
+from tumpara.libraries.models import Library
 from tumpara.libraries.storage.base import WatchGenerator
 from tumpara.libraries.storage.file import FileSystemLibraryStorage
 from tumpara.testing import strategies as st
@@ -276,14 +276,14 @@ class test_integration(LibraryActionsStateMachine):
         super().__init__()
         self.root = tempfile.mkdtemp()
 
-        self.library = libraries_models.Library.objects.create(
+        self.library = Library.objects.create(
             source=f"file://{self.root}",
             context="test_storage",
         )
 
         # This library will be scanned by watching the backend because that yields
         # slightly different events for some actions, and we want to test those as well.
-        self.watched_library = libraries_models.Library.objects.create(
+        self.watched_library = Library.objects.create(
             source=f"file://{self.root}/",  # The slash fools the unique constraint
             context="test_storage",
         )

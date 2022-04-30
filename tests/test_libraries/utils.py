@@ -3,10 +3,9 @@ import os.path
 
 import hypothesis
 import hypothesis.stateful
-from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 
-from tumpara.libraries import models as libraries_models
+from tumpara.libraries.models import File, Library
 from tumpara.testing import strategies as st
 
 from .models import GenericHandler
@@ -205,11 +204,11 @@ class LibraryActionsStateMachine(hypothesis.stateful.RuleBasedStateMachine):
 
         self.events.append(f"swap_files {', '.join(repr(path) for path in paths)}")
 
-    def assert_library_state(self, library: libraries_models.Library) -> None:
+    def assert_library_state(self, library: Library) -> None:
         """Helper method that asserts the state of a given library matches what is on
         record."""
         assert set(self.files.keys()) == set(self.file_timestamps.keys())
-        file_queryset = libraries_models.File.objects.filter(
+        file_queryset = File.objects.filter(
             record__library=library, availability__isnull=False
         )
 

@@ -3,15 +3,13 @@ from typing import Optional
 import strawberry
 
 from tumpara import api
-from tumpara.accounts import api as accounts_api
+from tumpara.accounts.api import JoinableNode
 
 from .models import JoinableThing
 
 
 @strawberry.type(name="JoinableThing")
-class JoinableThingNode(
-    accounts_api.JoinableNode, api.DjangoNode[JoinableThing], fields=[]
-):
+class JoinableThingNode(JoinableNode, api.DjangoNode[JoinableThing], fields=[]):
     _obj: strawberry.Private[JoinableThing]
 
 

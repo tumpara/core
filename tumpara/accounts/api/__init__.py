@@ -4,7 +4,7 @@ import strawberry
 
 from tumpara import api
 
-from .. import models as accounts_models
+from ..models import Joinable, User
 from ..utils import build_permission_name
 from .joinables import JoinableNode
 from .users import UserConnection, UserFilter, UserNode
@@ -25,7 +25,7 @@ class Query:
     )
     def me(self, info: api.InfoType) -> Optional[UserNode]:
         if api.check_authentication(info):
-            assert isinstance(info.context.user, accounts_models.User)
+            assert isinstance(info.context.user, User)
             return UserNode(info.context.user)
         else:
             return None
@@ -75,12 +75,12 @@ class Mutation:
             build_permission_name(joinable_node._obj, "change"), joinable_node._obj
         ):
             return api.NodeError(requested_id=input.joinable_id)
-        joinable: accounts_models.Joinable = joinable_node._obj
+        joinable: Joinable = joinable_node._obj
 
         user_node = api.resolve_node(info, input.user_id)
         if not isinstance(user_node, UserNode):
             return api.NodeError(requested_id=input.user_id)
-        user: accounts_models.User = user_node._obj
+        user: User = user_node._obj
 
         if input.status is None:
             joinable.remove_membership(user)

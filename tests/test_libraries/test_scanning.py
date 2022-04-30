@@ -1,6 +1,6 @@
 import pytest
 
-from tumpara.libraries import models as libraries_models
+from tumpara.libraries.models import File, Library
 
 from .models import GenericHandler
 from .storage import TestingStorage
@@ -8,10 +8,10 @@ from .test_event_handling import library  # noqa: F401
 
 
 @pytest.mark.django_db
-def test_file_creating(library: libraries_models.Library) -> None:
+def test_file_creating(library: Library) -> None:
     TestingStorage.set("foo", "one")
     library.scan()
-    file = libraries_models.File.objects.get()
+    file = File.objects.get()
     handler = GenericHandler.objects.get(content=b"one")
     assert file.record.resolve_instance() == handler
 
@@ -20,19 +20,19 @@ def test_file_creating(library: libraries_models.Library) -> None:
     file.refresh_from_db()
     record = GenericHandler.objects.get(content=b"two")
     assert file.record.resolve_instance() == record
-    assert libraries_models.File.objects.count() == 1
+    assert File.objects.count() == 1
     assert GenericHandler.objects.count() == 1
     assert GenericHandler.all_objects.count() == 2
 
     TestingStorage.set("bar", "three")
     library.scan()
-    assert libraries_models.File.objects.count() == 2
+    assert File.objects.count() == 2
     assert GenericHandler.objects.count() == 2
     assert GenericHandler.all_objects.count() == 3
 
 
 @pytest.mark.django_db
-def test_file_swapping(library: libraries_models.Library) -> None:
+def test_file_swapping(library: Library) -> None:
     """Swapping around two files should work."""
     TestingStorage.set("one", "foo")
     TestingStorage.set("two", "bar")
@@ -54,7 +54,7 @@ def test_file_swapping(library: libraries_models.Library) -> None:
 
 
 @pytest.mark.django_db
-def test_complicated_swapping(library: libraries_models.Library) -> None:
+def test_complicated_swapping(library: Library) -> None:
     TestingStorage.set("foo", "content1")
     TestingStorage.set("bar", "content2")
     library.scan()
@@ -82,7 +82,7 @@ def test_complicated_swapping(library: libraries_models.Library) -> None:
 
 
 @pytest.mark.django_db
-def test_record_splitting(library: libraries_models.Library) -> None:
+def test_record_splitting(library: Library) -> None:
     """The :func:`GenericHandler.handle_files_changed` handler correctly splits up a
     handler when the content of its files diverges."""
     TestingStorage.set("foo", "content1")
@@ -98,7 +98,7 @@ def test_record_splitting(library: libraries_models.Library) -> None:
 
 
 @pytest.mark.django_db
-def test_more_swapping(library: libraries_models.Library) -> None:
+def test_more_swapping(library: Library) -> None:
     TestingStorage.set("one", "foo")
     TestingStorage.set("two", "bar")
     library.scan()
@@ -120,7 +120,7 @@ def test_more_swapping(library: libraries_models.Library) -> None:
 
 
 @pytest.mark.django_db
-def test_moving(library: libraries_models.Library) -> None:
+def test_moving(library: Library) -> None:
     TestingStorage.set("a", "foo")
     TestingStorage.set("b", "bar")
     library.scan()

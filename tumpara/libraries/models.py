@@ -11,8 +11,7 @@ from django.db import models
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 
-from tumpara.accounts import models as accounts_models
-from tumpara.accounts.models import JoinableQueryset
+from tumpara.accounts.models import AnonymousUser, Joinable, JoinableQueryset, User
 from tumpara.accounts.utils import build_permission_name
 
 from . import scanner, storage
@@ -57,7 +56,7 @@ class LibraryQueryset(JoinableQueryset["Library"]):
 LibraryManager = models.Manager.from_queryset(LibraryQueryset)
 
 
-class Library(accounts_models.Joinable):
+class Library(Joinable):
     """A Library is a data source that supports scanning for files.
 
     Libraries hold content in form of :class:`Record` objects.
@@ -214,7 +213,7 @@ class RecordQueryset(Generic[_Record], models.QuerySet[_Record]):
     def for_user(
         self,
         permission: str,
-        user: accounts_models.User | accounts_models.AnonymousUser,
+        user: User | AnonymousUser,
     ) -> RecordQueryset[_Record]:
         """Narrow down the queryset to only return elements where the given user has
         a specific permission."""

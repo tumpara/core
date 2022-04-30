@@ -5,8 +5,8 @@ import queue
 import pytest
 from django.db import connection
 
-from tumpara.libraries import models as libraries_models
 from tumpara.libraries import scanner
+from tumpara.libraries.models import File, Library
 from tumpara.libraries.scanner import worker
 
 from .models import GenericHandler
@@ -15,9 +15,7 @@ from .test_event_handling import library  # noqa: F401
 
 
 @pytest.mark.django_db
-def test_scanner_worker(
-    monkeypatch: pytest.MonkeyPatch, library: libraries_models.Library
-) -> None:
+def test_scanner_worker(monkeypatch: pytest.MonkeyPatch, library: Library) -> None:
     """The scanner worker successfully processes a series of events."""
     TestingStorage.set("foo", "content")
     TestingStorage.set("bar", "content")
@@ -46,4 +44,4 @@ def test_scanner_worker(
 
     assert counter.value == 3
     GenericHandler.objects.get(content=b"content")
-    assert libraries_models.File.objects.count() == 3
+    assert File.objects.count() == 3

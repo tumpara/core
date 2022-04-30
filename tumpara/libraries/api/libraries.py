@@ -1,24 +1,24 @@
 import enum
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 import strawberry
 from django import forms
 
 from tumpara import api
-from tumpara.accounts import api as accounts_api
-from tumpara.accounts import models as accounts_models
-from tumpara.libraries import models as libraries_models
+from tumpara.accounts.api import JoinableNode
+from tumpara.accounts.models import User
 from tumpara.libraries import storage
+from tumpara.libraries.models import Library, Visibility
 
 
 @api.remove_duplicate_node_interface
 @strawberry.type(name="Library", description="A library containing media.")
 class LibraryNode(
-    accounts_api.JoinableNode,
-    api.DjangoNode[libraries_models.Library],
+    JoinableNode,
+    api.DjangoNode[Library],
     fields=["source", "context"],
 ):
-    _obj: strawberry.Private[libraries_models.Library]
+    _obj: strawberry.Private[Library]
 
 
 @strawberry.type
@@ -28,7 +28,7 @@ class LibraryEdge(api.Edge[LibraryNode]):
 
 @strawberry.type(description="A connection to a list of libraries.")
 class LibraryConnection(
-    api.DjangoConnection[LibraryNode, libraries_models.Library],
+    api.DjangoConnection[LibraryNode, Library],
     name="library",
     pluralized_name="libraries",
 ):
@@ -59,15 +59,15 @@ class Query:
 
 @strawberry.enum
 class LibraryVisibility(enum.Enum):
-    PUBLIC = libraries_models.Visibility.PUBLIC
-    INTERNAL = libraries_models.Visibility.INTERNAL
-    MEMBERS = libraries_models.Visibility.MEMBERS
-    OWNERS = libraries_models.Visibility.OWNERS
+    PUBLIC = Visibility.PUBLIC
+    INTERNAL = Visibility.INTERNAL
+    MEMBERS = Visibility.MEMBERS
+    OWNERS = Visibility.OWNERS
 
 
-class LibraryForm(forms.ModelForm[libraries_models.Library]):
+class LibraryForm(forms.ModelForm[Library]):
     class Meta:
-        model = libraries_models.Library
+        model = Library
         fields = ["source", "default_visibility"]
 
 
@@ -104,9 +104,9 @@ class Mutation:
             return form
 
         obj = form.save()
-        assert isinstance(obj, libraries_models.Library)
+        assert isinstance(obj, Library)
 
-        assert isinstance(info.context.user, accounts_models.User)
+        assert isinstance(info.context.user, User)
         obj.add_membership(info.context.user, owner=True)
 
         return LibraryNode(obj)

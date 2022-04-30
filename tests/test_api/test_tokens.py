@@ -7,7 +7,7 @@ import pytest
 from django.utils import timezone
 
 from tumpara import api
-from tumpara.accounts import models as accounts_models
+from tumpara.accounts.models import User
 from tumpara.api import models as api_models
 from tumpara.testing import strategies as st
 
@@ -75,7 +75,7 @@ def test_wrong_credentials_token(
     """Wrong usernames and / or passwords don't yield a token."""
     hypothesis.assume(username != wrong_username)
     hypothesis.assume(password != wrong_password)
-    user = accounts_models.User.objects.create_user(username, "", password)
+    user = User.objects.create_user(username, "", password)
 
     first_result = api.execute_sync(
         create_token_mutation, username=username, password=wrong_password
@@ -175,7 +175,7 @@ def test_token_creation_via_http(
     django_executor: Any, client: django.test.Client, username: str, password: str
 ) -> None:
     """Simulate an entire token authentication flow, via actual HTTP requests."""
-    user = accounts_models.User.objects.create_user(username, "", password)
+    user = User.objects.create_user(username, "", password)
 
     response = client.post(
         "/api/graphql", {"query": me_query}, content_type="application/json"

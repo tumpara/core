@@ -5,13 +5,13 @@ import strawberry
 from django.db import models
 
 from tumpara import api
-from tumpara.libraries import models as libraries_models
+from tumpara.libraries.models import File, Record, Visibility
 
 from .libraries import LibraryNode
 
 
 @strawberry.type(name="File")
-class FileNode(api.DjangoNode[libraries_models.File], fields=["path"]):
+class FileNode(api.DjangoNode[File], fields=["path"]):
     pass
 
 
@@ -22,7 +22,7 @@ class FileEdge(api.Edge[FileNode]):
 
 @strawberry.type(description="A connection to a list of files.")
 class FileConnection(
-    api.DjangoConnection[FileNode, libraries_models.File],
+    api.DjangoConnection[FileNode, File],
     name="file",
     pluralized_name="files",
 ):
@@ -32,17 +32,15 @@ class FileConnection(
 
 @strawberry.enum
 class RecordVisibility(enum.Enum):
-    PUBLIC = libraries_models.Visibility.PUBLIC
-    INTERNAL = libraries_models.Visibility.INTERNAL
-    MEMBERS = libraries_models.Visibility.MEMBERS
-    OWNERS = libraries_models.Visibility.OWNERS
-    INHERIT = libraries_models.Visibility.INHERIT
+    PUBLIC = Visibility.PUBLIC
+    INTERNAL = Visibility.INTERNAL
+    MEMBERS = Visibility.MEMBERS
+    OWNERS = Visibility.OWNERS
+    INHERIT = Visibility.INHERIT
 
 
 @strawberry.interface(name="Record")
-class RecordNode(
-    api.DjangoNode[libraries_models.Record], fields=["library", "visibility"]
-):
+class RecordNode(api.DjangoNode[Record], fields=["library", "visibility"]):
     library: Optional[LibraryNode]
     visibility: RecordVisibility
 
@@ -51,7 +49,7 @@ class RecordNode(
         description="Each record may have files attached to it. This field returns a "
         "connection to those currently available.",
     )
-    def files(self) -> models.QuerySet[libraries_models.File]:
+    def files(self) -> models.QuerySet[File]:
         return self._obj.files.filter(availability__isnull=False)
 
 
@@ -94,9 +92,7 @@ class Mutation:
             primary_keys.add(key[0])
 
         update_count = (
-            libraries_models.Record.objects.for_user(
-                "libraries.change_record", info.context.user
-            )
+            Record.objects.for_user("libraries.change_record", info.context.user)
             .filter(pk__in=primary_keys)
             .update(visibility=input.visibility.value)
         )

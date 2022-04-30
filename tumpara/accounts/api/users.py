@@ -5,7 +5,7 @@ from django.db import models
 
 from tumpara import api
 
-from .. import models as accounts_models
+from ..models import User
 
 
 @strawberry.input(description="Filtering options when querying `User` objects.")
@@ -49,14 +49,14 @@ class UserFilter:
 
 @strawberry.type(name="User", description="A user with an account on this server.")
 class UserNode(
-    api.DjangoNode[accounts_models.User],
+    api.DjangoNode[User],
     fields=["username", "full_name", "short_name", "email", "is_active"],
 ):
     username: str
     short_name: str
     full_name: str
 
-    def __init__(self, _obj: accounts_models.User):
+    def __init__(self, _obj: User):
         self._obj = _obj
 
     @strawberry.field(description="Name to display for the user.")
@@ -69,8 +69,8 @@ class UserNode(
             return self.username
 
     @classmethod
-    def get_queryset(cls, info: api.InfoType) -> models.QuerySet[accounts_models.User]:
-        return accounts_models.User.objects.for_user(info.context.user)
+    def get_queryset(cls, info: api.InfoType) -> models.QuerySet[User]:
+        return User.objects.for_user(info.context.user)
 
 
 # We need to redefine 'node' and 'edges' below because otherwise Strawberry thinks they
@@ -85,7 +85,7 @@ class UserEdge(api.Edge[UserNode]):
 
 @strawberry.type(description="A connection to a list of users.")
 class UserConnection(
-    api.DjangoConnection[UserNode, accounts_models.User],
+    api.DjangoConnection[UserNode, User],
     name="user",
     pluralized_name="users",
 ):

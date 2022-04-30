@@ -1,5 +1,4 @@
-import typing
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Optional, TypeVar
 
 import strawberry
 from django.contrib.contenttypes import models as contenttypes_models
@@ -7,22 +6,18 @@ from django.db import models
 
 from tumpara import api
 
-from .. import models as accounts_models
+from ..models import Joinable, JoinableQueryset, User, UserMembership
 from ..utils import build_permission_name
 from .users import UserNode
 
-_Joinable = TypeVar("_Joinable", bound="accounts_models.Joinable")
+_Joinable = TypeVar("_Joinable", bound="Joinable")
 
 
 @strawberry.type
 class UserMembershipEdge(api.Edge[UserNode]):
     node: UserNode
 
-    @strawberry.field(
-        description=api.get_field_description(
-            accounts_models.UserMembership, "is_owner"
-        )
-    )
+    @strawberry.field(description=api.get_field_description(UserMembership, "is_owner"))
     def owner(self) -> bool:
         # Here, we expect the object to be annotated from the queryset built by members
         # field in JoinableNode.
@@ -31,7 +26,7 @@ class UserMembershipEdge(api.Edge[UserNode]):
 
 @strawberry.type(description="A connection to a list of users.")
 class UserMembershipConnection(
-    api.DjangoConnection[UserNode, accounts_models.User],
+    api.DjangoConnection[UserNode, User],
     name="user",
     pluralized_name="users",
 ):
@@ -40,14 +35,12 @@ class UserMembershipConnection(
 
 
 @strawberry.interface(name="Joinable")
-class JoinableNode(api.DjangoNode[accounts_models.Joinable], fields=[]):
+class JoinableNode(api.DjangoNode[Joinable], fields=[]):
     @api.DjangoConnectionField(
         UserMembershipConnection,
         description="Users that are a member and have permission to view.",
     )
-    def members(
-        self, info: api.InfoType, **kwargs: Any
-    ) -> models.QuerySet[accounts_models.User]:
+    def members(self, info: api.InfoType, **kwargs: Any) -> models.QuerySet[User]:
         return (
             UserNode.get_queryset(info)
             .filter(
@@ -64,7 +57,7 @@ class JoinableNode(api.DjangoNode[accounts_models.Joinable], fields=[]):
         manager = cls._get_model_type()._default_manager
         if not issubclass(
             manager._queryset_class,  # type: ignore
-            accounts_models.JoinableQueryset,
+            JoinableQueryset,
         ):
             raise NotImplementedError
         return manager.for_user(  # type: ignore

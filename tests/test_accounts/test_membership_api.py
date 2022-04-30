@@ -1,7 +1,7 @@
 import pytest
 
 from tumpara import api
-from tumpara.accounts import models as accounts_models
+from tumpara.accounts.models import User
 
 from .models import JoinableThing
 from .utils import user_dataset  # noqa: F401
@@ -63,7 +63,7 @@ def test_membership_setting(user_dataset: UserDataset) -> None:
         "carl": api.encode_key("User", carl.pk),
         "thing": api.encode_key("JoinableThing", thing.pk),
     }
-    superuser = accounts_models.User.objects.create_superuser("admin")
+    superuser = User.objects.create_superuser("admin")
 
     result_fragment = """
         fragment Result on ManageMembershipResult {

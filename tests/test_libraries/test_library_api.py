@@ -3,8 +3,8 @@ from typing import Optional
 import pytest
 
 from tumpara import api
-from tumpara.accounts import models as accounts_models
-from tumpara.libraries import models as libraries_models
+from tumpara.accounts.models import Permission, User
+from tumpara.libraries.models import Library, Visibility
 
 mutation = """
     fragment Result on LibraryMutationResult {
@@ -49,16 +49,14 @@ def test_library_listing() -> None:
             }
         }
     """
-    libraries_models.Library.objects.create(source="testing://", context="test_storage")
-    libraries_models.Library.objects.create(
-        source="testing:///", context="test_storage"
-    )
+    Library.objects.create(source="testing://", context="test_storage")
+    Library.objects.create(source="testing:///", context="test_storage")
 
     result = api.execute_sync(query, None)
     assert result.errors is None
     assert result.data == {"libraries": {"nodes": []}}
 
-    superuser = accounts_models.User.objects.create_superuser("bob")
+    superuser = User.objects.create_superuser("bob")
 
     result = api.execute_sync(query, superuser)
     assert result.errors is None
@@ -88,7 +86,7 @@ def test_library_creating() -> None:
         }
     }
 
-    user = accounts_models.User.objects.create_user("bob")
+    user = User.objects.create_user("bob")
 
     # As long as the user doesn't have permission to create a library, this should not
     # work:
@@ -107,12 +105,10 @@ def test_library_creating() -> None:
     }
 
     user.user_permissions.add(
-        accounts_models.Permission.objects.get_by_natural_key(
-            "add_library", "libraries", "library"
-        )
+        Permission.objects.get_by_natural_key("add_library", "libraries", "library")
     )
     # Get a new user object because of the permission cache.
-    user = accounts_models.User.objects.get()
+    user = User.objects.get()
 
     result = api.execute_sync(
         mutation,
@@ -128,14 +124,14 @@ def test_library_creating() -> None:
     assert result.data is not None
     assert result.data["createLibrary"]["__typename"] == "Library"
     _, library_pk = api.decode_key(result.data["createLibrary"]["id"])
-    library = libraries_models.Library.objects.get()
+    library = Library.objects.get()
     assert str(library.pk) == library_pk
     assert library.source == "testing:///"
     assert library.context == "test_storage"
-    assert library.default_visibility == libraries_models.Visibility.PUBLIC
+    assert library.default_visibility == Visibility.PUBLIC
 
     # Check whether the user now has appropriate permissions.
-    user = accounts_models.User.objects.get()
+    user = User.objects.get()
     assert not user.has_perm("libraries.view_library")
     assert user.has_perm("libraries.view_library", library)
     assert user.has_perm("libraries.change_library", library)
@@ -144,13 +140,13 @@ def test_library_creating() -> None:
 
 @pytest.mark.django_db
 def test_library_editing() -> None:
-    library = libraries_models.Library.objects.create(
+    library = Library.objects.create(
         source="testing:///",
         context="test_storage",
-        default_visibility=libraries_models.Visibility.PUBLIC,
+        default_visibility=Visibility.PUBLIC,
     )
 
-    superuser = accounts_models.User.objects.create_superuser("kevin")
+    superuser = User.objects.create_superuser("kevin")
     result = api.execute_sync(
         """
             query {
@@ -166,7 +162,7 @@ def test_library_editing() -> None:
     assert result.data is not None
     library_id = result.data["libraries"]["nodes"][0]["id"]
 
-    def assert_forbidden(user: Optional[accounts_models.User]) -> None:
+    def assert_forbidden(user: Optional[User]) -> None:
         result = api.execute_sync(
             mutation, user, "UpdateLibrary", input={"id": library_id}
         )
@@ -179,14 +175,14 @@ def test_library_editing() -> None:
         }
 
     assert_forbidden(None)
-    user = accounts_models.User.objects.create_user("bob")
+    user = User.objects.create_user("bob")
     assert_forbidden(user)
     library.add_membership(user)
-    user = accounts_models.User.objects.get(username="bob")
+    user = User.objects.get(username="bob")
     assert_forbidden(user)
 
     library.add_membership(user, owner=True)
-    user = accounts_models.User.objects.get(username="bob")
+    user = User.objects.get(username="bob")
 
     # Giving no options shouldn't update anything.
     result = api.execute_sync(
@@ -198,7 +194,7 @@ def test_library_editing() -> None:
     assert result.errors is None
     library.refresh_from_db()
     assert library.source == "testing:///"
-    assert library.default_visibility == libraries_models.Visibility.PUBLIC
+    assert library.default_visibility == Visibility.PUBLIC
 
     # Giving both options should update them.
     result = api.execute_sync(
@@ -216,7 +212,7 @@ def test_library_editing() -> None:
     assert result.data["updateLibrary"]["__typename"] == "Library"
     library.refresh_from_db()
     assert library.source == "testing:///hi"
-    assert library.default_visibility == libraries_models.Visibility.INTERNAL
+    assert library.default_visibility == Visibility.INTERNAL
 
     # Validation errors should be passed along.
     result = api.execute_sync(

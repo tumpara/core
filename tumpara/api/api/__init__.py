@@ -5,20 +5,20 @@ from django.contrib import auth
 from django.utils import timezone
 
 from tumpara import api
-from tumpara.accounts import api as accounts_api
-from tumpara.accounts import models as accounts_models
+from tumpara.accounts.api import UserNode
+from tumpara.accounts.models import User
 
-from .. import models as api_models
+from ..models import Token
 from ..utils import with_argument_annotation
 
 
-@strawberry.type(name="Token", description=api_models.Token.__doc__ or "")
+@strawberry.type(name="Token", description=Token.__doc__ or "")
 class TokenNode(
-    api.DjangoNode[api_models.Token], fields=["key", "user", "expiry_timestamp", "name"]
+    api.DjangoNode[Token], fields=["key", "user", "expiry_timestamp", "name"]
 ):
-    user: accounts_api.UserNode
+    user: UserNode
 
-    def __init__(self, _obj: api_models.Token):
+    def __init__(self, _obj: Token):
         self._obj = _obj
 
 
@@ -137,7 +137,7 @@ class Mutation:
         if len(credentials) == 0:
             return UnknownAuthenticationMethodError(method="")
 
-        user: accounts_models.User
+        user: User
 
         # Username and password authentication: this uses the normal Django backend for
         # checking a user's password. Here, we assume credentials is given in the form
@@ -152,7 +152,7 @@ class Mutation:
                 return InvalidCredentialsError(scope=credentials[0])
             # Once TOTP is supported, credentials should have a third entry with the
             # token. Otherwise some error like MissingTOTPCodeError should be returned.
-            user = cast(accounts_models.User, authenticated_user)
+            user = cast(User, authenticated_user)
 
         else:
             return UnknownAuthenticationMethodError(method=credentials[0])
