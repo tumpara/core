@@ -447,6 +447,10 @@ class DjangoConnectionField(ConnectionField):
     ) -> DjangoConnectionField:
         super().__call__(resolver)
         assert self.base_resolver is not None
+        assert self.type_annotation is not None, (
+            "a type annotation (the connection type) must be provided when using a "
+            "custom resolver in Django connection fields"
+        )
         # Propagate our type annotation (if available) to the resolver. That way the
         # resolver can return (type-checked) querysets and the API will still have the
         # connection type.

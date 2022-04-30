@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import os.path
-from typing import Any, Literal, NoReturn, Optional, cast, overload
+from typing import Any, Generic, Literal, NoReturn, Optional, TypeVar, cast, overload
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -13,6 +13,7 @@ from django.utils.translation import gettext_lazy as _
 
 from tumpara.accounts import models as accounts_models
 from tumpara.accounts.models import JoinableQueryset
+from tumpara.accounts.utils import build_permission_name
 
 from . import scanner, storage
 
@@ -206,6 +207,42 @@ class Library(accounts_models.Joinable):
         scanner.run(self, watch_events(), thread_count=thread_count)
 
 
+_Record = TypeVar("_Record", bound="Record")
+
+
+class RecordQueryset(Generic[_Record], models.QuerySet[_Record]):
+    def for_user(
+        self,
+        permission: str,
+        user: accounts_models.User | accounts_models.AnonymousUser,
+    ) -> RecordQueryset[_Record]:
+        """Narrow down the queryset to only return elements where the given user has
+        a specific permission."""
+        if not user.is_authenticated or not user.is_active:
+            return self.none()
+        if user.is_superuser:
+            return self
+
+        if permission in (
+            build_permission_name(self.model, "change"),
+            build_permission_name(self.model, "delete"),
+        ):
+            # We explicitly don't differentiate between the change and delete permission
+            # because we want change_library to be the important one here:
+            return self.filter(
+                library__in=Library.objects.for_user("libraries.change_library", user)
+            )
+        elif permission == build_permission_name(self.model, "view"):
+            return self.filter(
+                library__in=Library.objects.for_user("libraries.view_library", user)
+            )
+        else:
+            raise ValueError(f"unsupported permission: {permission}")
+
+
+RecordManager = models.Manager.from_queryset(RecordQueryset)
+
+
 class Record(models.Model):
     """A piece of content in a library.
 
@@ -235,6 +272,8 @@ class Record(models.Model):
         default=Visibility.INHERIT,
         help_text=_("Determines who can see this object."),
     )
+
+    objects = RecordManager()
 
     class Meta:
         verbose_name = _("library")

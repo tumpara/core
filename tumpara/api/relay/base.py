@@ -284,6 +284,7 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
 
 
 def resolve_node(info: InfoType, node_id: str) -> Optional[Node]:
+    """Resolve the node instance"""
     type_name, *key = decode_key(node_id)
     origin, _ = get_node_origin(type_name, info)
     return origin.from_key(info, *key)
