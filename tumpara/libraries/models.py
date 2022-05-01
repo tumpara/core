@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os.path
+import uuid
 from typing import Any, Generic, Literal, NoReturn, Optional, TypeVar, cast, overload
 
 from django.conf import settings
@@ -209,12 +210,12 @@ class Library(Joinable):
 _Record = TypeVar("_Record", bound="Record")
 
 
-class RecordQueryset(Generic[_Record], models.QuerySet[_Record]):
+class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
     def for_user(
         self,
         permission: str,
         user: User | AnonymousUser,
-    ) -> RecordQueryset[_Record]:
+    ) -> RecordQuerySet[_Record]:
         """Narrow down the queryset to only return elements where the given user has
         a specific permission."""
         if not user.is_authenticated or not user.is_active:
@@ -239,7 +240,7 @@ class RecordQueryset(Generic[_Record], models.QuerySet[_Record]):
             raise ValueError(f"unsupported permission: {permission}")
 
 
-RecordManager = models.Manager.from_queryset(RecordQueryset)
+RecordManager = models.Manager.from_queryset(RecordQuerySet)
 
 
 class Record(models.Model):
@@ -254,6 +255,10 @@ class Record(models.Model):
     at least one file.
     """
 
+    uuid = models.UUIDField(
+        _("UUID"), default=uuid.uuid4, editable=False, unique=True, db_index=True
+    )
+
     library = models.ForeignKey(
         Library,
         on_delete=models.CASCADE,
@@ -265,6 +270,7 @@ class Record(models.Model):
             "the visibility and their membership in this library."
         ),
     )
+
     visibility = models.PositiveSmallIntegerField(
         _("visibility"),
         choices=Visibility.VISIBILTY_CHOICES,
@@ -272,13 +278,25 @@ class Record(models.Model):
         help_text=_("Determines who can see this object."),
     )
 
+    import_timestamp = models.DateTimeField(
+        _("add timestamp"),
+        auto_now_add=True,
+        help_text=_("Timestamp when the record was created / imported."),
+    )
+
     objects = RecordManager()
 
     class Meta:
-        verbose_name = _("library")
-        verbose_name_plural = _("libraries")
+        verbose_name = _("record")
+        verbose_name_plural = _("records")
+        indexes = [
+            models.Index(
+                fields=("id", "visibility", "library"),
+                name="library_visibility_filtering",
+            )
+        ]
 
-    def resolve_instance(self) -> Record:
+    def resolve_instance(self, *, recursive: bool = True) -> Record:
         """Resolve the actual instance of this record.
 
         This will go through all known subclasses and see which type implements the
@@ -290,6 +308,9 @@ class Record(models.Model):
         Further note that this assumes that subclasses add a related descriptor on this
         parent class named something like ``photo_instance``. This is done automatically
         by subclassing :class:`RecordModel` instead of :class:`Record` directly.
+
+        :param recursive: By default, instances are resolved recursively. Set this to
+            ``False`` to only resolve the first child.
         """
         for field in self._meta.get_fields():
             if not (
@@ -302,8 +323,7 @@ class Record(models.Model):
                 continue
             try:
                 subtype = cast(Record, getattr(self, field.name))
-                # Resolve recursively because this might go a few levels deep.
-                return subtype.resolve_instance()
+                return subtype.resolve_instance() if recursive else subtype
             except field.related_model.DoesNotExist:
                 pass
 
@@ -319,6 +339,7 @@ class RecordModel(Record):
         parent_link=True,
         related_name="%(class)s_instance",
         related_query_name="%(class)s_instance",
+        verbose_name=_("record reference"),
     )
 
     class Meta:

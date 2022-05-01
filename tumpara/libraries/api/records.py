@@ -5,6 +5,7 @@ import strawberry
 from django.db import models
 
 from tumpara import api
+from tumpara.accounts.utils import build_permission_name
 from tumpara.libraries.models import File, Record, Visibility
 
 from .libraries import LibraryNode
@@ -51,6 +52,14 @@ class RecordNode(api.DjangoNode[Record], fields=["library", "visibility"]):
     )
     def files(self) -> models.QuerySet[File]:
         return self._obj.files.filter(availability__isnull=False)
+
+    @classmethod
+    def get_queryset(cls, info: api.InfoType) -> models.QuerySet[Record]:
+        model = cls._get_model_type()
+        return model.objects.for_user(
+            build_permission_name(model, "view"),
+            info.context.user,
+        )
 
 
 @strawberry.input

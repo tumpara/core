@@ -9,7 +9,7 @@ from tumpara.libraries.models import (
     Library,
     RecordManager,
     RecordModel,
-    RecordQueryset,
+    RecordQuerySet,
 )
 
 
@@ -22,7 +22,7 @@ class GenericHandlerManagerBase(RecordManager["GenericHandler"]):
         return super().get_queryset().filter(models.Exists(files_queryset))
 
 
-GenericHandlerManager = GenericHandlerManagerBase.from_queryset(RecordQueryset)
+GenericHandlerManager = GenericHandlerManagerBase.from_queryset(RecordQuerySet)
 
 
 class GenericHandler(RecordModel):

@@ -190,6 +190,10 @@ class Connection(Generic[_Node]):
 
         sequence_length = len(sequence)
 
+        # Default to an empty result.
+        if first == 0 or last == 0 or (first is None and last is None):
+            return cls.empty()
+
         # The following algorithm more or less follows the one provided in the Relay
         # specification:
         # https://relay.dev/graphql/connections.htm#sec-Pagination-algorithm

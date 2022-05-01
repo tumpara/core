@@ -226,6 +226,7 @@ INSTALLED_APPS = [
     "tumpara.accounts",
     "tumpara.api",
     "tumpara.libraries",
+    "tumpara.gallery",
 ]
 
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
