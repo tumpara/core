@@ -1,6 +1,25 @@
 from django.db import migrations
 
 
+def fix_spacialite_compatability(apps, schema_editor):
+    """Try and fix compatibility issues between SpaciaLite and the newest versino of
+    SQLite.
+
+    See here for details:
+    https://groups.google.com/g/spatialite-users/c/azalHqVOPg0/m/JXIu9sn6BAAJ
+    """
+    if not schema_editor.connection.vendor.startswith("sqlite"):
+        return
+
+    # Use 'IF EXISTS' here in case SpaciaLite isn't actually enabled:
+    schema_editor.execute(
+        "DROP TRIGGER IF EXISTS ISO_metadata_reference_row_id_value_insert;"
+    )
+    schema_editor.execute(
+        "DROP TRIGGER IF EXISTS ISO_metadata_reference_row_id_value_update;"
+    )
+
+
 class Migration(migrations.Migration):
     run_before = [
         # This migration must run before *all* other migrations.
@@ -11,14 +30,4 @@ class Migration(migrations.Migration):
         ("api", "0001_initial"),
     ]
 
-    operations = [
-        # This should fix compatibility issues between SpaciaLite and the newest version
-        # of SQLite. See here for details:
-        # https://groups.google.com/g/spatialite-users/c/azalHqVOPg0/m/JXIu9sn6BAAJ
-        migrations.RunSQL(
-            """
-            DROP TRIGGER ISO_metadata_reference_row_id_value_insert;
-            DROP TRIGGER ISO_metadata_reference_row_id_value_update;
-            """
-        )
-    ]
+    operations = [migrations.RunPython(fix_spacialite_compatability)]
