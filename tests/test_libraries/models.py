@@ -4,16 +4,25 @@ from typing import Any, Optional
 
 from django.db import models, transaction
 
-from tumpara.libraries.models import File, Library, RecordModel
+from tumpara.libraries.models import (
+    File,
+    Library,
+    RecordManager,
+    RecordModel,
+    RecordQueryset,
+)
 
 
-class GenericHandlerManager(models.Manager["GenericHandler"]):
+class GenericHandlerManagerBase(RecordManager["GenericHandler"]):
     def get_queryset(self) -> models.QuerySet[GenericHandler]:
         files_queryset = File.objects.filter(
             record__pk=models.OuterRef("pk"),
             availability__isnull=False,
         )
         return super().get_queryset().filter(models.Exists(files_queryset))
+
+
+GenericHandlerManager = GenericHandlerManagerBase.from_queryset(RecordQueryset)
 
 
 class GenericHandler(RecordModel):
