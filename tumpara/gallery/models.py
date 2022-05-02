@@ -4,6 +4,7 @@ from typing import Generic, TypeVar
 
 from django.contrib.gis.db import models
 from django.db import transaction
+from django.db.models import expressions, functions
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -45,63 +46,53 @@ class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryReco
                 "perform grouping"
             )
 
-        # Update the stack keys so the provided objects are on the same stack. What we
-        # need to do here:
-        # 1) Find all the stacks that contain at least one of the provided objects -
-        #    these are the stacks that will be relevant later.
-        # 2) Find a key for the stack that will be set. This is either one of the ones
-        #    we discovered before, or the next free one.
-        # 3) Update the stack key for all applicable entries. This includes both those
-        #    provided by the caller and those in the existing stacks (since we want to
-        #    merge them).
-        # Find all the stacks that contain at least one of the provided objects - these
-        # are the keys that will be relevant later.
-        relevant_stack_keys = {item[0] for item in self.values_list("stack_key")} - {
-            None
-        }
+        # Find a stack key to use for the new (or merged) stack.
+        stack_key = functions.Coalesce(
+            # First, check and see if any of the items in our queryset already have a
+            # stack key. In that case, use the smallest one, because they will all get
+            # merged anyway.
+            models.Subquery(
+                self.order_by()  # Clear any initial order
+                .filter(stack_key__isnull=False)
+                # This trick with the dummy variable is from here:
+                # https://stackoverflow.com/a/64902200
+                # It removes the unnecessary GROUP BY clause that Django adds when using
+                # annotate(). This should no longer be required once this ticket is
+                # implemented: https://code.djangoproject.com/ticket/28296
+                .annotate(dummy=models.Value(1))
+                .values("dummy")
+                .annotate(min_stack_key=models.Min("stack_key"))
+                .values("min_stack_key")
+            ),
+            # If that didn't succeed, take the next free value in the database. While
+            # this implementation doesn't strictly make sure that there isn't also a
+            # smaller key that would also be available, it does ensure that we get a
+            # key that isn't used yet and that is good enough.
+            models.Subquery(
+                GalleryRecord.objects
+                # Clear out unneeded sorting and joins.
+                .order_by()
+                .select_related(None)
+                # Here, we use the same trick as before to get rid of the grouping.
+                .annotate(dummy=models.Value(1))
+                .values("dummy")
+                .values(new_stack_key=(models.Max("stack_key") + 1))
+                .values("new_stack_key")
+            ),
+            # If we still don't have a stack key to use, then there aren't any stacks
+            # in the database yet. In that case we can just start with an initial value.
+            models.Value(1),
+        )
 
-        if len(relevant_stack_keys) == 0:
-            # If none of the objects is in a stack yet, we need a new key. This will
-            # be the next available one. In order to avoid race conditions, we use
-            # a subquery here.
-            new_stack_key = models.RawSQL(
-                f"""
-                SELECT COALESCE(MAX(stack_key) + 1, 1)
-                FROM {GalleryRecord._meta.db_table}
-                """,
-                (),
-            )
-        else:
-            # If we already have an existing stack, we can use a key from there.
-            new_stack_key = min(relevant_stack_keys)
+        # Extract the first primary key from our queryset, because that will be the
+        # new representative.
+        representative_primary_key = self.values_list("pk")[:1]
 
-        queryset = GalleryRecord.objects.filter(
+        return GalleryRecord.objects.filter(
             models.Q(pk__in=self.values_list("pk"))
-            | models.Q(stack_key__in=relevant_stack_keys)
-        )
-
-        # If any of the existing entries was a representative before, use that.
-        # Otherwise choose the first one.
-        # representative_primary_key = self.values_list("pk").first()[0]
-        representative_primary_key = models.Subquery(
-            self
-            # Using .order_by() with empty arguments here to remove the initial
-            # ordering by timestamp:
-            .order_by()
-            # This trick with the dummy variable is from here:
-            # https://stackoverflow.com/a/64902200
-            # It removes the unnecessary GROUP BY clause that Django adds
-            # when using .annotate(). This should no longer be required once
-            # this ticket is implemented:
-            # https://code.djangoproject.com/ticket/28296
-            .annotate(dummy=models.Value(1))
-            .values("dummy")
-            .annotate(new_visibility=models.Min("pk"))
-            .values("new_visibility"),
-        )
-
-        return queryset.update(
-            stack_key=new_stack_key,
+            | models.Q(stack_key__in=self.values_list("stack_key"))
+        ).update(
+            stack_key=stack_key,
             # Make the first item that was provided the representative. All others
             # will be "demoted".
             stack_representative=models.Case(
@@ -141,7 +132,7 @@ class GalleryRecord(RecordModel):
     # The reason we don't use a single foreign key that points to the representative
     # directly is because this approach lets us define more precise database
     # constraints (see the Meta class below).
-    stack_key = models.IntegerField(
+    stack_key = models.PositiveIntegerField(
         _("stack key"),
         null=True,
         blank=True,
