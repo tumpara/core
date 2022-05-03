@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Generic, TypeVar
 
 from django.contrib.gis.db import models
-from django.db import transaction
-from django.db.models import expressions, functions
+from django.db import NotSupportedError, transaction
+from django.db.models import functions
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -32,6 +32,14 @@ class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryReco
             )
         )
 
+    def _not_support_grouping(self, operation_name: str) -> None:
+        self._not_support_combined_queries(operation_name)
+        if self.query.values_select or self.query.group_by:
+            raise ValueError(
+                f"calling {operation_name} is only supported on querysets that only "
+                f"filter and don't perform grouping"
+            )
+
     @transaction.atomic
     def stack(self) -> int:
         """Stack all records in this queryset together.
@@ -39,67 +47,92 @@ class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryReco
         After calling this method, all records will have the same stack key. If one or
         more record(s) is already in a stack, they will be merged into a single stack.
         """
-        self._not_support_combined_queries("stack")
-        if self.query.values_select or self.query.group_by:
-            raise ValueError(
-                "stacking is only supported on querysets that only filter and don't "
-                "perform grouping"
+        self._not_support_grouping("stack")
+
+        compiler = self.query.get_compiler(self.db)
+        connection = compiler.connection
+
+        selected_records_query, selected_records_params = self.values(
+            "record_id", "stack_key", "stack_representative"
+        ).query.as_sql(compiler, connection)
+
+        with connection.cursor() as cursor:
+            records_table = GalleryRecord._meta.db_table
+            cursor.execute(
+                f"""
+                WITH
+                    selected_records AS ({selected_records_query}),
+
+                    --- Choose a representative for the new stack.
+                    chosen_representative AS (SELECT COALESCE(
+                        --- If one the selected records is already a representative,
+                        --- use that one.
+                        (SELECT MIN(selected_records.record_id)
+                         FROM selected_records
+                         WHERE selected_records.stack_representative IS TRUE),
+                        --- Otherwise broaden the search and take an existing
+                        --- representative from the stacks that are already there.
+                        (SELECT MIN("{records_table}".record_id)
+                         FROM "{records_table}"
+                         WHERE
+                            "{records_table}".stack_representative IS TRUE
+                            AND "{records_table}".stack_key IN (SELECT DISTINCT selected_records.stack_key from selected_records)),
+                        --- If that still gives no result (because we are creating
+                        --- completely new stacks), use the first record from our query.
+                        (SELECT MIN(selected_records.record_id)
+                         FROM selected_records)
+                    ))
+                UPDATE "{records_table}"
+                SET
+                    --- Find a stack key to use for the new (or merged) stack.
+                    stack_key = COALESCE(
+                        --- First, check and see if any of the items in our queryset
+                        --- already have a stack key. In that case, use the smallest
+                        --- one, because they will all get merged anyway.
+                        (SELECT MIN(selected_records.stack_key)
+                         FROM selected_records
+                         WHERE selected_records.stack_key IS NOT NULL),
+                        --- If that didn't succeed, take the next free value in the
+                        --- database. While this implementation doesn't strictly make
+                        --- sure that there isn't also a smaller key that would also be
+                        --- available, it does ensure that we get a key that isn't used
+                        --- yet and that is good enough.
+                        (SELECT (MAX("{records_table}".stack_key) + 1)
+                         FROM "{records_table}"),
+                        --- If we still don't have a stack key to use, then there aren't
+                        --- any stacks in the database yet. In that case we can just
+                        --- start with an initial value.
+                        1
+                    ),
+
+                    stack_representative = CASE
+                        WHEN ("{records_table}".record_id IN (SELECT * FROM chosen_representative)) THEN TRUE
+                        ELSE FALSE
+                    END
+                WHERE
+                    "{records_table}".record_id IN (SELECT DISTINCT selected_records.record_id FROM selected_records)
+                    OR "{records_table}".stack_key IN (SELECT DISTINCT selected_records.stack_key FROM selected_records)
+                """,
+                selected_records_params,
             )
+            cursor.execute("SELECT CHANGES()")
+            row = cursor.fetchone()
 
-        # Find a stack key to use for the new (or merged) stack.
-        stack_key = functions.Coalesce(
-            # First, check and see if any of the items in our queryset already have a
-            # stack key. In that case, use the smallest one, because they will all get
-            # merged anyway.
-            models.Subquery(
-                self.order_by()  # Clear any initial order
-                .filter(stack_key__isnull=False)
-                # This trick with the dummy variable is from here:
-                # https://stackoverflow.com/a/64902200
-                # It removes the unnecessary GROUP BY clause that Django adds when using
-                # annotate(). This should no longer be required once this ticket is
-                # implemented: https://code.djangoproject.com/ticket/28296
-                .annotate(dummy=models.Value(1))
-                .values("dummy")
-                .annotate(min_stack_key=models.Min("stack_key"))
-                .values("min_stack_key")
-            ),
-            # If that didn't succeed, take the next free value in the database. While
-            # this implementation doesn't strictly make sure that there isn't also a
-            # smaller key that would also be available, it does ensure that we get a
-            # key that isn't used yet and that is good enough.
-            models.Subquery(
-                GalleryRecord.objects
-                # Clear out unneeded sorting and joins.
-                .order_by()
-                .select_related(None)
-                # Here, we use the same trick as before to get rid of the grouping.
-                .annotate(dummy=models.Value(1))
-                .values("dummy")
-                .values(new_stack_key=(models.Max("stack_key") + 1))
-                .values("new_stack_key")
-            ),
-            # If we still don't have a stack key to use, then there aren't any stacks
-            # in the database yet. In that case we can just start with an initial value.
-            models.Value(1),
-        )
+        return row[0]
 
-        # Extract the first primary key from our queryset, because that will be the
-        # new representative.
-        representative_primary_key = self.values_list("pk")[:1]
+    def unstack(self) -> int:
+        """Unstack all stacks matched by this queryset.
 
+        Note that this will not merely remove the affected records from their stack, but
+        will also unstack any other records in that stack. After calling this method,
+        the corresponding stacks will no longer exist.
+        """
+        self._not_support_grouping("stack")
         return GalleryRecord.objects.filter(
-            models.Q(pk__in=self.values_list("pk"))
-            | models.Q(stack_key__in=self.values_list("stack_key"))
-        ).update(
-            stack_key=stack_key,
-            # Make the first item that was provided the representative. All others
-            # will be "demoted".
-            stack_representative=models.Case(
-                models.When(pk=representative_primary_key, then=models.Value(True)),
-                default=models.Value(False),
-            ),
-        )
+            stack_key__in=models.Subquery(
+                self.filter(stack_key__isnull=False).values("stack_key").distinct()
+            )
+        ).update(stack_key=None, stack_representative=False)
 
 
 GalleryRecordManager = RecordManager.from_queryset(GalleryRecordQuerySet)
@@ -178,6 +211,24 @@ class GalleryRecord(RecordModel):
                 name="not_a_representative_when_unstacked",
             ),
         ]
+
+    def represent_stack(self) -> None:
+        """Make this record the representative of its stack."""
+        if self.stack_key is None:
+            raise NotSupportedError(
+                "cannot set an unstacked record as a representative"
+            )
+        if self.stack_representative:
+            return
+        GalleryRecord.objects.filter(
+            models.Q(pk=self.pk)
+            | models.Q(stack_key=self.stack_key, stack_representative=True)
+        ).update(
+            stack_representative=models.Case(
+                models.When(pk=self.pk, then=True), default=False
+            )
+        )
+        self.stack_representative = True
 
 
 class GalleryRecordModel(GalleryRecord):
