@@ -52,9 +52,9 @@ class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryReco
         compiler = self.query.get_compiler(self.db)
         connection = compiler.connection
 
-        selected_records_query, selected_records_params = self.values(
-            "record_id", "stack_key", "stack_representative"
-        ).query.as_sql(compiler, connection)
+        selected_records_query, selected_records_params = compiler.compile(
+            self.values("record_id", "stack_key", "stack_representative")
+        )
 
         with connection.cursor() as cursor:
             records_table = GalleryRecord._meta.db_table
