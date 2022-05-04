@@ -8,6 +8,7 @@ from tumpara.accounts.api import JoinableNode
 from .models import JoinableThing
 
 
+@api.remove_duplicate_node_interface
 @strawberry.type(name="JoinableThing")
 class JoinableThingNode(JoinableNode, api.DjangoNode[JoinableThing], fields=[]):
     _obj: strawberry.Private[JoinableThing]

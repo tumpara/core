@@ -22,14 +22,16 @@ __all__ = [
     "AnonymousUser",
     "User",
     "Joinable",
-    "JoinableQueryset",
+    "JoinableQuerySet",
     "Permission",
     "UserMembership",
 ]
 
 
 class UserManager(auth_models.UserManager["User"]):
-    def for_user(self, user: AnonymousUser | User) -> models.QuerySet[User]:
+    def for_user(
+        self, user: AnonymousUser | User, permission: str
+    ) -> models.QuerySet[User]:
         """Return a queryset of users that are visible for a given other user.
 
         The resulting queryset contains all objects where the provided user has the
@@ -236,10 +238,10 @@ class UserMembership(AbstractMembership):
 _Joinable = TypeVar("_Joinable", bound="Joinable")
 
 
-class JoinableQueryset(Generic[_Joinable], models.QuerySet[_Joinable]):
+class JoinableQuerySet(Generic[_Joinable], models.QuerySet[_Joinable]):
     def for_user(
-        self, permission: str, user: User | AnonymousUser
-    ) -> JoinableQueryset[_Joinable]:
+        self, user: User | AnonymousUser, permission: str
+    ) -> JoinableQuerySet[_Joinable]:
         """Narrow down the queryset to only return elements where the given user has
         a specific permission."""
         if not user.is_authenticated or not user.is_active:

@@ -12,7 +12,7 @@ from django.db import models
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 
-from tumpara.accounts.models import AnonymousUser, Joinable, JoinableQueryset, User
+from tumpara.accounts.models import AnonymousUser, Joinable, JoinableQuerySet, User
 from tumpara.accounts.utils import build_permission_name
 
 from . import scanner, storage
@@ -50,11 +50,11 @@ def validate_library_default_visibility(value: int) -> None:
         )
 
 
-class LibraryQueryset(JoinableQueryset["Library"]):
+class LibraryQuerySet(JoinableQuerySet["Library"]):
     pass
 
 
-LibraryManager = models.Manager.from_queryset(LibraryQueryset)
+LibraryManager = models.Manager.from_queryset(LibraryQuerySet)
 
 
 class Library(Joinable):

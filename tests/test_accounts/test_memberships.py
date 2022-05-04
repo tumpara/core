@@ -139,24 +139,24 @@ def test_queryset_permissions(user_dataset: UserDataset) -> None:
     change_permission = change_thing_permission
     delete_permission = delete_thing_permission
 
-    assert list(for_user(view_permission, bob)) == []
-    assert list(for_user(change_permission, bob)) == []
+    assert list(for_user(bob, view_permission)) == []
+    assert list(for_user(bob, change_permission)) == []
 
     first.add_membership(carl)
     second.add_membership(carl)
     third.add_membership(carl)
     fourth.add_membership(carl)
-    assert list(for_user(view_permission, carl)) == [first, second, third, fourth]
-    assert list(for_user(change_permission, carl)) == []
-    assert list(for_user(delete_permission, carl)) == []
+    assert list(for_user(carl, view_permission)) == [first, second, third, fourth]
+    assert list(for_user(carl, change_permission)) == []
+    assert list(for_user(carl, delete_permission)) == []
 
     first.add_membership(dave)
     second.add_membership(dave)
     third.add_membership(dave, owner=True)
     fourth.add_membership(dave, owner=True)
-    assert list(for_user(view_permission, dave)) == [first, second, third, fourth]
-    assert list(for_user(change_permission, dave)) == [third, fourth]
-    assert list(for_user(delete_permission, dave)) == [third, fourth]
+    assert list(for_user(dave, view_permission)) == [first, second, third, fourth]
+    assert list(for_user(dave, change_permission)) == [third, fourth]
+    assert list(for_user(dave, delete_permission)) == [third, fourth]
 
 
 @pytest.mark.django_db
@@ -270,21 +270,21 @@ def test_joinable_for_user_query(django_executor: Any, data: st.DataObject) -> N
             owned_things.add(thing)
 
     assert (
-        set(JoinableThing.objects.for_user(view_thing_permission, user))
+        set(JoinableThing.objects.for_user(user, view_thing_permission))
         == member_things
     )
     assert (
-        set(JoinableThing.objects.for_user(change_thing_permission, user))
+        set(JoinableThing.objects.for_user(user, change_thing_permission))
         == owned_things
     )
     assert (
-        set(JoinableThing.objects.for_user(delete_thing_permission, user))
+        set(JoinableThing.objects.for_user(user, delete_thing_permission))
         == owned_things
     )
 
     for permission in supported_permissions:
-        assert set(JoinableThing.objects.for_user(permission, superuser)) == set(things)
-        assert set(JoinableThing.objects.for_user(permission, AnonymousUser())) == set()
+        assert set(JoinableThing.objects.for_user(superuser, permission)) == set(things)
+        assert set(JoinableThing.objects.for_user(AnonymousUser(), permission)) == set()
 
 
 @hypothesis.given(st.text())
@@ -294,4 +294,4 @@ def test_joinable_for_user_with_invalid_permission(
     hypothesis.assume(permission not in supported_permissions)
     user = User(username="test")
     with pytest.raises(ValueError, match="unsupported permission"):
-        JoinableThing.objects.for_user(permission, user)
+        JoinableThing.objects.for_user(user, permission)

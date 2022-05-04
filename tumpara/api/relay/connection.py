@@ -12,6 +12,7 @@ from django.db import models
 from strawberry.field import StrawberryField
 from strawberry.type import StrawberryOptional
 
+from tumpara.accounts.utils import build_permission_name
 from tumpara.api import filtering
 
 from ..utils import InfoType
@@ -192,7 +193,7 @@ class Connection(Generic[_Node]):
 
         # Default to an empty result.
         if first == 0 or last == 0 or (first is None and last is None):
-            return cls.empty()
+            return cls.empty(sequence_length)
 
         # The following algorithm more or less follows the one provided in the Relay
         # specification:
@@ -301,14 +302,14 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
         return cast(type[_Model], cls._model)
 
     @classmethod
-    def get_queryset(cls, info: InfoType) -> models.QuerySet[_Model]:
+    def get_queryset(cls, info: InfoType, permission: str) -> models.QuerySet[_Model]:
         """Return the queryset that :class:`DjangoConnectionField` uses to resolve
         model objects.
 
         By default, this uses :meth:`DjangoNode.get_queryset` on the Django node. As
         described there, make sure that this method handles permissions correctly.
         """
-        return cls._get_node_type().get_queryset(info)
+        return cls._get_node_type().get_queryset(info, permission)
 
     @classmethod
     def from_queryset(
@@ -502,7 +503,10 @@ class DjangoConnectionField(ConnectionField):
             queryset = self.base_resolver(*args, **kwargs)
         else:
             try:
-                queryset = connection_type.get_queryset(info)
+                view_permission = build_permission_name(
+                    connection_type._get_model_type(), "view"
+                )
+                queryset = connection_type.get_queryset(info, view_permission)
             except NotImplementedError as error:
                 raise AssertionError(
                     "cannot resolve a Django connection that does not define "

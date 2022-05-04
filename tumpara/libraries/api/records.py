@@ -7,7 +7,7 @@ from django.db import models
 
 from tumpara import api
 from tumpara.accounts.utils import build_permission_name
-from tumpara.libraries.models import File, Record, Visibility
+from tumpara.libraries.models import File, Record, RecordQuerySet, Visibility
 
 from .libraries import LibraryNode
 
@@ -55,12 +55,15 @@ class RecordNode(api.DjangoNode[Record], fields=["library", "visibility"]):
         return self._obj.files.filter(availability__isnull=False)
 
     @classmethod
-    def get_queryset(cls, info: api.InfoType) -> models.QuerySet[Record]:
+    def get_queryset(
+        cls, info: api.InfoType, permission: str
+    ) -> models.QuerySet[Record]:
         model = cls._get_model_type()
-        return model.objects.for_user(
-            build_permission_name(model, "view"),
-            info.context.user,
-        )
+        manager = model._default_manager
+        if not issubclass(manager._queryset_class, RecordQuerySet):  # type: ignore
+            raise NotImplementedError
+        resolved_permission = permission or build_permission_name(model, "view")
+        return manager.for_user(info.context.user, resolved_permission)  # type: ignore
 
     @classmethod
     def extract_primary_keys_from_ids(

@@ -42,7 +42,7 @@ class Query:
     def gallery_records(self, info: api.InfoType) -> models.QuerySet[GalleryRecord]:
         # TODO This should become a more refined queryset that automatically prefetches
         #   related models.
-        return GalleryRecordNode.get_queryset(info)  # type: ignore
+        return GalleryRecordNode.get_queryset(info, "gallery.view_galleryrecord")  # type: ignore
 
 
 @strawberry.input
@@ -85,6 +85,22 @@ class Mutation:
         description="Clear the stack of each of the given gallery records."
     )
     def unstack_gallery_records(
+        self, info: api.InfoType, input: StackingMutationInput
+    ) -> StackingMutationResult:
+        primary_keys = GalleryRecordNode.extract_primary_keys_from_ids(info, input.ids)
+        if isinstance(primary_keys, api.NodeError):
+            return primary_keys
+        stack_size = (
+            GalleryRecord.objects.for_user(
+                "gallery.change_galleryrecord", info.context.user
+            )
+            .filter(pk__in=primary_keys)
+            .unstack()
+        )
+        return StackingMutationSuccess(stack_size=stack_size)
+
+    @strawberry.field(description="Make.")
+    def set_stack_representative(
         self, info: api.InfoType, input: StackingMutationInput
     ) -> StackingMutationResult:
         primary_keys = GalleryRecordNode.extract_primary_keys_from_ids(info, input.ids)

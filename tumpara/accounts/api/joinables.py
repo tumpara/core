@@ -6,7 +6,7 @@ from django.db import models
 
 from tumpara import api
 
-from ..models import Joinable, JoinableQueryset, User, UserMembership
+from ..models import Joinable, JoinableQuerySet, User, UserMembership
 from ..utils import build_permission_name
 from .users import UserNode
 
@@ -53,14 +53,12 @@ class JoinableNode(api.DjangoNode[Joinable], fields=[]):
         )
 
     @classmethod
-    def get_queryset(cls, info: api.InfoType) -> models.QuerySet[_Joinable]:
-        manager = cls._get_model_type()._default_manager
-        if not issubclass(
-            manager._queryset_class,  # type: ignore
-            JoinableQueryset,
-        ):
+    def get_queryset(
+        cls, info: api.InfoType, permission: Optional[str] = None
+    ) -> models.QuerySet[_Joinable]:
+        model = cls._get_model_type()
+        manager = model._default_manager
+        if not issubclass(manager._queryset_class, JoinableQuerySet):  # type: ignore
             raise NotImplementedError
-        return manager.for_user(  # type: ignore
-            build_permission_name(cls._get_model_type(), "view"),
-            info.context.user,
-        )
+        resolved_permission = permission or build_permission_name(model, "view")
+        return manager.for_user(info.context.user, resolved_permission)  # type: ignore

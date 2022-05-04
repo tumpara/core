@@ -1,5 +1,4 @@
 import django.db.models
-from django.contrib.contenttypes.models import ContentType
 
 __all__ = ["build_permission_name"]
 
@@ -15,6 +14,8 @@ def build_permission_name(
         the model class or an instance.
     :param action: The action to encode in the permission.
     """
+    from django.contrib.contenttypes.models import ContentType
+
     content_type = ContentType.objects.get_for_model(model, for_concrete_model=True)
     app_label = content_type.app_label
     model_name = model._meta.model_name

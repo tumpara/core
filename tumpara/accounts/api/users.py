@@ -6,6 +6,7 @@ from django.db import models
 from tumpara import api
 
 from ..models import User
+from ..utils import build_permission_name
 
 
 @strawberry.input(description="Filtering options when querying `User` objects.")
@@ -69,8 +70,13 @@ class UserNode(
             return self.username
 
     @classmethod
-    def get_queryset(cls, info: api.InfoType) -> models.QuerySet[User]:
-        return User.objects.for_user(info.context.user)
+    def get_queryset(
+        cls, info: api.InfoType, permission: Optional[str] = None
+    ) -> models.QuerySet[User]:
+        resolved_permission = permission or build_permission_name(
+            cls._get_model_type(), "view"
+        )
+        return User.objects.for_user(info.context.user, resolved_permission)
 
 
 # We need to redefine 'node' and 'edges' below because otherwise Strawberry thinks they

@@ -100,7 +100,10 @@ class Node(abc.ABC):
         return cast(strawberry.ID, encode_key(type_definition.name, *key_tuple))
 
     def get_key(self, info: InfoType) -> str | tuple[str, ...]:
-        """Extract the key used to generate a unique ID for an instance of this Node."""
+        """Extract the key used to generate a unique ID for an instance of this Node.
+
+        The key may be a string or a tuple of strings.
+        """
         raise NotImplementedError(
             f"Cannot generate a global ID for object of type {type(self)!r}. If "
             f"this is not intentional, extend the Node type and override the "
@@ -109,8 +112,16 @@ class Node(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
-    def from_key(cls: type[Self], info: InfoType, *key: str) -> Optional[Self]:
-        """Resolve an instance of this node type from the global ID's key."""
+    def from_key(
+        cls: type[Self], info: InfoType, permission: Optional[str] = None, *key: str
+    ) -> Optional[Self]:
+        """Resolve an instance of this node type from the global ID's key.
+
+        :param info: GraphQL info data.
+        :param permission: Optional permission the current user should have. If the
+            permission is not fulfilled, this method will return `None`.
+        :param key: Parts of the ID.
+        """
 
 
 @strawberry.type
@@ -222,16 +233,20 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
 
     @classmethod
     def from_key(
-        cls: type[_DjangoNode], info: InfoType, *key: str
+        cls: type[_DjangoNode],
+        info: InfoType,
+        permission: Optional[str] = None,
+        *key: str,
     ) -> Optional[_DjangoNode]:
         from tumpara.accounts.utils import build_permission_name
 
         model = cls._get_model_type()
+        resolved_permission = permission or build_permission_name(model, "view")
 
         assert len(key) == 1, "invalid key format"
 
         try:
-            obj = cls.get_queryset(info).get(pk=key[0])
+            obj = cls.get_queryset(info, resolved_permission).get(pk=key[0])
         except model.DoesNotExist:
             return None
         except NotImplementedError:
@@ -241,9 +256,7 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
                 obj = model._default_manager.get(pk=key[0])
             except model.DoesNotExist:
                 return None
-            if not info.context.user.has_perm(
-                build_permission_name(model, "view"), obj
-            ):
+            if not info.context.user.has_perm(resolved_permission, obj):
                 return None
 
         return cls(obj)
@@ -271,20 +284,28 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
         return cast(type[_Model], cls._model)
 
     @classmethod
-    def get_queryset(cls, info: InfoType) -> models.QuerySet[_Model]:
+    def get_queryset(cls, info: InfoType, permission: str) -> models.QuerySet[_Model]:
         """Return the default queryset for fetching model objects.
 
-        This queryset must respect view permissions for the current user. That means
-        anything where the user does not have the ``app.view_something`` permission
-        must not be included in this queryset. If this method is not implemented, the
-        default manager will be used and the permission check will be performed on each
-        object individually.
+        This queryset must respect the provided permission string. That means that the
+        resulting queryset should only contain objects where the current user has the
+        given permission. By default, this will be something like
+        ``app.view_something``, but may be different for writable use cases.
         """
         raise NotImplementedError
 
 
-def resolve_node(info: InfoType, node_id: str) -> Optional[Node]:
-    """Resolve the node instance"""
+def resolve_node(
+    info: InfoType, node_id: str, permission: Optional[str] = None
+) -> Optional[Node]:
+    """Resolve a single node instance by an ID.
+
+    :param info: GraphQL info data.
+    :param node_id: The node ID to resolve.
+    :param permission: Optional permission the current user should have. The node will
+        not be resolved if this permission is not fulfilled. Django nodes default to the
+        viewing permission here.
+    """
     type_name, *key = decode_key(node_id)
     origin, _ = get_node_origin(type_name, info)
-    return origin.from_key(info, *key)
+    return origin.from_key(info, permission, *key)
