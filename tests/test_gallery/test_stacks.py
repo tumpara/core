@@ -60,7 +60,7 @@ def test_stacking(records: list[GalleryRecord]) -> None:
 def test_stacking_representatives(records: list[GalleryRecord]) -> None:
     """Stacking records together chooses an appropriate representative."""
 
-    def refresh_all():
+    def refresh_all() -> None:
         for record in records:
             record.refresh_from_db()
 
@@ -96,6 +96,7 @@ def test_stacking_representatives(records: list[GalleryRecord]) -> None:
     # Since 4 was already a representative but 3 was not, the representative of our
     # stack should be moved from 0 to 4.
     refresh_all()
+    records = records  # This is to please MyPy.
     assert not records[0].stack_representative
     assert not records[1].stack_representative
     assert not records[2].stack_representative
@@ -132,7 +133,7 @@ def test_unstacking(records: list[GalleryRecord]) -> None:
 def test_representative_setting(records: list[GalleryRecord]) -> None:
     """Records can explicitly set as representative."""
 
-    def refresh_all():
+    def refresh_all() -> None:
         for record in records:
             record.refresh_from_db()
 
@@ -146,6 +147,7 @@ def test_representative_setting(records: list[GalleryRecord]) -> None:
     records[2].represent_stack()
     # records[2] is tested twice because we want to make sure the flag is set before
     # refreshing as well.
+    records = records  # This is to please MyPy.
     assert records[2].stack_representative
     refresh_all()
     assert not records[0].stack_representative
@@ -154,6 +156,7 @@ def test_representative_setting(records: list[GalleryRecord]) -> None:
     assert not records[3].stack_representative
 
     records[3].represent_stack()
+    records = records
     assert records[3].stack_representative
     refresh_all()
     assert not records[0].stack_representative

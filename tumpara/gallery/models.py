@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, cast
 
 from django.contrib.gis.db import models
 from django.db import NotSupportedError, transaction
-from django.db.models import functions
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -20,20 +19,19 @@ class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryReco
         permission: str,
         user: User | AnonymousUser,
     ) -> GalleryRecordQuerySet[_GalleryRecord]:
-        return (
-            super()
-            .for_user(permission, user)
-            .filter(
-                models.Exists(
-                    File.objects.filter(
-                        record=models.OuterRef("pk"), availability__isnull=False
-                    )
+        queryset = cast(
+            GalleryRecordQuerySet[_GalleryRecord], super().for_user(permission, user)
+        )
+        return queryset.filter(
+            models.Exists(
+                File.objects.filter(
+                    record=models.OuterRef("pk"), availability__isnull=False
                 )
             )
         )
 
     def _not_support_grouping(self, operation_name: str) -> None:
-        self._not_support_combined_queries(operation_name)
+        self._not_support_combined_queries(operation_name)  # type: ignore
         if self.query.values_select or self.query.group_by:
             raise ValueError(
                 f"calling {operation_name} is only supported on querysets that only "
@@ -46,6 +44,8 @@ class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryReco
 
         After calling this method, all records will have the same stack key. If one or
         more record(s) is already in a stack, they will be merged into a single stack.
+
+        :return: The new size of the stack.
         """
         self._not_support_grouping("stack")
 
@@ -118,7 +118,7 @@ class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryReco
             cursor.execute("SELECT CHANGES()")
             row = cursor.fetchone()
 
-        return row[0]
+        return cast(int, row[0])
 
     def unstack(self) -> int:
         """Unstack all stacks matched by this queryset.
@@ -126,6 +126,8 @@ class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryReco
         Note that this will not merely remove the affected records from their stack, but
         will also unstack any other records in that stack. After calling this method,
         the corresponding stacks will no longer exist.
+
+        :return: The size of the no longer existing stack.
         """
         self._not_support_grouping("stack")
         return GalleryRecord.objects.filter(

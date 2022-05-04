@@ -1,4 +1,5 @@
 import enum
+from collections.abc import Sequence, Set
 from typing import Optional
 
 import strawberry
@@ -61,10 +62,39 @@ class RecordNode(api.DjangoNode[Record], fields=["library", "visibility"]):
             info.context.user,
         )
 
+    @classmethod
+    def extract_primary_keys_from_ids(
+        cls, info: api.InfoType, ids: Sequence[strawberry.ID]
+    ) -> api.NodeError | Set[str]:
+        """Extract primary keys from a list of node IDs.
+
+        If one of the provided IDs does not belong to this record type, a
+        :class:`api.NodeError` will be returned. Also note that this method not validate
+        the IDs in any way - neither if they actually belong to an existing record
+        object nor if the user has adequate permissions.
+        """
+        primary_keys = set[str]()
+        for record_id in ids:
+            type_name, *key = api.decode_key(record_id)
+            origin, _ = api.get_node_origin(type_name, info)
+
+            # This check is crucial - we make sure that the ID is from some kind of
+            # record type. Since our inheritance is set up by using a foreign key to
+            # the 'record' table as the primary key of the child type, we know that any
+            # primary key of the concrete record type will also work on the parent.
+            if not issubclass(origin, RecordNode) or not len(key) == 1:
+                return api.NodeError(requested_id=record_id)
+
+            primary_keys.add(key[0])
+        return primary_keys
+
 
 @strawberry.input
 class SetRecordVisibilityInput:
-    ids: list[strawberry.ID] = strawberry.field(description="Record IDs to update.")
+    ids: list[strawberry.ID] = strawberry.field(
+        description="Record IDs to update. IDs for records that do not exist will"
+        "silently be dropped, invalid IDs will return a `NodeError`."
+    )
     visibility: RecordVisibility = strawberry.field(
         description="Visibility value that should be set for all records."
     )
@@ -86,24 +116,12 @@ class Mutation:
     def set_record_visibility(
         self, info: api.InfoType, input: SetRecordVisibilityInput
     ) -> SetRecordVisibilityResult:
-        primary_keys = set[str]()
-        for record_id in input.ids:
-            type_name, *key = api.decode_key(record_id)
-            origin, _ = api.get_node_origin(type_name, info)
-
-            # This check is crucial - we make sure that the ID is from some kind of
-            # record type. Since our inheritance is set up by using a foreign key to
-            # the 'record' table as the primary key of the child type, we know that any
-            # primary key of the concrete record type will also work on the parent.
-            if not issubclass(origin, RecordNode) or not len(key) == 1:
-                return api.NodeError(requested_id=record_id)
-
-            primary_keys.add(key[0])
-
+        primary_keys = RecordNode.extract_primary_keys_from_ids(info, input.ids)
+        if isinstance(primary_keys, api.NodeError):
+            return primary_keys
         update_count = (
             Record.objects.for_user("libraries.change_record", info.context.user)
             .filter(pk__in=primary_keys)
             .update(visibility=input.visibility.value)
         )
-
         return SetRecordVisibilitySuccess(update_count=update_count)

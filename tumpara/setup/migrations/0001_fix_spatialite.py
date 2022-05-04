@@ -1,7 +1,11 @@
 from django.db import migrations
+from django.db.backends.base.schema import BaseDatabaseSchemaEditor
+from django.db.migrations.state import StateApps
 
 
-def fix_spacialite_compatability(apps, schema_editor):
+def fix_spacialite_compatability(
+    apps: StateApps, schema_editor: BaseDatabaseSchemaEditor
+) -> None:
     """Try and fix compatibility issues between SpaciaLite and the newest versino of
     SQLite.
 

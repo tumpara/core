@@ -42,4 +42,59 @@ class Query:
     def gallery_records(self, info: api.InfoType) -> models.QuerySet[GalleryRecord]:
         # TODO This should become a more refined queryset that automatically prefetches
         #   related models.
-        return GalleryRecordNode.get_queryset(info)
+        return GalleryRecordNode.get_queryset(info)  # type: ignore
+
+
+@strawberry.input
+class StackingMutationInput:
+    ids: list[strawberry.ID] = strawberry.field(
+        description="Gallery record IDs to update. IDs for records that do not exist "
+        "will silently be dropped, invalid IDs will return a `NodeError`."
+    )
+
+
+@strawberry.type
+class StackingMutationSuccess:
+    stack_size: int = strawberry.field(description="Size of the stack.")
+
+
+StackingMutationResult = strawberry.union(
+    "StackingMutationResult", types=(StackingMutationSuccess, api.NodeError)
+)
+
+
+@api.schema.mutation
+class Mutation:
+    @strawberry.field(description="Stack the given set of gallery records together.")
+    def stack_gallery_records(
+        self, info: api.InfoType, input: StackingMutationInput
+    ) -> StackingMutationResult:
+        primary_keys = GalleryRecordNode.extract_primary_keys_from_ids(info, input.ids)
+        if isinstance(primary_keys, api.NodeError):
+            return primary_keys
+        stack_size = (
+            GalleryRecord.objects.for_user(
+                "gallery.change_galleryrecord", info.context.user
+            )
+            .filter(pk__in=primary_keys)
+            .stack()
+        )
+        return StackingMutationSuccess(stack_size=stack_size)
+
+    @strawberry.field(
+        description="Clear the stack of each of the given gallery records."
+    )
+    def unstack_gallery_records(
+        self, info: api.InfoType, input: StackingMutationInput
+    ) -> StackingMutationResult:
+        primary_keys = GalleryRecordNode.extract_primary_keys_from_ids(info, input.ids)
+        if isinstance(primary_keys, api.NodeError):
+            return primary_keys
+        stack_size = (
+            GalleryRecord.objects.for_user(
+                "gallery.change_galleryrecord", info.context.user
+            )
+            .filter(pk__in=primary_keys)
+            .unstack()
+        )
+        return StackingMutationSuccess(stack_size=stack_size)
