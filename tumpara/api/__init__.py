@@ -1,7 +1,14 @@
 from strawberry.arguments import UNSET
 
 from .filtering import GenericFilter
-from .filtering.scalars import FloatFilter, IntFilter, StringFilter
+from .filtering.scalars import (
+    DateFilter,
+    DateTimeFilter,
+    FloatFilter,
+    IntFilter,
+    StringFilter,
+    TimeFilter,
+)
 from .relay.base import (
     DjangoNode,
     Node,
@@ -33,6 +40,8 @@ __all__ = [
     "Connection",
     "ConnectionField",
     "CreateFormInput",
+    "DateFilter",
+    "DateTimeFilter",
     "DjangoConnection",
     "DjangoConnectionField",
     "DjangoNode",
@@ -46,6 +55,7 @@ __all__ = [
     "NodeError",
     "PageInfo",
     "StringFilter",
+    "TimeFilter",
     "UpdateFormInput",
     "decode_key",
     "encode_key",

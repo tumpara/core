@@ -524,7 +524,12 @@ class DjangoConnectionField(ConnectionField):
         ):
             # Since we are filtering objects directly in the queryset (and not some
             # subfield), the field name is an empty string here:
-            queryset = queryset.filter(filter.build_query(""))
+            query_result = filter.build_query("")
+            if isinstance(query_result, models.Q):
+                query, aliases = query_result, {}
+            else:
+                query, aliases = query_result
+            queryset = queryset.alias(**aliases).filter(query)
 
         kwargs.setdefault("info", info)
         # It should be safe to ignore 'args' here, because that only contains the

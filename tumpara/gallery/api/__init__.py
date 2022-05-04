@@ -9,6 +9,13 @@ from tumpara.libraries.api import RecordNode
 from ..models import GalleryRecord
 
 
+@strawberry.input(
+    description="Filtering options when querying `GalleryRecord` objects."
+)
+class GalleryRecordFilter:
+    pass
+
+
 @api.remove_duplicate_node_interface
 @strawberry.interface(name="GalleryRecord")
 class GalleryRecordNode(
@@ -61,6 +68,9 @@ class StackingMutationSuccess:
 StackingMutationResult = strawberry.union(
     "StackingMutationResult", types=(StackingMutationSuccess, api.NodeError)
 )
+SetStackRepresentativeResult = strawberry.union(
+    "StackingMutationResult", types=(GalleryRecordNode, api.NodeError)
+)
 
 
 @api.schema.mutation
@@ -101,16 +111,10 @@ class Mutation:
 
     @strawberry.field(description="Make.")
     def set_stack_representative(
-        self, info: api.InfoType, input: StackingMutationInput
-    ) -> StackingMutationResult:
-        primary_keys = GalleryRecordNode.extract_primary_keys_from_ids(info, input.ids)
-        if isinstance(primary_keys, api.NodeError):
-            return primary_keys
-        stack_size = (
-            GalleryRecord.objects.for_user(
-                "gallery.change_galleryrecord", info.context.user
-            )
-            .filter(pk__in=primary_keys)
-            .unstack()
-        )
-        return StackingMutationSuccess(stack_size=stack_size)
+        self, info: api.InfoType, id: strawberry.ID
+    ) -> SetStackRepresentativeResult:
+        node = api.resolve_node(info, id, "gallery.change_galleryrecord")
+        if not isinstance(node, GalleryRecord):
+            return api.NodeError(requested_id=id)
+        node._obj.represent_stack()
+        return node

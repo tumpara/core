@@ -1,9 +1,11 @@
 import abc
+import datetime
 from typing import SupportsFloat  # noqa: F401  # pylint: disable=unused-import
 from typing import Any, Generic, Optional, TypeVar
 
 import strawberry
 from django.db import models
+from django.db.models import functions
 
 _T = TypeVar("_T")
 _N = TypeVar("_N", bound="SupportsFloat")
@@ -16,13 +18,6 @@ class ScalarFilter(Generic[_T], abc.ABC):
 
     @abc.abstractmethod
     def build_query(self, field_name: str) -> models.Q:
-        """Build a Django ``Q`` object for this filter.
-
-        :param field_name: Name of the field or related field lookup the filter should
-            be applied on. For example, if you want to query a name field, this should
-            be set to ``name``. If you want to query the name field of a related
-            collection object, this should be ``collections__name``.
-        """
         query = models.Q()
 
         if self.include is not None:
@@ -39,7 +34,7 @@ class ScalarFilter(Generic[_T], abc.ABC):
         return query
 
 
-@strawberry.input
+@strawberry.input(description="Filtering options for string fields.")
 class StringFilter(ScalarFilter[str]):
     include: Optional[list[str]] = strawberry.field(
         default=None,
@@ -88,8 +83,7 @@ class StringFilter(ScalarFilter[str]):
 
     def build_query(self, field_name: str) -> models.Q:
         query = super().build_query(field_name)
-        case_prefix = "" if self.case_sensitive else "i"
-        prefix = field_name + "__" + case_prefix
+        prefix = f"{field_name}__{'' if self.case_sensitive else 'i'}"
 
         if self.contains is not None:
             query &= models.Q((f"{prefix}contains", self.contains))
@@ -175,7 +169,7 @@ class NumberFilter(Generic[_N], ScalarFilter[_N]):
         return query
 
 
-@strawberry.input
+@strawberry.input(description="Filtering options for integer fields.")
 class IntFilter(NumberFilter[int]):
     include: Optional[list[int]] = None
     exclude: Optional[list[int]] = None
@@ -183,9 +177,126 @@ class IntFilter(NumberFilter[int]):
     maximum: Optional[int] = None
 
 
-@strawberry.input
+@strawberry.input(description="Filtering options for float fields.")
 class FloatFilter(NumberFilter[float]):
     include: Optional[list[float]] = None
     exclude: Optional[list[float]] = None
     minimum: Optional[float] = None
     maximum: Optional[float] = None
+
+
+@strawberry.input(description="Filtering options for date fields.")
+class DateFilter:
+    before: Optional[datetime.datetime] = strawberry.field(
+        default=None,
+        description="Match values before this date.",
+    )
+    after: Optional[datetime.datetime] = strawberry.field(
+        default=None,
+        description="Match values after this date.",
+    )
+    inclusive: bool = strawberry.field(
+        default=False,
+        description="Set to `true` to make the `before` and `after` options "
+        "inclusive.",
+    )
+    year: Optional[IntFilter] = strawberry.field(
+        default=None,
+        description="Filter based on the year.",
+    )
+    month: Optional[IntFilter] = strawberry.field(
+        default=None,
+        description="Filter based on the month (values between 1 and 12).",
+    )
+    day: Optional[IntFilter] = strawberry.field(
+        default=None,
+        description="Filter based on the day of the month (values between 1 and 31).",
+    )
+    week_day: Optional[IntFilter] = strawberry.field(
+        default=None,
+        description="Filter based on the day of the week (values between 1 and 7, "
+        "counting from Sunday to Saturday).",
+    )
+
+    def build_query(
+        self, field_name: str
+    ) -> tuple[models.Q, dict[str, models.Expression]]:
+        query = models.Q()
+        aliases = dict[str, models.Expression]()
+
+        inclusivity_suffix = "e" if self.inclusive else ""
+        if self.before is not None:
+            query &= models.Q((f"{field_name}__lt{inclusivity_suffix}", self.before))
+        if self.after is not None:
+            query &= models.Q((f"{field_name}__gt{inclusivity_suffix}", self.after))
+
+        if self.year is not None:
+            alias = f"_{field_name}_year"
+            aliases[alias] = functions.ExtractYear(field_name)
+            query &= self.year.build_query(alias)
+        if self.month is not None:
+            alias = f"_{field_name}_month"
+            aliases[alias] = functions.ExtractMonth(field_name)
+            query &= self.month.build_query(alias)
+        if self.day is not None:
+            alias = f"_{field_name}_day"
+            aliases[alias] = functions.ExtractDay(field_name)
+            query &= self.day.build_query(alias)
+        if self.week_day is not None:
+            alias = f"_{field_name}_week_day"
+            aliases[alias] = functions.ExtractWeekDay(field_name)
+            query &= self.week_day.build_query(alias)
+
+        return models.Q(), aliases
+
+
+@strawberry.input(description="Filtering options for datetime fields.")
+class DateTimeFilter(DateFilter):
+    hour: Optional[IntFilter] = strawberry.field(
+        default=None,
+        description="Filter based on the hour (values between 0 and 23).",
+    )
+
+    def build_query(
+        self, field_name: str
+    ) -> tuple[models.Q, dict[str, models.Expression]]:
+        query, aliases = super().build_query(field_name)
+
+        if self.hour is not None:
+            alias = f"_{field_name}_hour"
+            aliases[alias] = functions.ExtractHour(field_name)
+            query &= self.hour.build_query(alias)
+
+        return query, aliases
+
+
+@strawberry.input(description="Filtering options for time fields.")
+class TimeFilter:
+    before_time: Optional[datetime.date] = strawberry.field(
+        default=None,
+        description="Match values earlier than this time.",
+    )
+    after_time: Optional[datetime.date] = strawberry.field(
+        default=None,
+        description="Match values later than this time.",
+    )
+    inclusive: bool = strawberry.field(
+        default=False,
+        description="Set to `true` to make the `before_time` and `after_time` options "
+        "inclusive.",
+    )
+
+    def build_query(self, field_name: str) -> models.Q:
+        query = models.Q()
+
+        inclusivity_suffix = "e" if self.inclusive else ""
+        if self.before_date is not None:
+            query &= models.Q(
+                (f"{field_name}__lt{inclusivity_suffix}", self.before_time)
+            )
+        if self.after_date is not None:
+            query &= models.Q(
+                (f"{field_name}__gt{inclusivity_suffix}", self.after_time)
+            )
+
+        return models.Q()

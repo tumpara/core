@@ -20,13 +20,6 @@ class UserFilter:
     is_active: Optional[bool] = None
 
     def build_query(self, field_name: str) -> models.Q:
-        """Build a Django Q object for this filter.
-
-        :param field_name: The name of the field where models should be filtered. When
-            building a query for a top-level queryset of the correct type, set this to
-            an empty string. When building a query for a related field, set this to the
-            field's name.
-        """
         prefix = field_name + "__" if field_name != "" else ""
         query = models.Q()
 
