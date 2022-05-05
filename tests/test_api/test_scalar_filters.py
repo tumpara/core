@@ -1,9 +1,16 @@
-import functools
+import datetime
 
 import hypothesis
 from django.db.models import Q
 
-from tumpara.api import FloatFilter, IntFilter, StringFilter
+from tumpara.api import (
+    DateFilter,
+    DateTimeFilter,
+    FloatFilter,
+    IntFilter,
+    StringFilter,
+    TimeFilter,
+)
 from tumpara.testing import strategies as st
 
 # Note: these tests basically only test if the Q object we get when evaluating the
@@ -12,7 +19,7 @@ from tumpara.testing import strategies as st
 # before testing on an actual database first. Most notably this is the case for SQLite,
 # see here:
 #   https://docs.djangoproject.com/en/4.0/ref/databases/#sqlite-string-matching
-# For MySQL, it also seems to be dependant on database settings:
+# For MySQL, it also seems to be dependent on database settings:
 #   https://docs.djangoproject.com/en/4.0/ref/models/querysets/#exact
 
 
@@ -168,3 +175,57 @@ def test_number_both_bounds() -> None:
     assert FloatFilter(
         minimum=-3.3, inclusive_minimum=False, maximum=3.3, inclusive_maximum=False
     ).build_query("bar") == Q(bar__gt=-3.3, bar__lt=3.3)
+
+
+def test_time_bounds() -> None:
+    assert TimeFilter(before_time=datetime.time(hour=12)).build_query("foo") == Q(
+        foo__lt=datetime.time(hour=12)
+    )
+    assert TimeFilter(before_time=datetime.time(hour=6), inclusive=True).build_query(
+        "bar"
+    ) == Q(bar__lte=datetime.time(hour=6))
+    assert TimeFilter(after_time=datetime.time(hour=14)).build_query("foo") == Q(
+        foo__gt=datetime.time(hour=14)
+    )
+    assert TimeFilter(after_time=datetime.time(hour=20), inclusive=True).build_query(
+        "bar"
+    ) == Q(bar__gte=datetime.time(hour=20))
+
+
+def test_date_bounds() -> None:
+    date = datetime.date(year=2000, month=1, day=1)
+
+    assert DateFilter(before=date).build_query("foo") == (Q(foo__lt=date), {})
+    assert DateFilter(before=date, inclusive=True).build_query("bar") == (
+        Q(bar__lte=date),
+        {},
+    )
+    assert DateFilter(after=date).build_query("foo") == (Q(foo__gt=date), {})
+    assert DateFilter(after=date, inclusive=True).build_query("bar") == (
+        Q(bar__gte=date),
+        {},
+    )
+
+
+def test_date_parts() -> None:
+    number_filter = IntFilter(exclude=[16, 19], minimum=15, maximum=22)
+
+    query, aliases = DateFilter(year=number_filter).build_query("foo")
+    assert query == number_filter.build_query("_foo_year")
+    assert "_foo_year" in aliases
+
+    query, aliases = DateFilter(month=number_filter).build_query("foo")
+    assert query == number_filter.build_query("_foo_month")
+    assert "_foo_month" in aliases
+
+    query, aliases = DateFilter(day=number_filter).build_query("foo")
+    assert query == number_filter.build_query("_foo_day")
+    assert "_foo_day" in aliases
+
+    query, aliases = DateFilter(week_day=number_filter).build_query("foo")
+    assert query == number_filter.build_query("_foo_week_day")
+    assert "_foo_week_day" in aliases
+
+    query, aliases = DateTimeFilter(hour=number_filter).build_query("foo")
+    assert query == number_filter.build_query("_foo_hour")
+    assert "_foo_hour" in aliases

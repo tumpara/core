@@ -247,7 +247,7 @@ class DateFilter:
             aliases[alias] = functions.ExtractWeekDay(field_name)
             query &= self.week_day.build_query(alias)
 
-        return models.Q(), aliases
+        return query, aliases
 
 
 @strawberry.input(description="Filtering options for datetime fields.")
@@ -290,13 +290,13 @@ class TimeFilter:
         query = models.Q()
 
         inclusivity_suffix = "e" if self.inclusive else ""
-        if self.before_date is not None:
+        if self.before_time is not None:
             query &= models.Q(
                 (f"{field_name}__lt{inclusivity_suffix}", self.before_time)
             )
-        if self.after_date is not None:
+        if self.after_time is not None:
             query &= models.Q(
                 (f"{field_name}__gt{inclusivity_suffix}", self.after_time)
             )
 
-        return models.Q()
+        return query
