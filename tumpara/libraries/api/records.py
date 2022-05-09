@@ -38,7 +38,87 @@ class RecordVisibility(enum.Enum):
     INTERNAL = Visibility.INTERNAL
     MEMBERS = Visibility.MEMBERS
     OWNERS = Visibility.OWNERS
-    INHERIT = Visibility.INHERIT
+    FROM_LIBRARY = Visibility.FROM_LIBRARY
+
+
+@strawberry.input(description="Filtering options for record visibility fields.")
+class RecordVisibilityFilter:
+    public: bool = strawberry.field(
+        default=True, description="Whether to include public records."
+    )
+    internal: bool = strawberry.field(
+        default=True, description="Whether to include internal records."
+    )
+    members: bool = strawberry.field(
+        default=True,
+        description="Whether to include records visible only to library members.",
+    )
+    owners: bool = strawberry.field(
+        default=True,
+        description="Whether to include records visible only to library owners.",
+    )
+    public_from_library: Optional[bool] = strawberry.field(
+        default=None,
+        description="Whether to include public records, where the visibility has been"
+        "inherited from the library. By default (or when set to `null`) this will take"
+        "the same value as the `public` option.",
+    )
+    internal_from_library: Optional[bool] = strawberry.field(
+        default=None,
+        description="Whether to include internal records, where the visibility has been"
+        "inherited from the library. By default (or when set to `null`) this will take"
+        "the same value as the `internal` option.",
+    )
+    members_from_library: Optional[bool] = strawberry.field(
+        default=None,
+        description="Whether to include records visible only to library members, where"
+        "the visibility has been inherited from the library. By default (or when set "
+        "to `null`) this will take the same value as the `members` option.",
+    )
+    owners_from_library: Optional[bool] = strawberry.field(
+        default=None,
+        description="Whether to include records visible only to library owners, where"
+        "the visibility has been inherited from the library. By default (or when set "
+        "to `null`) this will take the same value as the `owners` option.",
+    )
+
+    def build_query(
+        self, visibility_field_name: str, library_visibility_field_name: str
+    ) -> models.Q:
+        query = models.Q()
+        if self.public:
+            query |= models.Q((visibility_field_name, Visibility.PUBLIC))
+        if self.internal:
+            query |= models.Q((visibility_field_name, Visibility.INTERNAL))
+        if self.members:
+            query |= models.Q((visibility_field_name, Visibility.MEMBERS))
+        if self.owners:
+            query |= models.Q((visibility_field_name, Visibility.OWNERS))
+
+        subquery = models.Q()
+        if self.public_from_library or (
+            self.public_from_library is None and self.public
+        ):
+            subquery |= models.Q((library_visibility_field_name), Visibility.PUBLIC)
+        if self.internal_from_library or (
+            self.internal_from_library is None and self.internal
+        ):
+            subquery |= models.Q((library_visibility_field_name), Visibility.INTERNAL)
+        if self.members_from_library or (
+            self.members_from_library is None and self.members
+        ):
+            subquery |= models.Q((library_visibility_field_name), Visibility.MEMBERS)
+        if self.owners_from_library or (
+            self.owners_from_library is None and self.owners
+        ):
+            subquery |= models.Q((library_visibility_field_name), Visibility.OWNERS)
+
+        if subquery != models.Q():
+            query |= (
+                models.Q((visibility_field_name, Visibility.FROM_LIBRARY)) & subquery
+            )
+
+        return query
 
 
 @strawberry.interface(name="Record")

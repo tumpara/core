@@ -13,6 +13,7 @@ import strawberry.types.info
 import strawberry.types.types
 from django import forms
 from django.db import models
+from django.forms.models import ModelChoiceIterator
 from django.utils import encoding
 
 from .views import ApiContext
@@ -62,13 +63,18 @@ def type_annotation_for_django_field(
     :return: A type annotation for the field. If the field is optional, the result will
         be wrapped in an :func:`Optional`.
     """
+    type_annotation: object
+
     if (isinstance(field, models.Field) and field.choices) or isinstance(
         field, forms.ChoiceField
     ):
-        raise ValueError("converting fields with choices is not supported yet")
-
-    type_annotation: object
-    if isinstance(field, (models.BooleanField, forms.BooleanField)):
+        if isinstance(field.choices, ModelChoiceIterator):
+            # This case here occurs when we have a form field that expects some model
+            # instance.
+            type_annotation = strawberry.ID
+        else:
+            raise ValueError("converting fields with choices is not supported yet")
+    elif isinstance(field, (models.BooleanField, forms.BooleanField)):
         type_annotation = bool
     elif isinstance(field, (models.CharField, models.TextField, forms.CharField)):
         type_annotation = str

@@ -246,3 +246,18 @@ class GalleryRecordModel(GalleryRecord):
 
     class Meta:
         abstract = True
+
+
+class Note(GalleryRecordModel):
+    """A note is the simplest record type available in the gallery.
+
+    It represents a user-defined short (or long) text that should be rendered as
+    markdown.
+    """
+
+    content = models.TextField(
+        _("note content"),
+        help_text=_(
+            "Content of the note, which should be rendered using the markdown syntax."
+        ),
+    )

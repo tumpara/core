@@ -99,17 +99,14 @@ class Mutation:
     def create_library(
         self, info: api.InfoType, input: CreateLibraryInput
     ) -> Optional[LibraryMutationResult]:
-        form = input.prepare(info)
-        if not isinstance(form, CreateLibraryForm):
-            return form
-
-        obj = form.save()
-        assert isinstance(obj, Library)
+        node = input.resolve(info)
+        if not isinstance(node, LibraryNode):
+            return node
 
         assert isinstance(info.context.user, User)
-        obj.add_membership(info.context.user, owner=True)
+        node._obj.add_membership(info.context.user, owner=True)
 
-        return LibraryNode(obj)
+        return node
 
     @strawberry.field(
         description=UpdateLibraryInput._type_definition.description,  # type: ignore
@@ -117,7 +114,4 @@ class Mutation:
     def update_library(
         self, info: api.InfoType, input: UpdateLibraryInput
     ) -> Optional[LibraryMutationResult]:
-        form = input.prepare(info)
-        if not isinstance(form, LibraryForm):
-            return form
-        return LibraryNode(form.save())
+        return input.resolve(info)

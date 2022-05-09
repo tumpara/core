@@ -27,14 +27,14 @@ class Visibility:
     INTERNAL = 1
     MEMBERS = 2
     OWNERS = 3
-    INHERIT = 10
+    FROM_LIBRARY = 10
 
     VISIBILTY_CHOICES = [
         (PUBLIC, _("Public")),
         (INTERNAL, _("All logged-in users")),
         (MEMBERS, _("Library members")),
         (OWNERS, _("Only library owners")),
-        (INHERIT, _("Use the default value")),
+        (FROM_LIBRARY, _("Use the default value")),
     ]
 
 
@@ -43,10 +43,10 @@ def validate_library_source(source: str) -> None:
 
 
 def validate_library_default_visibility(value: int) -> None:
-    if value == Visibility.INHERIT:
+    if value == Visibility.FROM_LIBRARY:
         raise ValidationError(
-            "Libraries cannot inherit visibility values.",
-            code="no-library-visibility-inheritance",
+            "Libraries cannot take visibility values from themselves.",
+            code="no-recursive-library-visibility",
         )
 
 
@@ -274,7 +274,7 @@ class Record(models.Model):
     visibility = models.PositiveSmallIntegerField(
         _("visibility"),
         choices=Visibility.VISIBILTY_CHOICES,
-        default=Visibility.INHERIT,
+        default=Visibility.FROM_LIBRARY,
         help_text=_("Determines who can see this object."),
     )
 

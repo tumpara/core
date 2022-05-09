@@ -19,8 +19,8 @@ class UserFilter:
     )
     is_active: Optional[bool] = None
 
-    def build_query(self, field_name: str) -> models.Q:
-        prefix = field_name + "__" if field_name != "" else ""
+    def build_query(self, field_name: Optional[str]) -> models.Q:
+        prefix = field_name + "__" if field_name else ""
         query = models.Q()
 
         if self.username is not None:

@@ -5,6 +5,7 @@ import dataclasses
 import enum
 import inspect
 import typing
+from collections.abc import Mapping
 from typing import Any, ClassVar, Generic, Optional, TypeVar, cast
 
 import strawberry.arguments
@@ -15,7 +16,7 @@ from django.utils import encoding
 from strawberry.field import StrawberryAnnotation, StrawberryField
 
 from ..utils import InfoType, is_type_optional, type_annotation_for_django_field
-from .base import DjangoNode, resolve_node
+from .base import DjangoNode, _DjangoNode, resolve_node
 
 _Form = TypeVar("_Form", bound="forms.Form | forms.ModelForm[Any]")
 _ModelForm = TypeVar("_ModelForm", bound="forms.ModelForm[Any]")
@@ -195,8 +196,38 @@ class DjangoFormInput(Generic[_Form], abc.ABC):
 
 
 @dataclasses.dataclass
-class DjangoModelFormInput(Generic[_ModelForm], DjangoFormInput[_ModelForm], abc.ABC):
+class DjangoModelFormInput(
+    Generic[_ModelForm, _DjangoNode], DjangoFormInput[_ModelForm], abc.ABC
+):
+    _node: ClassVar[type[DjangoNode[Any]]]
+    _related_permissions: ClassVar[Mapping[str, str]]
+
     def __init_subclass__(cls, **kwargs: Any):
+        node_class: Optional[type[_DjangoNode]] = None
+
+        for base in cls.__orig_bases__:  # type: ignore
+            origin = typing.get_origin(base)
+            if origin is Generic:
+                super().__init_subclass__(**kwargs)
+                return
+            elif inspect.isclass(origin) and issubclass(origin, DjangoFormInput):
+                (node_class,) = typing.get_args(base)
+
+        if not hasattr(cls, "_form"):
+            cls._node = cast(type[_DjangoNode], node_class)
+        assert cls._form is not None and issubclass(cls._node, DjangoNode), (
+            f"DjangoModelFormType classes must be initialized with a DjangoNode class "
+            f"(got {node_class!r}"
+        )
+
+        kwargs.setdefault("related_permissions", {})
+        related_permissions = kwargs.pop("related_permissions")
+        if not isinstance(related_permissions, Mapping):
+            raise TypeError(
+                "related object permission names must be a string dictionary"
+            )
+        cls._related_permissions = related_permissions
+
         super().__init_subclass__(**kwargs)
         if any(
             typing.get_origin(base) is Generic
@@ -213,13 +244,26 @@ class DjangoModelFormInput(Generic[_ModelForm], DjangoFormInput[_ModelForm], abc
     def _get_model_type(cls) -> type[models.Model]:
         return cls._get_form_type()._meta.model  # type: ignore
 
+    @classmethod
+    def _get_node_type(cls) -> type[_DjangoNode]:
+        return cls._node  # type: ignore
 
-@dataclasses.dataclass
-class CreateFormInput(Generic[_ModelForm], DjangoModelFormInput[_ModelForm], abc.ABC):
     def _create_form(
         self, info: InfoType, data: dict[Any, Any], **kwargs: Any
     ) -> _ModelForm | FormError | NodeError:
         from tumpara.accounts.utils import build_permission_name
+
+        for field_name in data.keys():
+            if field_name in self._related_permissions:
+                # Resolve the ID of the related object into a node, and then get the
+                # actual object from there.
+                assert isinstance(data[field_name], (str, strawberry.ID))
+                node = resolve_node(
+                    info, data[field_name], self._related_permissions[field_name]
+                )
+                if not isinstance(node, DjangoNode):
+                    return NodeError(requested_id=data[field_name])
+                data[field_name] = node._obj
 
         if not info.context.user.has_perm(
             build_permission_name(self._get_model_type(), "add")
@@ -227,6 +271,36 @@ class CreateFormInput(Generic[_ModelForm], DjangoModelFormInput[_ModelForm], abc
             return NodeError(requested_id=None)
 
         return super()._create_form(info, data, **kwargs)
+
+    @classmethod
+    def get_resolving_permission(cls) -> Optional[str]:
+        return None
+
+    def resolve(self, info: InfoType) -> _DjangoNode | FormError | NodeError:
+        form = self.prepare(info)
+        if not isinstance(form, self._get_form_type()):
+            return form
+
+        obj = form.save(commit=False)
+        assert isinstance(obj, self._get_model_type())
+        assert isinstance(obj, self._get_node_type()._get_model_type())
+
+        if (
+            resolving_permission := self.get_resolving_permission()
+        ) is not None and not info.context.user.has_perm(resolving_permission, obj):
+            return NodeError(requested_id=None)
+
+        obj.save()
+        form.save_m2m()
+        return self._get_node_type()(obj)
+
+
+@dataclasses.dataclass
+class CreateFormInput(Generic[_ModelForm], DjangoModelFormInput[_ModelForm], abc.ABC):
+    def get_resolving_permission(cls) -> str:
+        from tumpara.accounts.utils import build_permission_name
+
+        return build_permission_name(cls._get_model_type(), "add")
 
 
 @dataclasses.dataclass
