@@ -30,5 +30,6 @@ def notes(library: Library) -> set[Note]:
     }
 
 
+@pytest.mark.django_db
 def test_listing_records(notes: set[Note]) -> None:
     pass

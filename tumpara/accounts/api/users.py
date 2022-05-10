@@ -43,24 +43,19 @@ class UserFilter:
 
 @strawberry.type(name="User", description="A user with an account on this server.")
 class UserNode(
-    api.DjangoNode[User],
+    api.DjangoNode,
     fields=["username", "full_name", "short_name", "email", "is_active"],
 ):
-    username: str
-    short_name: str
-    full_name: str
-
-    def __init__(self, _obj: User):
-        self._obj = _obj
+    obj: strawberry.Private[User]
 
     @strawberry.field(description="Name to display for the user.")
     def display_name(self) -> str:
-        if self.short_name:
-            return self.short_name
-        elif self.full_name:
-            return self.full_name
+        if self.obj.short_name:
+            return self.obj.short_name
+        elif self.obj.full_name:
+            return self.obj.full_name
         else:
-            return self.username
+            return self.obj.username
 
     @classmethod
     def get_queryset(

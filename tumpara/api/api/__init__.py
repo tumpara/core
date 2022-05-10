@@ -13,13 +13,12 @@ from ..utils import with_argument_annotation
 
 
 @strawberry.type(name="Token", description=Token.__doc__ or "")
-class TokenNode(
-    api.DjangoNode[Token], fields=["key", "user", "expiry_timestamp", "name"]
-):
+class TokenNode(api.DjangoNode, fields=["key", "user", "expiry_timestamp", "name"]):
+    obj: strawberry.Private[Token]
     user: UserNode
 
     def __init__(self, _obj: Token):
-        self._obj = _obj
+        self.obj = _obj
 
 
 @strawberry.type(

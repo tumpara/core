@@ -5,6 +5,7 @@ import base64
 import binascii
 import dataclasses
 import inspect
+import sys
 import typing
 from collections.abc import Collection
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Optional, TypeVar, cast
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
 
 _Node = TypeVar("_Node", bound="Node", covariant=True)
 _Model = TypeVar("_Model", bound="models.Model", covariant=True)
-_DjangoNode = TypeVar("_DjangoNode", bound="DjangoNode[Any]", covariant=True)
+_DjangoNode = TypeVar("_DjangoNode", bound="DjangoNode", covariant=True)
 
 
 def decode_key(value: str) -> tuple[str, ...]:
@@ -125,35 +126,16 @@ class Node(abc.ABC):
 
 
 @strawberry.type
-class DjangoNode(Generic[_Model], Node, abc.ABC):
+class DjangoNode(Node):
     _model: ClassVar[type[models.Model]]
-    _related_field_nodes: ClassVar[dict[str, type[DjangoNode[Any]]]]
-    # The following field is not exposed through GraphQL. It is used by DjangoNodeField
-    # to resolve attribute values.
-    _obj: strawberry.Private[_Model]
+    _related_field_nodes: ClassVar[dict[str, type[DjangoNode]]]
+
+    # The following field is not exposed through GraphQL. It is used to resolve the
+    # model type we want and should be overridden by subclasses.
+    obj: strawberry.Private[models.Model]
 
     def __init_subclass__(cls, **kwargs: Any):
-        model: Optional[type[_Model]] = None
-
-        for base in cls.__orig_bases__:  # type: ignore
-            origin = typing.get_origin(base)
-            if origin is Generic:
-                super().__init_subclass__(**kwargs)
-                return
-            elif origin is DjangoNode:
-                try:
-                    (model,) = typing.get_args(base)
-                except ValueError:
-                    continue
-                if not inspect.isclass(model) or not issubclass(model, models.Model):
-                    model = None
-                    continue
-                break
-
-        assert model is not None and issubclass(
-            model, models.Model
-        ), f"DjangoNode classes must be initialized with a Django model (got {model!r})"
-        cls._model = model
+        model = cls._get_model_type()
         try:
             cls._related_field_nodes = dict(cls._related_field_nodes)
         except AttributeError:
@@ -216,7 +198,7 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
             return super().__getattribute__(name)
 
         if name in self._related_field_nodes:
-            obj = getattr(self._obj, name)
+            obj = getattr(self.obj, name)
             node_type = self._related_field_nodes[name]
             assert issubclass(node_type, DjangoNode)
             if obj is None:
@@ -225,14 +207,54 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
                 assert isinstance(obj, node_type._get_model_type())
                 return node_type(obj)
         else:
-            return getattr(self._obj, name)
+            return getattr(self.obj, name)
+
+    @classmethod
+    def _get_field_names(cls) -> Collection[str]:
+        """Return the names of all fields required to initialize a node."""
+        result = [
+            # The primary key field would be filtered out in the following loop, so we
+            # include it here.
+            "pk",
+        ]
+        for field in dataclasses.fields(cls):
+            if not isinstance(field, StrawberryField):
+                continue
+            if field.base_resolver is not None:
+                # This field has its own resolver.
+                continue
+            result.append(field.name)
+        return result
+
+    @classmethod
+    def _get_model_type(cls) -> type[models.Model]:
+        try:
+            model = typing.get_type_hints(cls)["obj"]
+        except KeyError:
+            raise TypeError(
+                "DjangoNode subclasses must provide a Django model to reference. Add"
+                "an annotation looking like this: 'obj: strawberry.Private[TheModel]'."
+            )
+
+        if not (
+            inspect.isclass(model)
+            and issubclass(model, models.Model)
+            and not model is models.Model
+        ):
+            raise TypeError(
+                f"DjangoNode subclasses must provide a Django model to reference. Make"
+                f"sure that there is an annotation looking something like "
+                f"'obj: strawberry.Private[TheModel]' - got {model!r}."
+            )
+
+        return model
 
     def get_key(self, info: InfoType) -> str:
         """Extract the key used to generate a unique ID for an instance of this Node.
 
         For Django objects, the default implementation will return the primary key.
         """
-        return str(self._obj.pk)
+        return str(self.obj.pk)
 
     @classmethod
     def from_key(
@@ -262,32 +284,13 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
             if not info.context.user.has_perm(resolved_permission, obj):
                 return None
 
+        assert isinstance(
+            obj, model
+        ), f"wrong Django model type: expected {model}, got {type(model)}"
         return cls(obj)
 
     @classmethod
-    def _get_field_names(cls) -> Collection[str]:
-        """Return the names of all fields required to initialize a node."""
-        result = [
-            # The primary key field would be filtered out in the following loop, so we
-            # include it here.
-            "pk",
-        ]
-        for field in dataclasses.fields(cls):
-            if not isinstance(field, StrawberryField):
-                continue
-            if field.base_resolver is not None:
-                # This field has its own resolver.
-                continue
-            result.append(field.name)
-        return result
-
-    @classmethod
-    def _get_model_type(cls) -> type[_Model]:
-        assert issubclass(cls._model, models.Model)
-        return cast(type[_Model], cls._model)
-
-    @classmethod
-    def get_queryset(cls, info: InfoType, permission: str) -> models.QuerySet[_Model]:
+    def get_queryset(cls, info: InfoType, permission: str) -> models.QuerySet[Any]:
         """Return the default queryset for fetching model objects.
 
         This queryset must respect the provided permission string. That means that the

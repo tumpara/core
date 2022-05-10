@@ -9,28 +9,28 @@ from .models import Other, Thing
 
 
 def test_django_node_wrong_initialization() -> None:
-    with pytest.raises(AssertionError, match="must be initialized with a Django model"):
+    with pytest.raises(TypeError, match="Django model"):
 
-        class ThingNodeA(api.DjangoNode[None]):  # type: ignore
+        class ThingNodeA(api.DjangoNode):
             pass
 
     with pytest.raises(TypeError, match="fields"):
 
-        class ThingNodeB(api.DjangoNode[Thing]):
-            pass
+        class ThingNodeB(api.DjangoNode):
+            obj: strawberry.Private[Thing]
 
     with pytest.raises(TypeError, match="strings"):
 
-        class ThingNodeC(api.DjangoNode[Thing], fields=[None]):
-            pass
+        class ThingNodeC(api.DjangoNode, fields=[None]):
+            obj: strawberry.Private[Thing]
 
 
 def test_django_node_basic_creating() -> None:
     """``from_obj`` works as expected."""
 
     @strawberry.type
-    class ThingNode(api.DjangoNode[Thing], fields=["foo", "bar"]):
-        _obj: strawberry.Private[Thing]
+    class ThingNode(api.DjangoNode, fields=["foo", "bar"]):
+        obj: strawberry.Private[Thing]
 
     assert set(ThingNode._get_field_names()) == {"pk", "foo", "bar"}
 
@@ -44,15 +44,13 @@ def test_django_node_related_fields() -> None:
     """``from_obj`` successfully resolves related fields."""
 
     @strawberry.type
-    class OtherNode(api.DjangoNode[Other], fields=["baz"]):
-        _obj: strawberry.Private[Other]
+    class OtherNode(api.DjangoNode, fields=["baz"]):
+        obj: strawberry.Private[Other]
 
     @strawberry.type
-    class ThingNode(api.DjangoNode[Thing], fields=["foo", "other"]):
-        other: Optional[OtherNode]
-
-        def __init__(self, _obj: Thing):
-            self._obj = _obj
+    class ThingNode(api.DjangoNode, fields=["foo", "other"]):
+        obj: strawberry.Private[Thing]
+        other: Optional[OtherNode] = None
 
     assert set(OtherNode._get_field_names()) == {"pk", "baz"}
     assert set(ThingNode._get_field_names()) == {"pk", "foo", "other"}

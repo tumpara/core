@@ -1,6 +1,6 @@
 import enum
 from collections.abc import Sequence, Set
-from typing import Optional
+from typing import Any, Optional
 
 import strawberry
 from django.db import models
@@ -13,8 +13,8 @@ from .libraries import LibraryNode
 
 
 @strawberry.type(name="File")
-class FileNode(api.DjangoNode[File], fields=["path"]):
-    pass
+class FileNode(api.DjangoNode, fields=["path"]):
+    obj: strawberry.Private[File]
 
 
 @strawberry.type
@@ -122,7 +122,8 @@ class RecordVisibilityFilter:
 
 
 @strawberry.interface(name="Record")
-class RecordNode(api.DjangoNode[Record], fields=["library", "visibility"]):
+class RecordNode(api.DjangoNode, fields=["library", "visibility"]):
+    obj: strawberry.Private[Record]
     library: Optional[LibraryNode]
     visibility: RecordVisibility
 
@@ -132,18 +133,14 @@ class RecordNode(api.DjangoNode[Record], fields=["library", "visibility"]):
         "connection to those currently available.",
     )
     def files(self) -> models.QuerySet[File]:
-        return self._obj.files.filter(availability__isnull=False)
+        return self.obj.files.filter(availability__isnull=False)
 
     @classmethod
-    def get_queryset(
-        cls, info: api.InfoType, permission: str
-    ) -> models.QuerySet[Record]:
+    def get_queryset(cls, info: api.InfoType, permission: str) -> RecordQuerySet[Any]:
         model = cls._get_model_type()
-        manager = model._default_manager
-        if not issubclass(manager._queryset_class, RecordQuerySet):  # type: ignore
-            raise NotImplementedError
+        assert issubclass(model, Record)
         resolved_permission = permission or build_permission_name(model, "view")
-        return manager.for_user(info.context.user, resolved_permission)
+        return model._default_manager.for_user(info.context.user, resolved_permission)
 
     @classmethod
     def extract_primary_keys_from_ids(

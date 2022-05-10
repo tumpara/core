@@ -13,12 +13,8 @@ from tumpara.libraries.models import Library, Visibility
 
 @api.remove_duplicate_node_interface
 @strawberry.type(name="Library", description="A library containing media.")
-class LibraryNode(
-    JoinableNode,
-    api.DjangoNode[Library],
-    fields=["source", "context"],
-):
-    _obj: strawberry.Private[Library]
+class LibraryNode(JoinableNode, api.DjangoNode, fields=["source", "context"]):
+    obj: strawberry.Private[Library]
 
 
 @strawberry.type
@@ -104,7 +100,7 @@ class Mutation:
             return node
 
         assert isinstance(info.context.user, User)
-        node._obj.add_membership(info.context.user, owner=True)
+        node.obj.add_membership(info.context.user, owner=True)
 
         return node
 

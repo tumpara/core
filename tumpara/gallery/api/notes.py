@@ -12,8 +12,8 @@ from .base import GalleryRecordNode
 
 @api.remove_duplicate_node_interface
 @strawberry.type(name="Note", description="A user-created note record.")
-class NoteNode(GalleryRecordNode, api.DjangoNode[Note], fields=["content"]):
-    pass
+class NoteNode(GalleryRecordNode, api.DjangoNode, fields=["content"]):
+    obj: strawberry.Private[Note]
 
 
 class NoteForm(forms.ModelForm[Note]):

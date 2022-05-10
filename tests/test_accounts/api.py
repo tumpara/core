@@ -10,8 +10,8 @@ from .models import JoinableThing
 
 @api.remove_duplicate_node_interface
 @strawberry.type(name="JoinableThing")
-class JoinableThingNode(JoinableNode, api.DjangoNode[JoinableThing], fields=[]):
-    _obj: strawberry.Private[JoinableThing]
+class JoinableThingNode(JoinableNode, api.DjangoNode, fields=[]):
+    obj: strawberry.Private[JoinableThing]
 
 
 @strawberry.type

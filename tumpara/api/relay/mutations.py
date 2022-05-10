@@ -5,19 +5,20 @@ import dataclasses
 import enum
 import inspect
 import typing
+from collections.abc import Callable
 from typing import Any, ClassVar, Generic, Optional, TypeVar, cast
 
 import strawberry.arguments
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.forms.models import ModelChoiceField
 from django.utils import encoding
 from strawberry.field import StrawberryAnnotation, StrawberryField
 
 from ..utils import InfoType, is_type_optional, type_annotation_for_django_field
 from .base import DjangoNode, _DjangoNode, resolve_node
 
+_T = TypeVar("_T")
 _Form = TypeVar("_Form", bound="forms.Form | forms.ModelForm[Any]")
 _ModelForm = TypeVar("_ModelForm", bound="forms.ModelForm[Any]")
 
@@ -199,7 +200,7 @@ class DjangoFormInput(Generic[_Form], abc.ABC):
 class DjangoModelFormInput(
     Generic[_ModelForm, _DjangoNode], DjangoFormInput[_ModelForm], abc.ABC
 ):
-    _node: ClassVar[type[DjangoNode[Any]]]
+    _node: ClassVar[type[DjangoNode]]
 
     def __init_subclass__(cls, **kwargs: Any):
         node_class: Optional[type[_DjangoNode]] = None
@@ -258,10 +259,10 @@ class DjangoModelFormInput(
                 assert isinstance(data[field_name], str)
                 node = resolve_node(info, data[field_name])
                 if not isinstance(node, DjangoNode) or not isinstance(
-                    node._obj, field.queryset.model
+                    node.obj, field.queryset.model
                 ):
                     return NodeError(requested_id=data[field_name])
-                data[field_name] = node._obj
+                data[field_name] = node.obj
 
         return super()._create_form(info, data, **kwargs)
 
@@ -301,9 +302,12 @@ class CreateFormInput(
         return build_permission_name(cls._get_model_type(), "add")
 
 
-# This is not a dataclass because of this MyPy error:
+fake_dataclass = cast(Callable[[_T], _T], dataclasses.dataclass)
+
+# This is not the actual dataclass method because of this MyPy error:
 #   https://github.com/python/mypy/issues/10140
 #   https://github.com/python/mypy/issues/12113
+@fake_dataclass
 class UpdateFormInput(
     Generic[_ModelForm, _DjangoNode],
     DjangoModelFormInput[_ModelForm, _DjangoNode],
@@ -330,18 +334,18 @@ class UpdateFormInput(
         if node is None:
             return NodeError(requested_id=self.id)
         assert isinstance(node, DjangoNode)
-        assert isinstance(node._obj, self._get_model_type())
+        assert isinstance(node.obj, self._get_model_type())
         if not info.context.user.has_perm(
-            build_permission_name(node._obj, "change"), node._obj
+            build_permission_name(node.obj, "change"), node.obj
         ):
             return NodeError(requested_id=self.id)
 
         return super()._create_form(
             info,
             {
-                key: getattr(node._obj, key) if value is None else value
+                key: getattr(node.obj, key) if value is None else value
                 for key, value in data.items()
             },
-            instance=node._obj,
+            instance=node.obj,
             **kwargs,
         )

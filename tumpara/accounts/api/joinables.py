@@ -21,7 +21,7 @@ class UserMembershipEdge(api.Edge[UserNode]):
     def owner(self) -> bool:
         # Here, we expect the object to be annotated from the queryset built by members
         # field in JoinableNode.
-        return self.node._obj._membership_is_owner  # type: ignore
+        return self.node.obj._membership_is_owner  # type: ignore
 
 
 @strawberry.type(description="A connection to a list of users.")
@@ -35,7 +35,9 @@ class UserMembershipConnection(
 
 
 @strawberry.interface(name="Joinable")
-class JoinableNode(api.DjangoNode[Joinable], fields=[]):
+class JoinableNode(api.DjangoNode, fields=[]):
+    obj: strawberry.Private[Joinable]
+
     @api.DjangoConnectionField(
         UserMembershipConnection,
         description="Users that are a member and have permission to view.",
@@ -47,7 +49,7 @@ class JoinableNode(api.DjangoNode[Joinable], fields=[]):
                 membership__content_type=contenttypes_models.ContentType.objects.get_for_model(
                     self._get_model_type()
                 ),
-                membership__object_pk=self._obj.pk,
+                membership__object_pk=self.obj.pk,
             )
             .annotate(_membership_is_owner=models.F("membership__is_owner"))
         )
@@ -55,8 +57,9 @@ class JoinableNode(api.DjangoNode[Joinable], fields=[]):
     @classmethod
     def get_queryset(
         cls, info: api.InfoType, permission: Optional[str] = None
-    ) -> models.QuerySet[_Joinable]:
+    ) -> JoinableQuerySet[Any]:
         model = cls._get_model_type()
+        assert issubclass(model, Joinable)
         manager = model._default_manager
         if not issubclass(manager._queryset_class, JoinableQuerySet):  # type: ignore
             raise NotImplementedError

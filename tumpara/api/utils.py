@@ -219,7 +219,7 @@ def remove_duplicate_node_interface(new_type: _T) -> _T:
 
         @api.remove_duplicate_node_interface
         @strawberry.type
-        class SomeNode(accounts_api.JoinableNode, api.DjangoNode[SomeModel], ...):
+        class SomeNode(accounts_api.JoinableNode, api.DjangoNode, ...):
             ...
     """
     from .relay.base import Node

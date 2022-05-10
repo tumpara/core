@@ -345,7 +345,7 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
                 return queryset.count()
 
         return cls.from_sequence(
-            cast(Sequence[DjangoNode[_Model]], NodeSequence()),
+            cast(Sequence[DjangoNode], NodeSequence()),
             after=after,
             before=before,
             first=first,

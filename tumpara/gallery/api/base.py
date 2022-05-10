@@ -40,10 +40,8 @@ class GalleryRecordFilter:
 
 @api.remove_duplicate_node_interface
 @strawberry.interface(name="GalleryRecord")
-class GalleryRecordNode(
-    RecordNode, api.DjangoNode[GalleryRecord], fields=["media_timestamp"]
-):
-    _obj: strawberry.Private[GalleryRecord]
+class GalleryRecordNode(RecordNode, api.DjangoNode, fields=["media_timestamp"]):
+    obj: strawberry.Private[GalleryRecord]
 
 
 @strawberry.type
@@ -72,7 +70,7 @@ class Query:
     def gallery_records(self, info: api.InfoType) -> models.QuerySet[GalleryRecord]:
         # TODO This should become a more refined queryset that automatically prefetches
         #   related models.
-        return GalleryRecordNode.get_queryset(info, "gallery.view_galleryrecord")  # type: ignore
+        return GalleryRecordNode.get_queryset(info, "gallery.view_galleryrecord")
 
 
 @strawberry.input
@@ -139,5 +137,5 @@ class Mutation:
         node = api.resolve_node(info, id, "gallery.change_galleryrecord")
         if not isinstance(node, GalleryRecordNode):
             return api.NodeError(requested_id=id)
-        node._obj.represent_stack()
+        node.obj.represent_stack()
         return node
