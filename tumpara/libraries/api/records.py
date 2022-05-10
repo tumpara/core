@@ -143,7 +143,7 @@ class RecordNode(api.DjangoNode[Record], fields=["library", "visibility"]):
         if not issubclass(manager._queryset_class, RecordQuerySet):  # type: ignore
             raise NotImplementedError
         resolved_permission = permission or build_permission_name(model, "view")
-        return manager.for_user(info.context.user, resolved_permission)  # type: ignore
+        return manager.for_user(info.context.user, resolved_permission)
 
     @classmethod
     def extract_primary_keys_from_ids(

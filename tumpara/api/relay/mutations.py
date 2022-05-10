@@ -272,7 +272,7 @@ class DjangoModelFormInput(
     def resolve(self, info: InfoType) -> _DjangoNode | FormError | NodeError:
         form = self.prepare(info)
         if not isinstance(form, self._get_form_type()):
-            return form
+            return cast(FormError | NodeError, form)
 
         obj = form.save(commit=False)
         assert isinstance(obj, self._get_model_type())
@@ -301,7 +301,9 @@ class CreateFormInput(
         return build_permission_name(cls._get_model_type(), "add")
 
 
-@dataclasses.dataclass
+# This is not a dataclass because of this MyPy error:
+#   https://github.com/python/mypy/issues/10140
+#   https://github.com/python/mypy/issues/12113
 class UpdateFormInput(
     Generic[_ModelForm, _DjangoNode],
     DjangoModelFormInput[_ModelForm, _DjangoNode],

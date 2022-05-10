@@ -83,7 +83,7 @@ class CreateLibraryInput(api.CreateFormInput[CreateLibraryForm, LibraryNode]):
 
 @strawberry.input(description="Change an existing library.")
 class UpdateLibraryInput(api.UpdateFormInput[LibraryForm, LibraryNode]):
-    default_visibility: Optional[LibraryVisibility]  # type: ignore
+    default_visibility: Optional[LibraryVisibility]
 
 
 LibraryMutationResult = strawberry.union(

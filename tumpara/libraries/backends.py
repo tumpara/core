@@ -28,7 +28,7 @@ class LibraryCreatingBackend(BaseBackend):
         if obj._state.adding:
             return {"libraries.add_library"}
         else:
-            return {}
+            return set()
 
 
 class LibraryRecordsBackend(BaseBackend):

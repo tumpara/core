@@ -272,11 +272,11 @@ class DateTimeFilter(DateFilter):
 
 @strawberry.input(description="Filtering options for time fields.")
 class TimeFilter:
-    before_time: Optional[datetime.date] = strawberry.field(
+    before_time: Optional[datetime.time] = strawberry.field(
         default=None,
         description="Match values earlier than this time.",
     )
-    after_time: Optional[datetime.date] = strawberry.field(
+    after_time: Optional[datetime.time] = strawberry.field(
         default=None,
         description="Match values later than this time.",
     )

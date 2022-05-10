@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import strawberry
 from django import forms
@@ -33,7 +33,7 @@ class CreateNoteInput(
 class UpdateNoteInput(
     api.UpdateFormInput[NoteForm, NoteNode],
 ):
-    visibility: Optional[RecordVisibility]  # type: ignore
+    visibility: Optional[RecordVisibility]
 
 
 NoteMutationResult = strawberry.union(

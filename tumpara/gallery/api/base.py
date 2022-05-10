@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import strawberry
 from django.db import models
@@ -43,7 +43,7 @@ class GalleryRecordFilter:
 class GalleryRecordNode(
     RecordNode, api.DjangoNode[GalleryRecord], fields=["media_timestamp"]
 ):
-    pass
+    _obj: strawberry.Private[GalleryRecord]
 
 
 @strawberry.type
@@ -137,7 +137,7 @@ class Mutation:
         self, info: api.InfoType, id: strawberry.ID
     ) -> SetStackRepresentativeResult:
         node = api.resolve_node(info, id, "gallery.change_galleryrecord")
-        if not isinstance(node, GalleryRecord):
+        if not isinstance(node, GalleryRecordNode):
             return api.NodeError(requested_id=id)
         node._obj.represent_stack()
         return node

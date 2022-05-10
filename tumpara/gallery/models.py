@@ -4,7 +4,6 @@ from typing import Generic, TypeVar, cast
 
 from django.contrib.gis.db import models
 from django.db import NotSupportedError, transaction
-from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from tumpara.accounts.models import AnonymousUser, User
@@ -153,7 +152,7 @@ class GalleryRecord(RecordModel):
 
     media_timestamp = models.DateTimeField(
         _("media timestamp"),
-        default=timezone.now,
+        auto_now_add=True,
         help_text=_(
             "Timestamp associated with the record's medium. For records without a "
             "media file, this should be the creation date."
@@ -264,3 +263,5 @@ class Note(GalleryRecordModel):
             "Content of the note, which should be rendered using the markdown syntax."
         ),
     )
+
+    objects: RecordManager[Note]  # type: ignore

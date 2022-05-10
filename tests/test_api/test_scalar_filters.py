@@ -193,7 +193,7 @@ def test_time_bounds() -> None:
 
 
 def test_date_bounds() -> None:
-    date = datetime.date(year=2000, month=1, day=1)
+    date = datetime.datetime(year=2000, month=1, day=1)
 
     assert DateFilter(before=date).build_query("foo") == (Q(foo__lt=date), {})
     assert DateFilter(before=date, inclusive=True).build_query("bar") == (
