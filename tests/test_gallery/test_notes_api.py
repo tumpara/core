@@ -4,6 +4,7 @@ import pytest
 
 from tumpara import api
 from tumpara.accounts.models import Permission, User
+from tumpara.gallery.models import Note
 from tumpara.libraries.models import Library, Visibility
 
 from ..test_libraries.test_library_api import mutation as create_library_mutation
@@ -19,6 +20,7 @@ mutation = """
             requestedId
         }
         ... on Note {
+            id
             library { id }
             content
         }
@@ -31,7 +33,7 @@ mutation = """
     }
 
     mutation UpdateNote($input: UpdateNoteInput!) {
-        updateLibrary(input: $input) {
+        updateNote(input: $input) {
             ...Result
         }
     }
@@ -40,11 +42,7 @@ mutation = """
 
 @pytest.fixture
 def user() -> User:
-    user = User.objects.create_user("bob")
-    user.user_permissions.add(
-        Permission.objects.get_by_natural_key("add_library", "libraries", "library")
-    )
-    return user
+    return User.objects.create_user("bob")
 
 
 @pytest.fixture
@@ -69,112 +67,90 @@ def library_id(user: User) -> str:
 
 @pytest.mark.django_db
 def test_note_creating(user: User, library_id: str) -> None:
-    result = api.execute_sync(
-        mutation,
-        None,
-        "CreateNote",
-        input={"content": "Test", "library": library_id},
-    )
-    assert result.errors is None
-    assert result.data == {
-        "createLibrary": {
-            "__typename": "NodeError",
-            "requestedId": None,
-        }
-    }
-
-
-@pytest.mark.django_db
-def test_library_editing() -> None:
-    library = Library.objects.create(
-        source="testing:///",
-        context="test_storage",
-        default_visibility=Visibility.PUBLIC,
-    )
-
-    superuser = User.objects.create_superuser("kevin")
-    result = api.execute_sync(
-        """
-            query {
-                libraries(first:1) {
-                    nodes {
-                        id
-                    }
-                }
-            }
-        """,
-        superuser,
-    )
-    assert result.data is not None
-    library_id = result.data["libraries"]["nodes"][0]["id"]
-
     def assert_forbidden(user: Optional[User]) -> None:
         result = api.execute_sync(
-            mutation, user, "UpdateLibrary", input={"id": library_id}
+            mutation,
+            user,
+            "CreateNote",
+            input={"content": "Test", "library": library_id},
         )
         assert result.errors is None
         assert result.data == {
-            "updateLibrary": {
+            "createNote": {
                 "__typename": "NodeError",
                 "requestedId": library_id,
             }
         }
 
     assert_forbidden(None)
-    user = User.objects.create_user("bob")
-    assert_forbidden(user)
-    library.add_membership(user)
-    user = User.objects.get(username="bob")
-    assert_forbidden(user)
+    # Another user (that doesn't own the library) shouldn't be able to create a note.
+    other_user = User.objects.create_user("carl")
+    assert_forbidden(other_user)
 
-    library.add_membership(user, owner=True)
-    user = User.objects.get(username="bob")
-
-    # Giving no options shouldn't update anything.
     result = api.execute_sync(
         mutation,
         user,
-        "UpdateLibrary",
-        input={"id": library_id},
-    )
-    assert result.errors is None
-    library.refresh_from_db()
-    assert library.source == "testing:///"
-    assert library.default_visibility == Visibility.PUBLIC
-
-    # Giving both options should update them.
-    result = api.execute_sync(
-        mutation,
-        user,
-        "UpdateLibrary",
-        input={
-            "id": library_id,
-            "source": "testing:///hi",
-            "defaultVisibility": "INTERNAL",
-        },
+        "CreateNote",
+        input={"content": "Test", "library": library_id},
     )
     assert result.errors is None
     assert result.data is not None
-    assert result.data["updateLibrary"]["__typename"] == "Library"
-    library.refresh_from_db()
-    assert library.source == "testing:///hi"
-    assert library.default_visibility == Visibility.INTERNAL
+    assert result.data["createNote"]["__typename"] == "Note"
+    assert result.data["createNote"]["library"]["id"] == library_id
+    _, note_pk = api.decode_key(result.data["createNote"]["id"])
+    note = Note.objects.get()
+    assert str(note.pk) == note_pk
+    _, library_pk = api.decode_key(library_id)
+    assert str(note.library.pk) == library_pk
+    assert note.content == "Test"
 
-    # Validation errors should be passed along.
+
+@pytest.mark.django_db
+def test_note_editing(user: User, library_id: str) -> None:
     result = api.execute_sync(
         mutation,
         user,
-        "UpdateLibrary",
-        input={
-            "id": library_id,
-            "source": "lol://notavailable",
-        },
+        "CreateNote",
+        input={"content": "Foo", "library": library_id},
+    )
+    assert result.data is not None
+    note_id = result.data["createNote"]["id"]
+
+    def assert_forbidden(user: Optional[User]) -> None:
+        result = api.execute_sync(
+            mutation,
+            user,
+            "UpdateNote",
+            input={"id": note_id, "content": "Bar"},
+        )
+        assert result.errors is None
+        assert result.data == {
+            "updateNote": {
+                "__typename": "NodeError",
+                "requestedId": note_id,
+            }
+        }
+
+    assert_forbidden(None)
+    other_user = User.objects.create_user("carl")
+    assert_forbidden(other_user)
+    Library.objects.get().add_membership(other_user)
+    # Carl is not an owner, so he should not be allowed to edit the note.
+    assert_forbidden(other_user)
+
+    result = api.execute_sync(
+        mutation,
+        user,
+        "UpdateNote",
+        input={"id": note_id, "content": "Bar"},
     )
     assert result.errors is None
     assert result.data == {
-        "updateLibrary": {
-            "__typename": "FormError",
-            "fields": ["source"],
-            "codes": ["unsupported_storage_scheme"],
+        "updateNote": {
+            "__typename": "Note",
+            "id": note_id,
+            "library": {"id": library_id},
+            "content": "Bar",
         }
     }
+    assert Note.objects.get().content == "Bar"

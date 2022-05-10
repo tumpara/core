@@ -88,28 +88,7 @@ def test_library_creating() -> None:
 
     user = User.objects.create_user("bob")
 
-    # As long as the user doesn't have permission to create a library, this should not
-    # work:
-    result = api.execute_sync(
-        mutation,
-        user,
-        "CreateLibrary",
-        input={"source": "testing:///", "context": "test_storage"},
-    )
-    assert result.errors is None
-    assert result.data == {
-        "createLibrary": {
-            "__typename": "NodeError",
-            "requestedId": None,
-        }
-    }
-
-    user.user_permissions.add(
-        Permission.objects.get_by_natural_key("add_library", "libraries", "library")
-    )
-    # Get a new user object because of the permission cache.
-    user = User.objects.get()
-
+    # All logged-in users have permission to create libraries.
     result = api.execute_sync(
         mutation,
         user,

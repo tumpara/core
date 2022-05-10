@@ -5,13 +5,13 @@ import dataclasses
 import enum
 import inspect
 import typing
-from collections.abc import Mapping
 from typing import Any, ClassVar, Generic, Optional, TypeVar, cast
 
 import strawberry.arguments
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.forms.models import ModelChoiceField
 from django.utils import encoding
 from strawberry.field import StrawberryAnnotation, StrawberryField
 
@@ -69,7 +69,7 @@ class DjangoFormInput(Generic[_Form], abc.ABC):
                 super().__init_subclass__(**kwargs)
                 return
             elif inspect.isclass(origin) and issubclass(origin, DjangoFormInput):
-                (form_class,) = typing.get_args(base)
+                form_class = typing.get_args(base)[0]
 
         if not hasattr(cls, "_form"):
             cls._form = cast(type[_Form], form_class)
@@ -200,7 +200,6 @@ class DjangoModelFormInput(
     Generic[_ModelForm, _DjangoNode], DjangoFormInput[_ModelForm], abc.ABC
 ):
     _node: ClassVar[type[DjangoNode[Any]]]
-    _related_permissions: ClassVar[Mapping[str, str]]
 
     def __init_subclass__(cls, **kwargs: Any):
         node_class: Optional[type[_DjangoNode]] = None
@@ -210,23 +209,15 @@ class DjangoModelFormInput(
             if origin is Generic:
                 super().__init_subclass__(**kwargs)
                 return
-            elif inspect.isclass(origin) and issubclass(origin, DjangoFormInput):
-                (node_class,) = typing.get_args(base)
+            elif inspect.isclass(origin) and issubclass(origin, DjangoModelFormInput):
+                node_class = typing.get_args(base)[1]
 
-        if not hasattr(cls, "_form"):
+        if not hasattr(cls, "_node"):
             cls._node = cast(type[_DjangoNode], node_class)
-        assert cls._form is not None and issubclass(cls._node, DjangoNode), (
+        assert cls._node is not None and issubclass(cls._node, DjangoNode), (
             f"DjangoModelFormType classes must be initialized with a DjangoNode class "
             f"(got {node_class!r}"
         )
-
-        kwargs.setdefault("related_permissions", {})
-        related_permissions = kwargs.pop("related_permissions")
-        if not isinstance(related_permissions, Mapping):
-            raise TypeError(
-                "related object permission names must be a string dictionary"
-            )
-        cls._related_permissions = related_permissions
 
         super().__init_subclass__(**kwargs)
         if any(
@@ -251,24 +242,26 @@ class DjangoModelFormInput(
     def _create_form(
         self, info: InfoType, data: dict[Any, Any], **kwargs: Any
     ) -> _ModelForm | FormError | NodeError:
-        from tumpara.accounts.utils import build_permission_name
-
         for field_name in data.keys():
-            if field_name in self._related_permissions:
-                # Resolve the ID of the related object into a node, and then get the
-                # actual object from there.
-                assert isinstance(data[field_name], (str, strawberry.ID))
-                node = resolve_node(
-                    info, data[field_name], self._related_permissions[field_name]
-                )
-                if not isinstance(node, DjangoNode):
+            field = self._get_form_type().base_fields[field_name]
+            # Handle Model choice fields, which are fields that accept a related model
+            # instance. In the API, they are exposed using node IDs.
+            if isinstance(field, forms.ModelChoiceField):
+                if isinstance(data[field_name], models.Model):
+                    # In this case the model instance has already been resolved. This
+                    # might be the case when the user didn't provide a new value and
+                    # UpdateFormInput used the existing one.
+                    continue
+
+                # We assume that type_annotation_for_django_field resolved  the type to
+                # strawberry.ID, which is a string:
+                assert isinstance(data[field_name], str)
+                node = resolve_node(info, data[field_name])
+                if not isinstance(node, DjangoNode) or not isinstance(
+                    node._obj, field.queryset.model
+                ):
                     return NodeError(requested_id=data[field_name])
                 data[field_name] = node._obj
-
-        if not info.context.user.has_perm(
-            build_permission_name(self._get_model_type(), "add")
-        ):
-            return NodeError(requested_id=None)
 
         return super()._create_form(info, data, **kwargs)
 
@@ -296,7 +289,12 @@ class DjangoModelFormInput(
 
 
 @dataclasses.dataclass
-class CreateFormInput(Generic[_ModelForm], DjangoModelFormInput[_ModelForm], abc.ABC):
+class CreateFormInput(
+    Generic[_ModelForm, _DjangoNode],
+    DjangoModelFormInput[_ModelForm, _DjangoNode],
+    abc.ABC,
+):
+    @classmethod
     def get_resolving_permission(cls) -> str:
         from tumpara.accounts.utils import build_permission_name
 
@@ -304,7 +302,11 @@ class CreateFormInput(Generic[_ModelForm], DjangoModelFormInput[_ModelForm], abc
 
 
 @dataclasses.dataclass
-class UpdateFormInput(Generic[_ModelForm], DjangoModelFormInput[_ModelForm], abc.ABC):
+class UpdateFormInput(
+    Generic[_ModelForm, _DjangoNode],
+    DjangoModelFormInput[_ModelForm, _DjangoNode],
+    abc.ABC,
+):
     id: strawberry.ID = strawberry.field(description="ID of the object to update.")
 
     @classmethod
@@ -320,6 +322,8 @@ class UpdateFormInput(Generic[_ModelForm], DjangoModelFormInput[_ModelForm], abc
     ) -> _ModelForm | FormError | NodeError:
         from tumpara.accounts.utils import build_permission_name
 
+        assert data["id"] == self.id
+        data.pop("id")
         node = resolve_node(info, self.id)
         if node is None:
             return NodeError(requested_id=self.id)

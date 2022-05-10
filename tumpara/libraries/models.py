@@ -213,8 +213,8 @@ _Record = TypeVar("_Record", bound="Record")
 class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
     def for_user(
         self,
-        permission: str,
         user: User | AnonymousUser,
+        permission: str,
     ) -> RecordQuerySet[_Record]:
         """Narrow down the queryset to only return elements where the given user has
         a specific permission."""
@@ -230,11 +230,11 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
             # We explicitly don't differentiate between the change and delete permission
             # because we want change_library to be the important one here:
             return self.filter(
-                library__in=Library.objects.for_user("libraries.change_library", user)
+                library__in=Library.objects.for_user(user, "libraries.change_library")
             )
         elif permission == build_permission_name(self.model, "view"):
             return self.filter(
-                library__in=Library.objects.for_user("libraries.view_library", user)
+                library__in=Library.objects.for_user(user, "libraries.view_library")
             )
         else:
             raise ValueError(f"unsupported permission: {permission}")

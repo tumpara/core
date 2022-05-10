@@ -13,7 +13,6 @@ import strawberry.types.info
 import strawberry.types.types
 from django import forms
 from django.db import models
-from django.forms.models import ModelChoiceIterator
 from django.utils import encoding
 
 from .views import ApiContext
@@ -68,7 +67,7 @@ def type_annotation_for_django_field(
     if (isinstance(field, models.Field) and field.choices) or isinstance(
         field, forms.ChoiceField
     ):
-        if isinstance(field.choices, ModelChoiceIterator):
+        if isinstance(field, forms.ModelChoiceField):
             # This case here occurs when we have a form field that expects some model
             # instance.
             type_annotation = strawberry.ID

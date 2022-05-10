@@ -77,12 +77,12 @@ class CreateLibraryForm(LibraryForm):
 
 
 @strawberry.input(description="Create a new library.")
-class CreateLibraryInput(api.CreateFormInput[CreateLibraryForm]):
+class CreateLibraryInput(api.CreateFormInput[CreateLibraryForm, LibraryNode]):
     default_visibility: LibraryVisibility
 
 
 @strawberry.input(description="Change an existing library.")
-class UpdateLibraryInput(api.UpdateFormInput[LibraryForm]):
+class UpdateLibraryInput(api.UpdateFormInput[LibraryForm, LibraryNode]):
     default_visibility: Optional[LibraryVisibility]  # type: ignore
 
 

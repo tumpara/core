@@ -107,7 +107,7 @@ class Mutation:
             return primary_keys
         stack_size = (
             GalleryRecord.objects.for_user(
-                "gallery.change_galleryrecord", info.context.user
+                info.context.user, "gallery.change_galleryrecord"
             )
             .filter(pk__in=primary_keys)
             .stack()
@@ -125,7 +125,7 @@ class Mutation:
             return primary_keys
         stack_size = (
             GalleryRecord.objects.for_user(
-                "gallery.change_galleryrecord", info.context.user
+                info.context.user, "gallery.change_galleryrecord"
             )
             .filter(pk__in=primary_keys)
             .unstack()

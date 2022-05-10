@@ -6,7 +6,29 @@ from django.db import models
 from tumpara.accounts.models import AnonymousUser, User
 from tumpara.accounts.utils import build_permission_name
 
-from .models import Record
+from .models import Library, Record
+
+
+class LibraryCreatingBackend(BaseBackend):
+    """Permission backend that allows all logged-in users to create libraries."""
+
+    def get_user_permissions(
+        self,
+        user_obj: models.Model | AnonymousUser,
+        obj: Optional[models.Model] = None,
+    ) -> set[str]:
+        if (
+            obj is None
+            or not isinstance(obj, Library)
+            or not cast(User, user_obj).is_active
+            or not cast(User, user_obj).is_authenticated
+        ):
+            return set()
+
+        if obj._state.adding:
+            return {"libraries.add_library"}
+        else:
+            return {}
 
 
 class LibraryRecordsBackend(BaseBackend):
@@ -34,6 +56,7 @@ class LibraryRecordsBackend(BaseBackend):
         if "libraries.change_library" in library_permissions:
             # The deletion permission on the library doesn't allow us to do anything
             # with individual records.
+            permissions.add(build_permission_name(obj, "add"))
             permissions.add(build_permission_name(obj, "change"))
             permissions.add(build_permission_name(obj, "delete"))
 

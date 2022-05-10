@@ -203,7 +203,7 @@ class Mutation:
         if isinstance(primary_keys, api.NodeError):
             return primary_keys
         update_count = (
-            Record.objects.for_user("libraries.change_record", info.context.user)
+            Record.objects.for_user(info.context.user, "libraries.change_record")
             .filter(pk__in=primary_keys)
             .update(visibility=input.visibility.value)
         )

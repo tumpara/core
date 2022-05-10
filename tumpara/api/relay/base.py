@@ -154,7 +154,10 @@ class DjangoNode(Generic[_Model], Node, abc.ABC):
             model, models.Model
         ), f"DjangoNode classes must be initialized with a Django model (got {model!r})"
         cls._model = model
-        cls._related_field_nodes = dict[str, type[DjangoNode[Any]]]()
+        try:
+            cls._related_field_nodes = dict(cls._related_field_nodes)
+        except AttributeError:
+            cls._related_field_nodes = {}
 
         # Patch the is_generic field (see the class' docstring for details).
         cls._type_definition.__class__ = NonGenericTypeDefinition  # type: ignore

@@ -16,18 +16,21 @@ _GalleryRecord = TypeVar("_GalleryRecord", bound="GalleryRecord")
 class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryRecord]):
     def for_user(
         self,
-        permission: str,
         user: User | AnonymousUser,
+        permission: str,
     ) -> GalleryRecordQuerySet[_GalleryRecord]:
         queryset = cast(
-            GalleryRecordQuerySet[_GalleryRecord], super().for_user(permission, user)
+            GalleryRecordQuerySet[_GalleryRecord], super().for_user(user, permission)
         )
         return queryset.filter(
+            # Either we have at least one available file or no files at all.
+            # TODO This could probably be cleaner, depending on whether we expect files.
             models.Exists(
                 File.objects.filter(
                     record=models.OuterRef("pk"), availability__isnull=False
                 )
             )
+            | ~models.Exists(File.objects.filter(record=models.OuterRef("pk")))
         )
 
     def _not_support_grouping(self, operation_name: str) -> None:
@@ -53,7 +56,7 @@ class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryReco
         connection = compiler.connection
 
         selected_records_query, selected_records_params = compiler.compile(
-            self.values("record_id", "stack_key", "stack_representative")
+            self.values("record_id", "stack_key", "stack_representative").query
         )
 
         with connection.cursor() as cursor:

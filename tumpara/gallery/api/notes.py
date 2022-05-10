@@ -24,16 +24,14 @@ class NoteForm(forms.ModelForm[Note]):
 
 @strawberry.input(description="Create a new note.")
 class CreateNoteInput(
-    api.CreateFormInput[NoteForm],
-    related_permissions={"library": "libraries.change_library"},
+    api.CreateFormInput[NoteForm, NoteNode],
 ):
     visibility: RecordVisibility
 
 
 @strawberry.input(description="Edit and existing note.")
 class UpdateNoteInput(
-    api.UpdateFormInput[NoteForm],
-    related_permissions={"library": "libraries.change_library"},
+    api.UpdateFormInput[NoteForm, NoteNode],
 ):
     visibility: Optional[RecordVisibility]  # type: ignore
 
