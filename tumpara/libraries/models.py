@@ -296,7 +296,7 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
         if prefetch_types:
             related_names = list[str]()
             for prefetch_type in prefetch_types:
-                if not isinstance(prefetch_type, RecordModel):
+                if not issubclass(prefetch_type, RecordModel):
                     raise TypeError(
                         f"automatic record prefetching requires types to be "
                         f"subclasses of RecordModel, got {prefetch_type}"

@@ -1,4 +1,5 @@
-from typing import TYPE_CHECKING, Optional
+from collections.abc import Sequence
+from typing import Optional
 
 import strawberry
 from django import forms
@@ -6,8 +7,22 @@ from django import forms
 from tumpara import api
 from tumpara.libraries.api import RecordVisibility
 
-from ..models import Note
-from .gallery_records import GalleryRecordNode
+from ..models import GalleryRecordModel, Note
+from .gallery_records import (
+    GalleryRecordFilter,
+    GalleryRecordNode,
+    register_gallery_record_filter,
+)
+
+
+@register_gallery_record_filter
+class NoteGalleryRecordFilter(GalleryRecordFilter):
+    include_notes: bool = strawberry.field(
+        default=True, description="Whether to include note results."
+    )
+
+    def get_instance_types(self) -> Sequence[type[GalleryRecordModel]]:
+        return [*super().get_instance_types(), Note]
 
 
 @api.remove_duplicate_node_interface

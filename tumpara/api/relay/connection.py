@@ -509,6 +509,12 @@ class DjangoConnectionField(ConnectionField):
             f"got {type(connection_type)}"
         )
 
+        if self.filter_type is not None:
+            # Make sure there is always a filter (even though it might be empty). This
+            # is required for the gallery record connection resolver to function
+            # properly.
+            kwargs.setdefault("filter", self.filter_type())
+
         if self.base_resolver:
             queryset = self.base_resolver(*args, **kwargs)
         else:
@@ -528,13 +534,11 @@ class DjangoConnectionField(ConnectionField):
             f"type {connection_type._get_model_type()}"
         )
 
-        if (
-            self.filter_type is not None
-            and (filter := kwargs.pop("filter", None)) is not None
-        ):
+        if self.filter_type is not None:
+            given_filter = kwargs.pop("filter")
             # Since we are filtering objects directly in the queryset (and not some
             # subfield), the field name is an empty string here:
-            query_result = filter.build_query("")
+            query_result = given_filter.build_query("")
             if isinstance(query_result, models.Q):
                 query, aliases = query_result, {}
             else:

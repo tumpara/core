@@ -1,4 +1,5 @@
-from typing import Any, Optional
+from collections.abc import Sequence
+from typing import Optional
 
 import strawberry
 from django.db import models
@@ -6,13 +7,32 @@ from django.db import models
 from tumpara import api
 from tumpara.libraries.api import RecordNode, RecordVisibilityFilter
 
-from ..models import GalleryRecord
+from ..models import GalleryRecord, GalleryRecordModel
 
 
-@strawberry.input(
-    description="Filtering options when querying `GalleryRecord` objects."
-)
 class GalleryRecordFilter:
+    def build_query(
+        self, field_name: Optional[str]
+    ) -> tuple[models.Q, dict[str, models.Expression]]:
+        return models.Q(), {}
+
+    def get_instance_types(self) -> Sequence[type[GalleryRecordModel]]:
+        return []
+
+
+gallery_record_filter_types = list[type[GalleryRecordFilter]]()
+
+
+def register_gallery_record_filter(
+    filter_type: type[GalleryRecordFilter],
+) -> type[GalleryRecordFilter]:
+    prepped_type = api.schema.prep_type(filter_type, is_input=True)
+    gallery_record_filter_types.append(prepped_type)
+    return prepped_type
+
+
+@register_gallery_record_filter
+class MainGalleryRecordFilter(GalleryRecordFilter):
     media_timestamp: Optional[api.DateTimeFilter] = None
     visibility: Optional[RecordVisibilityFilter] = None
 
@@ -20,8 +40,7 @@ class GalleryRecordFilter:
         self, field_name: Optional[str]
     ) -> tuple[models.Q, dict[str, models.Expression]]:
         prefix = field_name + "__" if field_name else ""
-        query = models.Q()
-        aliases = dict[str, models.Expression]()
+        query, aliases = super().build_query(field_name)
 
         if self.media_timestamp is not None:
             next_query, next_aliases = self.media_timestamp.build_query(
@@ -41,7 +60,7 @@ class GalleryRecordFilter:
 @api.remove_duplicate_node_interface
 @strawberry.interface(name="GalleryRecord")
 class GalleryRecordNode(RecordNode, api.DjangoNode, fields=["media_timestamp"]):
-    obj: strawberry.Private[GalleryRecord]
+    obj: strawberry.Private[GalleryRecordModel]
 
 
 @strawberry.type
@@ -51,7 +70,7 @@ class GalleryRecordEdge(api.Edge[GalleryRecordNode]):
 
 @strawberry.type(description="A connection to a list of gallery records.")
 class GalleryRecordConnection(
-    api.DjangoConnection[GalleryRecordNode, GalleryRecord],
+    api.DjangoConnection[GalleryRecordNode, GalleryRecordModel],
     name="gallery record",
     pluralized_name="gallery records",
 ):
@@ -59,7 +78,7 @@ class GalleryRecordConnection(
     nodes: list[Optional[GalleryRecordNode]]
 
     @classmethod
-    def create_node(cls, obj: GalleryRecord) -> GalleryRecordNode:
+    def create_node(cls, obj: GalleryRecordModel) -> GalleryRecordNode:
         from ..models import Note
         from .notes import NoteNode
 
@@ -67,22 +86,6 @@ class GalleryRecordConnection(
             return NoteNode(obj)
         else:
             raise TypeError(f"unsupported gallery record type: {type(obj)}")
-
-
-@api.schema.query
-class Query:
-    @api.DjangoConnectionField(
-        GalleryRecordConnection,
-        filter_type=GalleryRecordFilter,
-        description="This connection contains all gallery records that are currently "
-        "available.",
-    )
-    def gallery_records(
-        self, info: api.InfoType, **kwargs: Any
-    ) -> models.QuerySet[GalleryRecord]:
-        # TODO This should become a more refined queryset that automatically prefetches
-        #   related models.
-        return GalleryRecordNode.get_queryset(info, "gallery.view_galleryrecord")
 
 
 @strawberry.input

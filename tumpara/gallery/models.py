@@ -10,9 +10,24 @@ from tumpara.accounts.models import AnonymousUser, User
 from tumpara.libraries.models import File, RecordManager, RecordModel, RecordQuerySet
 
 _GalleryRecord = TypeVar("_GalleryRecord", bound="GalleryRecord")
+_GalleryRecordQuerySet = TypeVar(
+    "_GalleryRecordQuerySet", bound="GalleryRecordQuerySet[Any]"
+)
 
 
 class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryRecord]):
+    def resolve_instances(
+        self: _GalleryRecordQuerySet, *prefetch_types: type[GalleryRecordModel]
+    ) -> _GalleryRecordQuerySet:
+        for prefetch_type in prefetch_types:
+            if not issubclass(prefetch_type, GalleryRecordModel):
+                raise TypeError(
+                    f"automatic record prefetching requires types to be "
+                    # We only override the method so this error message is more verbose:
+                    f"subclasses of GalleryRecordModel, got {prefetch_type}"
+                )
+        return super().resolve_instances(*prefetch_types)
+
     def for_user(
         self,
         user: User | AnonymousUser,

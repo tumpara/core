@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Optional
 
 import django.http
@@ -25,6 +26,7 @@ class SchemaManager:
         self._schema: Optional[strawberry.Schema] = None
         self._queries = list[type]()
         self._mutations = list[type]()
+        self._before_schema_finalizing = list[Callable[..., Any]]()
 
     def _ensure_schema_is_not_built(self) -> None:
         assert self._schema is None, (
@@ -34,28 +36,40 @@ class SchemaManager:
         )
 
     @staticmethod
-    def _prep_type(given_type: type) -> type:
+    def prep_type(given_type: type, *, is_input: bool = False) -> type:
         if dataclasses.is_dataclass(given_type):
             return given_type
         else:
-            return strawberry.type(given_type)
+            return strawberry.type(given_type, is_input=is_input)
 
     def query(self, query_type: type) -> type:
         """Register a query type that will be merged into the final schema."""
         self._ensure_schema_is_not_built()
-        query_type = self._prep_type(query_type)
+        query_type = self.prep_type(query_type)
         self._queries.append(query_type)
         return query_type
 
     def mutation(self, mutation_type: type) -> type:
         """Register a mutation type that will be merged into the final schema."""
         self._ensure_schema_is_not_built()
-        mutation_type = self._prep_type(mutation_type)
+        mutation_type = self.prep_type(mutation_type)
         self._mutations.append(mutation_type)
         return mutation_type
 
+    def before_finalizing(self, callback: Callable[..., Any]) -> Callable[..., Any]:
+        """Register a callback that will be called just before the final schema is
+        built.
+
+        This can be useful to defer specific types that depend on some sort of other
+        registration pattern.
+        """
+        self._before_schema_finalizing.append(callback)
+
     def get(self) -> strawberry.Schema:
         if self._schema is None:
+            for callback in self._before_schema_finalizing:
+                callback()
+
             merged_query = strawberry.tools.merge_types("Query", tuple(self._queries))
             merged_mutation = strawberry.tools.merge_types(
                 "Mutation", tuple(self._mutations)

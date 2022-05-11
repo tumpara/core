@@ -7,8 +7,8 @@ from django.db import models
 
 from tumpara import api
 from tumpara.accounts.utils import build_permission_name
-from tumpara.libraries.models import File, Record, RecordQuerySet, Visibility
 
+from ..models import File, Record, RecordModel, RecordQuerySet, Visibility
 from .libraries import LibraryNode
 
 
@@ -123,7 +123,7 @@ class RecordVisibilityFilter:
 
 @strawberry.interface(name="Record")
 class RecordNode(api.DjangoNode, fields=["library", "visibility"]):
-    obj: strawberry.Private[Record]
+    obj: strawberry.Private[RecordModel]
     library: Optional[LibraryNode]
     visibility: RecordVisibility
 
