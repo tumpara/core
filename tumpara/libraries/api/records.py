@@ -123,7 +123,7 @@ class RecordVisibilityFilter:
 
 @strawberry.interface(name="Record")
 class RecordNode(api.DjangoNode, fields=["library", "visibility"]):
-    obj: strawberry.Private[RecordModel]
+    obj: strawberry.Private[Record]
     library: Optional[LibraryNode]
     visibility: RecordVisibility
 

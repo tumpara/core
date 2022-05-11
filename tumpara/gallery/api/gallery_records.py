@@ -7,7 +7,7 @@ from django.db import models
 from tumpara import api
 from tumpara.libraries.api import RecordNode, RecordVisibilityFilter
 
-from ..models import GalleryRecord, GalleryRecordModel
+from ..models import GalleryRecord, GalleryRecordModel, GalleryRecordQuerySet
 
 
 class GalleryRecordFilter:
@@ -17,6 +17,8 @@ class GalleryRecordFilter:
         return models.Q(), {}
 
     def get_instance_types(self) -> Sequence[type[GalleryRecordModel]]:
+        """List of instance types that should be passed to
+        :meth:`GalleryRecordQuerySet.resolve_instances`"""
         return []
 
 
@@ -60,7 +62,7 @@ class MainGalleryRecordFilter(GalleryRecordFilter):
 @api.remove_duplicate_node_interface
 @strawberry.interface(name="GalleryRecord")
 class GalleryRecordNode(RecordNode, api.DjangoNode, fields=["media_timestamp"]):
-    obj: strawberry.Private[GalleryRecordModel]
+    obj: strawberry.Private[GalleryRecord]
 
 
 @strawberry.type
@@ -70,7 +72,7 @@ class GalleryRecordEdge(api.Edge[GalleryRecordNode]):
 
 @strawberry.type(description="A connection to a list of gallery records.")
 class GalleryRecordConnection(
-    api.DjangoConnection[GalleryRecordNode, GalleryRecordModel],
+    api.DjangoConnection[GalleryRecordNode, GalleryRecord],
     name="gallery record",
     pluralized_name="gallery records",
 ):
