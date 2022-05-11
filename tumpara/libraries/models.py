@@ -3,12 +3,15 @@ from __future__ import annotations
 import logging
 import os.path
 import uuid
+from collections.abc import Iterator
 from typing import Any, Generic, Literal, NoReturn, Optional, TypeVar, cast, overload
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.files import base as django_files
 from django.db import models
+from django.db.models.query import ModelIterable
+from django.db.utils import NotSupportedError
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 
@@ -208,14 +211,108 @@ class Library(Joinable):
 
 
 _Record = TypeVar("_Record", bound="Record")
+_RecordQuerySet = TypeVar("_RecordQuerySet", bound="RecordQuerySet[Any]")
 
 
 class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._resolve_instances = False
+
+    @overload
+    def __getitem__(self, item: int) -> _Record:
+        ...
+
+    @overload
+    def __getitem__(
+        self: _RecordQuerySet, item: slice
+    ) -> _RecordQuerySet | list[_Record]:
+        ...
+
+    def __getitem__(
+        self: _RecordQuerySet, item: int | slice
+    ) -> _Record | _RecordQuerySet | list[_Record]:
+        result = super().__getitem__(item)
+        if not self._resolve_instances:
+            return result
+
+        assert self._iterable_class is ModelIterable
+
+        if isinstance(result, models.Model):
+            assert isinstance(result, Record)
+            return result.resolve_instance()
+        elif isinstance(result, list):
+            assert all(isinstance(obj, Record) for obj in result)
+            return [obj.resolve_instance() for obj in result]
+        else:
+            return result
+
+    def __iter__(self) -> Iterator[_Record]:
+        if not self._resolve_instances:
+            yield from super().__iter__()
+            return
+        assert self._iterable_class is ModelIterable
+        for item in super().__iter__():
+            assert isinstance(item, Record)
+            yield item.resolve_instance()
+
+    def get(self, *args, **kwargs) -> _Record:
+        result = super().get(*args, **kwargs)
+        if not self._resolve_instances:
+            return result
+        assert self._iterable_class is ModelIterable
+        assert isinstance(result, Record)
+        return result.resolve_instance()
+
+    def _clone(self: _RecordQuerySet) -> _RecordQuerySet:
+        clone = super()._clone()
+        clone._resolve_instances = self._resolve_instances
+        return clone
+
+    def _not_support_grouping(self, operation_name: str) -> None:
+        self._not_support_combined_queries(operation_name)  # type: ignore
+        if self.query.values_select or self.query.group_by:
+            raise ValueError(
+                f"calling {operation_name} is only supported on querysets that only "
+                f"filter and don't perform grouping"
+            )
+
+    def resolve_instances(
+        self: _RecordQuerySet, *prefetch_types: type[RecordModel]
+    ) -> _RecordQuerySet:
+        """Return a queryset that returns concrete record subclasses instead of the
+        generic :class:`Record` supertype.
+
+        Pass subclasses of :class:`RecordModel` to automatically prefetch the
+        corresponding tables, reducing the total number of database queries.
+        """
+        if self._fields is not None or self._iterable_class is not ModelIterable:
+            raise NotSupportedError(
+                "Calling RecordQuerySet.resolve_instances() is not supported after "
+                ".values() or .values_list()."
+            )
+        self._not_support_grouping("resolve_instances")
+
+        if prefetch_types:
+            related_names = list[str]()
+            for prefetch_type in prefetch_types:
+                if not isinstance(prefetch_type, RecordModel):
+                    raise TypeError(
+                        f"automatic record prefetching requires types to be "
+                        f"subclasses of RecordModel, got {prefetch_type}"
+                    )
+                related_names.append(f"{prefetch_type._meta.model_name}_instance")
+            clone = self.select_related(*related_names)
+        else:
+            clone = self._chain()
+        clone._resolve_instances = True
+        return clone
+
     def for_user(
-        self,
+        self: _RecordQuerySet,
         user: User | AnonymousUser,
         permission: str,
-    ) -> RecordQuerySet[_Record]:
+    ) -> _RecordQuerySet:
         """Narrow down the queryset to only return elements where the given user has
         a specific permission."""
         if not user.is_authenticated or not user.is_active:

@@ -140,7 +140,9 @@ class RecordNode(api.DjangoNode, fields=["library", "visibility"]):
         model = cls._get_model_type()
         assert issubclass(model, Record)
         resolved_permission = permission or build_permission_name(model, "view")
-        return model._default_manager.for_user(info.context.user, resolved_permission)
+        return model._default_manager.for_user(
+            info.context.user, resolved_permission
+        ).resolve_instances()
 
     @classmethod
     def extract_primary_keys_from_ids(

@@ -7,7 +7,7 @@ from tumpara import api
 from tumpara.libraries.api import RecordVisibility
 
 from ..models import Note
-from .base import GalleryRecordNode
+from .gallery_records import GalleryRecordNode
 
 
 @api.remove_duplicate_node_interface

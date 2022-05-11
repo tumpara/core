@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Optional
+from typing import Any, Optional
 
 import strawberry
 from django.db import models
@@ -58,6 +58,16 @@ class GalleryRecordConnection(
     edges: list[Optional[GalleryRecordEdge]]
     nodes: list[Optional[GalleryRecordNode]]
 
+    @classmethod
+    def create_node(cls, obj: GalleryRecord) -> GalleryRecordNode:
+        from ..models import Note
+        from .notes import NoteNode
+
+        if isinstance(obj, Note):
+            return NoteNode(obj)
+        else:
+            raise TypeError(f"unsupported gallery record type: {type(obj)}")
+
 
 @api.schema.query
 class Query:
@@ -67,7 +77,9 @@ class Query:
         description="This connection contains all gallery records that are currently "
         "available.",
     )
-    def gallery_records(self, info: api.InfoType) -> models.QuerySet[GalleryRecord]:
+    def gallery_records(
+        self, info: api.InfoType, **kwargs: Any
+    ) -> models.QuerySet[GalleryRecord]:
         # TODO This should become a more refined queryset that automatically prefetches
         #   related models.
         return GalleryRecordNode.get_queryset(info, "gallery.view_galleryrecord")

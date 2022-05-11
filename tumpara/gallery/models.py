@@ -32,14 +32,6 @@ class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryReco
             | ~models.Exists(File.objects.filter(record=models.OuterRef("pk")))
         )
 
-    def _not_support_grouping(self, operation_name: str) -> None:
-        self._not_support_combined_queries(operation_name)  # type: ignore
-        if self.query.values_select or self.query.group_by:
-            raise ValueError(
-                f"calling {operation_name} is only supported on querysets that only "
-                f"filter and don't perform grouping"
-            )
-
     @transaction.atomic
     def stack(self) -> int:
         """Stack all records in this queryset together.
@@ -191,6 +183,8 @@ class GalleryRecord(RecordModel):
         verbose_name = _("gallery record")
         verbose_name_plural = _("gallery records")
         db_table = "gallery_record"
+        get_latest_by = "media_timestamp"
+        ordering = ("media_timestamp",)
         indexes = [
             models.Index(
                 fields=("media_timestamp", "record"),

@@ -312,6 +312,16 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
         return cls._get_node_type().get_queryset(info, permission)
 
     @classmethod
+    def create_node(cls, obj: _Model) -> _DjangoNode:
+        """Create a node from a model instance.
+
+        The default implementation instantiates the node type the connection was
+        initialized with. You may want to override this method if the node type is an
+        interface.
+        """
+        return cls._get_node_type()(obj)
+
+    @classmethod
     def from_queryset(
         cls: type[_DjangoConnection],
         queryset: models.QuerySet[_Model],
@@ -339,7 +349,7 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
             def __iter__(self) -> Iterator[_Node]:
                 for obj in queryset:
                     assert isinstance(obj, cls._get_model_type())
-                    yield cls._get_node_type()(obj)
+                    yield cls.create_node(obj)
 
             def __len__(self) -> int:
                 return queryset.count()
