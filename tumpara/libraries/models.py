@@ -10,7 +10,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.files import base as django_files
 from django.db import models
-from django.db.models.query import ModelIterable
+from django.db.models.query import ModelIterable  # type: ignore
 from django.db.utils import NotSupportedError
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
@@ -211,7 +211,6 @@ class Library(Joinable):
 
 
 _Record = TypeVar("_Record", bound="Record")
-_RecordQuerySet = TypeVar("_RecordQuerySet", bound="RecordQuerySet[Any]")
 
 
 class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
@@ -219,55 +218,67 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
         super().__init__(*args, **kwargs)
         self._resolve_instances = False
 
+    # The following three methods are the replacements for __getitem__(), __iter__() and
+    # get(). Instead of directly returning the models they were asked for, we call
+    # resolve_instance() on the record so that we get the actual subclass. Enable this
+    # behaviour by using resolve_instances() on the queryset.
+    # However, we can't directly override them, because then MyPy throws a fit. It seems
+    # to have something to do with the Django plugin meddling with the method types on
+    # the resulting managers, since the generics end up und some sort of unbound state.
+    # But since it isn't really worth it to work around that properly we create these
+    # new methods that do what we want them to do and patch them it later:
+
     @overload
-    def __getitem__(self, item: int) -> _Record:
+    def _getitem(self, item: int) -> _Record:
         ...
 
     @overload
-    def __getitem__(
-        self: _RecordQuerySet, item: slice
-    ) -> _RecordQuerySet | list[_Record]:
+    def _getitem(self, item: slice) -> RecordQuerySet[_Record] | list[_Record]:
         ...
 
-    def __getitem__(
-        self: _RecordQuerySet, item: int | slice
-    ) -> _Record | _RecordQuerySet | list[_Record]:
+    def _getitem(
+        self, item: int | slice
+    ) -> _Record | RecordQuerySet[_Record] | list[_Record]:
         result = super().__getitem__(item)
         if not self._resolve_instances:
             return result
 
-        assert self._iterable_class is ModelIterable
+        assert self._iterable_class is ModelIterable  # type: ignore
 
         if isinstance(result, models.Model):
             assert isinstance(result, Record)
-            return result.resolve_instance()
+            return cast(_Record, result.resolve_instance())
         elif isinstance(result, list):
-            assert all(isinstance(obj, Record) for obj in result)
-            return [obj.resolve_instance() for obj in result]
+            assert all(isinstance(obj, Record) for obj in result)  # type: ignore
+            return cast(list[_Record], [obj.resolve_instance() for obj in result])
         else:
-            return result
+            return cast(RecordQuerySet[_Record], result)
 
-    def __iter__(self) -> Iterator[_Record]:
+    def _iter(self) -> Iterator[_Record]:
         if not self._resolve_instances:
             yield from super().__iter__()
             return
-        assert self._iterable_class is ModelIterable
+        assert self._iterable_class is ModelIterable  # type: ignore
         for item in super().__iter__():
             assert isinstance(item, Record)
-            yield item.resolve_instance()
+            yield cast(_Record, item.resolve_instance())
 
-    def get(self, *args, **kwargs) -> _Record:
+    def _get(self, *args: Any, **kwargs: Any) -> _Record:
         result = super().get(*args, **kwargs)
         if not self._resolve_instances:
             return result
-        assert self._iterable_class is ModelIterable
+        assert self._iterable_class is ModelIterable  # type: ignore
         assert isinstance(result, Record)
-        return result.resolve_instance()
+        return cast(_Record, result.resolve_instance())
 
-    def _clone(self: _RecordQuerySet) -> _RecordQuerySet:
-        clone = super()._clone()
+    def _clone(self) -> RecordQuerySet[_Record]:
+        clone = cast(RecordQuerySet[_Record], super()._clone())  # type: ignore
         clone._resolve_instances = self._resolve_instances
         return clone
+
+    # This is only so that we get a type annotation:
+    def _chain(self) -> RecordQuerySet[_Record]:
+        return super()._chain()  # type: ignore
 
     def _not_support_grouping(self, operation_name: str) -> None:
         self._not_support_combined_queries(operation_name)  # type: ignore
@@ -278,15 +289,18 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
             )
 
     def resolve_instances(
-        self: _RecordQuerySet, *prefetch_types: type[RecordModel]
-    ) -> _RecordQuerySet:
+        self, *prefetch_types: type[RecordModel]
+    ) -> RecordQuerySet[_Record]:
         """Return a queryset that returns concrete record subclasses instead of the
         generic :class:`Record` supertype.
 
         Pass subclasses of :class:`RecordModel` to automatically prefetch the
         corresponding tables, reducing the total number of database queries.
         """
-        if self._fields is not None or self._iterable_class is not ModelIterable:
+        if (
+            self._fields is not None  # type: ignore
+            or self._iterable_class is not ModelIterable  # type: ignore
+        ):
             raise NotSupportedError(
                 "Calling RecordQuerySet.resolve_instances() is not supported after "
                 ".values() or .values_list()."
@@ -309,10 +323,10 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
         return clone
 
     def for_user(
-        self: _RecordQuerySet,
+        self,
         user: User | AnonymousUser,
         permission: str,
-    ) -> _RecordQuerySet:
+    ) -> RecordQuerySet[_Record]:
         """Narrow down the queryset to only return elements where the given user has
         a specific permission."""
         if not user.is_authenticated or not user.is_active:
@@ -336,6 +350,12 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
         else:
             raise ValueError(f"unsupported permission: {permission}")
 
+
+# Patch the methods related to getting instance methods with the new counterparts (see
+# the comment above for details).
+RecordQuerySet.__getitem__ = RecordQuerySet._getitem  # type: ignore
+RecordQuerySet.__iter__ = RecordQuerySet._iter  # type: ignore
+RecordQuerySet.get = RecordQuerySet._get  # type: ignore
 
 RecordManager = models.Manager.from_queryset(RecordQuerySet)
 

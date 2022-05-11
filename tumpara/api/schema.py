@@ -64,6 +64,7 @@ class SchemaManager:
         registration pattern.
         """
         self._before_schema_finalizing.append(callback)
+        return callback
 
     def get(self) -> strawberry.Schema:
         if self._schema is None:

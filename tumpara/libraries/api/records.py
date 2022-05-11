@@ -1,3 +1,4 @@
+import dataclasses
 import enum
 from collections.abc import Sequence, Set
 from typing import Any, Optional
@@ -8,7 +9,7 @@ from django.db import models
 from tumpara import api
 from tumpara.accounts.utils import build_permission_name
 
-from ..models import File, Record, RecordModel, RecordQuerySet, Visibility
+from ..models import File, Record, RecordQuerySet, Visibility
 from .libraries import LibraryNode
 
 
@@ -124,8 +125,9 @@ class RecordVisibilityFilter:
 @strawberry.interface(name="Record")
 class RecordNode(api.DjangoNode, fields=["library", "visibility"]):
     obj: strawberry.Private[Record]
-    library: Optional[LibraryNode]
-    visibility: RecordVisibility
+    # The explicit fields here are to please MyPy:
+    library: Optional[LibraryNode] = dataclasses.field(init=False)
+    visibility: RecordVisibility = dataclasses.field(init=False)
 
     @api.DjangoConnectionField(
         FileConnection,

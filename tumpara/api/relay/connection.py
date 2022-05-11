@@ -312,13 +312,14 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
         return cls._get_node_type().get_queryset(info, permission)
 
     @classmethod
-    def create_node(cls, obj: _Model) -> _DjangoNode:
+    def create_node(cls, obj: models.Model) -> _DjangoNode:
         """Create a node from a model instance.
 
         The default implementation instantiates the node type the connection was
         initialized with. You may want to override this method if the node type is an
         interface.
         """
+        assert isinstance(obj, cls._get_model_type())
         return cls._get_node_type()(obj)
 
     @classmethod

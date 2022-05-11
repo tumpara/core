@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any  # noqa: F401
 from typing import Generic, TypeVar, cast
 
 from django.contrib.gis.db import models
@@ -10,15 +11,12 @@ from tumpara.accounts.models import AnonymousUser, User
 from tumpara.libraries.models import File, RecordManager, RecordModel, RecordQuerySet
 
 _GalleryRecord = TypeVar("_GalleryRecord", bound="GalleryRecord")
-_GalleryRecordQuerySet = TypeVar(
-    "_GalleryRecordQuerySet", bound="GalleryRecordQuerySet[Any]"
-)
 
 
 class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryRecord]):
-    def resolve_instances(
-        self: _GalleryRecordQuerySet, *prefetch_types: type[GalleryRecordModel]
-    ) -> _GalleryRecordQuerySet:
+    def resolve_instances(  # type: ignore
+        self, *prefetch_types: type[GalleryRecordModel]
+    ) -> GalleryRecordQuerySet[_GalleryRecord]:
         for prefetch_type in prefetch_types:
             if not issubclass(prefetch_type, GalleryRecordModel):
                 raise TypeError(
@@ -26,26 +24,31 @@ class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryReco
                     # We only override the method so this error message is more verbose:
                     f"subclasses of GalleryRecordModel, got {prefetch_type}"
                 )
-        return super().resolve_instances(*prefetch_types)
+        return cast(
+            GalleryRecordQuerySet[_GalleryRecord],
+            super().resolve_instances(*prefetch_types),
+        )
 
     def for_user(
         self,
         user: User | AnonymousUser,
         permission: str,
     ) -> GalleryRecordQuerySet[_GalleryRecord]:
-        queryset = cast(
-            GalleryRecordQuerySet[_GalleryRecord], super().for_user(user, permission)
-        )
-        return queryset.filter(
-            # Either we have at least one available file or no files at all.
-            # TODO This could probably be cleaner, depending on whether we expect files.
-            models.Exists(
-                File.objects.filter(
-                    record=models.OuterRef("pk"), availability__isnull=False
+        queryset = (
+            super()
+            .for_user(user, permission)
+            .filter(
+                # Either we have at least one available file or no files at all.
+                # TODO This could probably be cleaner, depending on whether we expect files.
+                models.Exists(
+                    File.objects.filter(
+                        record=models.OuterRef("pk"), availability__isnull=False
+                    )
                 )
+                | ~models.Exists(File.objects.filter(record=models.OuterRef("pk")))
             )
-            | ~models.Exists(File.objects.filter(record=models.OuterRef("pk")))
         )
+        return cast(GalleryRecordQuerySet[_GalleryRecord], queryset)
 
     @transaction.atomic
     def stack(self) -> int:
@@ -139,11 +142,12 @@ class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryReco
         :return: The size of the no longer existing stack.
         """
         self._not_support_grouping("stack")
-        return GalleryRecord.objects.filter(
+        stack_size = GalleryRecord.objects.filter(
             stack_key__in=models.Subquery(
                 self.filter(stack_key__isnull=False).values("stack_key").distinct()
             )
         ).update(stack_key=None, stack_representative=False)
+        return cast(int, stack_size)
 
 
 GalleryRecordManager = RecordManager.from_queryset(GalleryRecordQuerySet)
@@ -273,4 +277,4 @@ class Note(GalleryRecordModel):
         ),
     )
 
-    objects: RecordManager[Note]  # type: ignore
+    objects: RecordManager[Note]

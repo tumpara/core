@@ -22,7 +22,7 @@ CombinedGalleryRecordFilter = strawberry.input(
 class Query:
     @api.DjangoConnectionField(
         GalleryRecordConnection,
-        filter_type=CombinedGalleryRecordFilter,  # type: ignore
+        filter_type=CombinedGalleryRecordFilter,
         description="This connection contains all gallery records that are currently "
         "available.",
     )
@@ -39,7 +39,7 @@ class Query:
 
         instance_types = filter.get_instance_types()
         if len(instance_types) == 0:
-            return queryset.empty()
+            return queryset.none()
         queryset = queryset.resolve_instances(*instance_types)
 
         # TODO This should become a more refined queryset that automatically prefetches

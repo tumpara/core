@@ -81,7 +81,7 @@ class GalleryRecordConnection(
     nodes: list[Optional[GalleryRecordNode]]
 
     @classmethod
-    def create_node(cls, obj: GalleryRecordModel) -> GalleryRecordNode:
+    def create_node(cls, obj: models.Model) -> GalleryRecordNode:
         from ..models import Note
         from .notes import NoteNode
 
