@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from tumpara import api
 from tumpara.accounts.models import User
-from tumpara.api import models as api_models
+from tumpara.api.models import Token
 from tumpara.testing import strategies as st
 
 from ..test_accounts.utils import user_dataset  # noqa: F401
@@ -46,7 +46,7 @@ def test_username_password_token(user_dataset: UserDataset) -> None:
         "__typename": "InvalidCredentialsError",
         "scope": user.username,
     }
-    assert not api_models.Token.objects.exists()
+    assert not Token.objects.exists()
 
     result = api.execute_sync(
         create_token_mutation, username=user.username, password=password
@@ -54,9 +54,9 @@ def test_username_password_token(user_dataset: UserDataset) -> None:
     assert result.errors is None
     assert result.data is not None
     assert result.data["createToken"]["__typename"] == "Token"
-    assert api_models.Token.objects.count() == 1
+    assert Token.objects.count() == 1
     assert (
-        api_models.Token.objects.filter_valid()
+        Token.objects.filter_valid()
         .filter(key=result.data["createToken"]["key"], name="Test token")
         .exists()
     )
@@ -91,7 +91,7 @@ def test_wrong_credentials_token(
         assert result.errors is None
         assert result.data is not None
         assert result.data["createToken"]["__typename"] == "InvalidCredentialsError"
-        assert not api_models.Token.objects.exists()
+        assert not Token.objects.exists()
 
 
 @hypothesis.given(
@@ -119,7 +119,7 @@ def test_invalid_method_token(
         "__typename": "UnknownAuthenticationMethodError",
         "method": method,
     }
-    assert not api_models.Token.objects.exists()
+    assert not Token.objects.exists()
 
 
 me_query = """
@@ -165,9 +165,9 @@ def test_token_expiry_filtering(user_dataset: UserDataset) -> None:
         expiry_timestamp=timezone.now() + timezone.timedelta(minutes=10)
     )
 
-    assert token in api_models.Token.objects.filter_valid()
+    assert token in Token.objects.filter_valid()
     with freezegun.freeze_time(timezone.now() + timezone.timedelta(minutes=10)):
-        assert token not in api_models.Token.objects.filter_valid()
+        assert token not in Token.objects.filter_valid()
 
 
 @hypothesis.given(st.usernames(), st.usernames())

@@ -7,7 +7,8 @@ from django.db import models
 from tumpara import api
 from tumpara.libraries.api import RecordNode, RecordVisibilityFilter
 
-from ..models import GalleryRecord, GalleryRecordModel, GalleryRecordQuerySet
+from ..models import GalleryRecordQuerySet  # noqa: F401
+from ..models import GalleryRecord, GalleryRecordModel
 
 
 class GalleryRecordFilter:

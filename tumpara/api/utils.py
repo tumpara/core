@@ -20,7 +20,7 @@ from .views import ApiContext
 if TYPE_CHECKING:
     import strawberry.arguments
 
-    from tumpara.accounts import models as accounts_models
+    from tumpara.accounts.models import User
 
 _T = TypeVar("_T")
 
@@ -37,16 +37,16 @@ class NonGenericTypeDefinition(strawberry.types.types.TypeDefinition):
     is_generic = False
 
 
-def check_authentication(info: InfoType) -> Optional[accounts_models.User]:
+def check_authentication(info: InfoType) -> Optional[User]:
     """Check whether a given API call is authenticated.
 
-    If available, the current :class:`accounts_models.User` object will be returned.
+    If available, the current :class:`User` object will be returned.
     """
-    from tumpara.accounts import models as accounts_models
+    from tumpara.accounts.models import User
 
     user = info.context.user
     if user.is_authenticated and user.is_active:
-        assert isinstance(user, accounts_models.User)
+        assert isinstance(user, User)
         return user
     else:
         return None

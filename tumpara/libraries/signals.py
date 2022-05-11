@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING, Any, Optional, Protocol, TypeVar, Union
 import django.dispatch
 
 if TYPE_CHECKING:
-    from . import models as libraries_models
+    from .models import Library, Record
 
 __all__ = ["new_file", "files_changed"]
 
-_Record = TypeVar("_Record", bound="libraries_models.Record", contravariant=True)
+_Record = TypeVar("_Record", bound="Record", contravariant=True)
 
 
 # This dictionary maps all known library context values to some object that doesn't
@@ -29,8 +29,8 @@ context_references[None] = None
 
 class NewFileReceiver(Protocol):
     def __call__(
-        self, context: str, path: str, library: libraries_models.Library, **kwargs: Any
-    ) -> Optional[libraries_models.Record]:
+        self, context: str, path: str, library: Library, **kwargs: Any
+    ) -> Optional[Record]:
         ...
 
 
@@ -58,7 +58,7 @@ class NewFileSignal(django.dispatch.Signal):
         return super().has_listeners(context_references[sender])
 
     def send(  # type: ignore
-        self, context: str, path: str, library: libraries_models.Library
+        self, context: str, path: str, library: Library
     ) -> list[tuple[NewFileReceiver, Optional[str]]]:
         return super().send(
             sender=context_references[context],
@@ -68,7 +68,7 @@ class NewFileSignal(django.dispatch.Signal):
         )
 
     def send_robust(  # type: ignore
-        self, context: str, path: str, library: libraries_models.Library
+        self, context: str, path: str, library: Library
     ) -> list[tuple[NewFileReceiver, Union[ValueError, str]]]:
         return super().send_robust(
             sender=context_references[context],
@@ -122,7 +122,7 @@ class FilesChangedSignal(django.dispatch.Signal):
     def connect(  # type: ignore
         self,
         receiver: FilesChangedReceiver[Any],
-        sender: Optional[type[libraries_models.Record]] = None,
+        sender: Optional[type[Record]] = None,
         weak: bool = True,
         dispatch_uid: Optional[str] = None,
     ) -> None:

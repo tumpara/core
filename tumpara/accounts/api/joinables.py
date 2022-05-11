@@ -1,7 +1,7 @@
 from typing import Any, Optional, TypeVar
 
 import strawberry
-from django.contrib.contenttypes import models as contenttypes_models
+from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
 from tumpara import api
@@ -46,7 +46,7 @@ class JoinableNode(api.DjangoNode, fields=[]):
         return (
             UserNode.get_queryset(info)
             .filter(
-                membership__content_type=contenttypes_models.ContentType.objects.get_for_model(
+                membership__content_type=ContentType.objects.get_for_model(
                     self._get_model_type()
                 ),
                 membership__object_pk=self.obj.pk,

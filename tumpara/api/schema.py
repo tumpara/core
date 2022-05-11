@@ -15,9 +15,9 @@ import strawberry.types.execution
 from .utils import ApiContext
 
 if TYPE_CHECKING:
-    from tumpara.accounts import models as accounts_models
+    from tumpara.accounts.models import User
 
-    from . import models as api_models
+    from .models import Token
 
 
 class SchemaManager:
@@ -87,7 +87,7 @@ schema = SchemaManager()
 
 def execute_sync(
     query: str,
-    authentication: Optional[accounts_models.User | api_models.Token] = None,
+    authentication: Optional[User | Token] = None,
     /,
     operation_name: Optional[str] = None,
     **variables: Any,
@@ -100,12 +100,12 @@ def execute_sync(
         directly.
     :param variables: Any other keyword arguments will be processed as query variables.
     """
-    from tumpara.accounts import models as accounts_models
+    from tumpara.accounts.models import AnonymousUser
 
-    from . import models as api_models
+    from .models import Token
 
     context: ApiContext
-    if isinstance(authentication, api_models.Token):
+    if isinstance(authentication, Token):
         context = ApiContext(
             request=django.http.HttpRequest(),
             response=strawberry.django.views.TemporalHttpResponse(),
@@ -116,7 +116,7 @@ def execute_sync(
         context = ApiContext(
             request=django.http.HttpRequest(),
             response=strawberry.django.views.TemporalHttpResponse(),
-            user=authentication or accounts_models.AnonymousUser(),
+            user=authentication or AnonymousUser(),
             token=None,
         )
 

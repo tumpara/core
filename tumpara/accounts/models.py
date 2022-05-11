@@ -8,7 +8,7 @@ import django.contrib.auth.validators
 from django.contrib.auth import models as auth_models
 from django.contrib.auth.models import AnonymousUser, Permission
 from django.contrib.contenttypes import fields as contenttypes_fields
-from django.contrib.contenttypes import models as contenttypes_models
+from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -218,9 +218,7 @@ class UserMembership(AbstractMembership):
         related_name="memberships",
         related_query_name="membership",
     )
-    content_type = models.ForeignKey(
-        contenttypes_models.ContentType, on_delete=models.CASCADE
-    )
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
     object_pk = models.PositiveIntegerField()
     content_object = contenttypes_fields.GenericForeignKey("content_type", "object_pk")
 
@@ -259,9 +257,7 @@ class JoinableQuerySet(Generic[_Joinable], models.QuerySet[_Joinable]):
         elif permission == build_permission_name(self.model, "view"):
             membership_queryset = UserMembership.objects.filter(
                 user=user,
-                content_type=contenttypes_models.ContentType.objects.get_for_model(
-                    self.model
-                ),
+                content_type=ContentType.objects.get_for_model(self.model),
                 object_pk=models.OuterRef("pk"),
             )
             return self.filter(models.Exists(membership_queryset))
@@ -286,9 +282,7 @@ class Joinable(models.Model):
         :param user: The user to add as a new or existing member.
         :param owner: Whether the user should be an owner (and have write permissions).
         """
-        content_type = contenttypes_models.ContentType.objects.get_for_model(
-            self, for_concrete_model=True
-        )
+        content_type = ContentType.objects.get_for_model(self, for_concrete_model=True)
         UserMembership.objects.update_or_create(
             user=user,
             content_type=content_type,
@@ -301,9 +295,7 @@ class Joinable(models.Model):
 
         :param user: The user to remove.
         """
-        content_type = contenttypes_models.ContentType.objects.get_for_model(
-            self, for_concrete_model=True
-        )
+        content_type = ContentType.objects.get_for_model(self, for_concrete_model=True)
         UserMembership.objects.filter(
             user=user,
             content_type=content_type,
@@ -312,9 +304,7 @@ class Joinable(models.Model):
 
     def clear_memberships(self) -> None:
         """Remove all memberships. After this, only superusers will have access."""
-        content_type = contenttypes_models.ContentType.objects.get_for_model(
-            self, for_concrete_model=True
-        )
+        content_type = ContentType.objects.get_for_model(self, for_concrete_model=True)
         UserMembership.objects.filter(
             content_type=content_type,
             object_pk=self.pk,

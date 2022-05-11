@@ -12,16 +12,16 @@ from django.utils.decorators import method_decorator
 from django.views.decorators import csrf
 
 if TYPE_CHECKING:
-    from tumpara.accounts import models as accounts_models
+    from tumpara.accounts.models import AnonymousUser, User
 
-    from . import models as api_models
+    from .models import Token
     from .schema import SchemaManager
 
 
 @dataclasses.dataclass
 class ApiContext(strawberry.django.context.StrawberryDjangoContext):
-    token: Optional[api_models.Token]
-    user: Union[accounts_models.AnonymousUser, accounts_models.User]
+    token: Optional[Token]
+    user: Union[AnonymousUser, User]
 
 
 class ApiView(strawberry.django.views.GraphQLView):
@@ -71,26 +71,26 @@ class ApiView(strawberry.django.views.GraphQLView):
         return cast(HttpResponseBase, response)
 
     def get_context(self, request: HttpRequest, response: HttpResponse) -> Any:
-        from tumpara.accounts import models as accounts_models
+        from tumpara.accounts.models import AnonymousUser, User
 
-        from . import models as api_models
+        from .models import Token
 
         token_header = request.headers.get("X-Token")
-        token: Optional[api_models.Token] = None
+        token: Optional[Token] = None
         if token_header:
             try:
                 token = (
-                    api_models.Token.objects.filter_valid()
+                    Token.objects.filter_valid()
                     .prefetch_related("user")
                     .get(key=token_header)
                 )
-            except api_models.Token.DoesNotExist:
+            except Token.DoesNotExist:
                 pass
 
-        user: Union[accounts_models.AnonymousUser, accounts_models.User]
+        user: Union[AnonymousUser, User]
         if token is not None:
             user = token.user
         else:
-            user = accounts_models.AnonymousUser()
+            user = AnonymousUser()
 
         return ApiContext(request=request, response=response, token=token, user=user)

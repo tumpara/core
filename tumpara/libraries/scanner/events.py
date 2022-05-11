@@ -11,10 +11,10 @@ from typing import TYPE_CHECKING, Optional, cast
 from django.db import models, transaction
 from django.utils import timezone
 
-from .. import signals as libraries_signals
+from ..signals import files_changed, new_file
 
 if TYPE_CHECKING:
-    from .. import models as libraries_models
+    from ..models import File, Library
 
 _logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class Event(abc.ABC):
     """Base class for file events."""
 
     @abc.abstractmethod
-    def commit(self, library: libraries_models.Library) -> None:
+    def commit(self, library: Library) -> None:
         """Handle this event for a given library.
 
         :param library: The library to apply changed to.
@@ -46,19 +46,17 @@ class FileEvent(Event):
     path: str
 
     @transaction.atomic
-    def commit(self, library: libraries_models.Library) -> None:
-        from django.contrib.contenttypes.models import ContentType
-
-        from .. import models as libraries_models
+    def commit(self, library: Library) -> None:
+        from ..models import File, Record
 
         def bail(reason: str) -> None:
             """Bail out and mark all file objects for this path as unavailable."""
             _logger.debug(
                 f"New file {self.path!r} in {library} - skipping because {reason}."
             )
-            libraries_models.File.objects.filter(
-                path=self.path, record__library=library
-            ).update(availability=None)
+            File.objects.filter(path=self.path, record__library=library).update(
+                availability=None
+            )
 
         if library.check_path_ignored(self.path):
             bail("the file is in an ignored directory")
@@ -75,7 +73,7 @@ class FileEvent(Event):
 
         # Fetch a list of existing records that might match this file.
         file_candidates = list(
-            libraries_models.File.objects.filter(
+            File.objects.filter(
                 models.Q(path=self.path) | models.Q(digest=digest),
                 record__library=library,
             )
@@ -90,7 +88,7 @@ class FileEvent(Event):
         unavailable_candidates = {
             file for file in file_candidates if not file.available
         }
-        file: Optional[libraries_models.File] = None
+        file: Optional[File] = None
         need_change_signal = False
         need_saving = False
 
@@ -123,7 +121,7 @@ class FileEvent(Event):
         # currently available. Then we create a new file object in their record (all
         # file objects with the same digest should always share a record).
         elif candidates := candidates_by_digest & available_candidates:
-            file = libraries_models.File(
+            file = File(
                 record=candidates.pop().record,
                 path=self.path,
                 digest=digest,
@@ -154,15 +152,15 @@ class FileEvent(Event):
         # find some content object that is willing to take the file (see the signal's
         # documentation for details).
         else:
-            result = libraries_signals.new_file.send_robust(
+            result = new_file.send_robust(
                 context=library.context,
                 path=self.path,
                 library=library,
             )
             responses = [
-                cast(libraries_models.Record, response)
+                cast(Record, response)
                 for _, response in result
-                if isinstance(response, libraries_models.Record)
+                if isinstance(response, Record)
             ]
             if len(responses) == 0:
                 bail("no compatible file handler was found")
@@ -175,7 +173,7 @@ class FileEvent(Event):
                 if record._state.adding:
                     record.save()
 
-                file = libraries_models.File.objects.create(
+                file = File.objects.create(
                     record=record,
                     path=self.path,
                     digest=digest,
@@ -199,7 +197,7 @@ class FileEvent(Event):
 
         if need_change_signal:
             resolved_record = file.record.resolve_instance()
-            libraries_signals.files_changed.send_robust(
+            files_changed.send_robust(
                 sender=type(resolved_record), record=resolved_record
             )
 
@@ -214,16 +212,16 @@ class FileModifiedEvent(Event):
 
     path: str
 
-    def commit(self, library: libraries_models.Library) -> None:
-        from .. import models as libraries_models
+    def commit(self, library: Library) -> None:
+        from ..models import File
 
         try:
-            file = libraries_models.File.objects.get(
+            file = File.objects.get(
                 record__library=library,
                 path=self.path,
                 availability__isnull=False,
             )
-        except libraries_models.File.DoesNotExist:
+        except File.DoesNotExist:
             _logger.debug(
                 f"Got a file modified event for {self.path!r} in {library} which is "
                 f"not on record. Handling as a new file."
@@ -265,15 +263,13 @@ class FileMovedEvent(Event):
     old_path: str
     new_path: str
 
-    def commit(self, library: libraries_models.Library) -> None:
-        from .. import models as libraries_models
+    def commit(self, library: Library) -> None:
+        from ..models import File, Record
 
-        file_queryset = libraries_models.File.objects.filter(
+        file_queryset = File.objects.filter(
             record__library=library, path=self.old_path, availability__isnull=False
         )
-        touched_records = list(
-            libraries_models.Record.objects.filter(file__in=file_queryset).distinct()
-        )
+        touched_records = list(Record.objects.filter(file__in=file_queryset).distinct())
 
         if library.check_path_ignored(self.new_path):
             affected_rows = file_queryset.update(availability=None)
@@ -283,7 +279,7 @@ class FileMovedEvent(Event):
             )
             for record in touched_records:
                 resolved_record = record.resolve_instance()
-                libraries_signals.files_changed.send_robust(
+                files_changed.send_robust(
                     sender=type(resolved_record), record=resolved_record
                 )
         else:
@@ -315,15 +311,13 @@ class FileRemovedEvent(Event):
 
     path: str
 
-    def commit(self, library: libraries_models.Library) -> None:
-        from .. import models as libraries_models
+    def commit(self, library: Library) -> None:
+        from ..models import File, Record
 
-        file_queryset = libraries_models.File.objects.filter(
+        file_queryset = File.objects.filter(
             record__library=library, path=self.path, availability__isnull=False
         )
-        touched_records = list(
-            libraries_models.Record.objects.filter(file__in=file_queryset).distinct()
-        )
+        touched_records = list(Record.objects.filter(file__in=file_queryset).distinct())
 
         affected_rows = file_queryset.update(availability=None)
         if affected_rows == 0:
@@ -341,7 +335,7 @@ class FileRemovedEvent(Event):
 
         for record in touched_records:
             resolved_record = record.resolve_instance()
-            libraries_signals.files_changed.send_robust(
+            files_changed.send_robust(
                 sender=type(resolved_record), record=resolved_record
             )
 
@@ -353,8 +347,8 @@ class DirectoryMovedEvent(Event):
     old_path: str
     new_path: str
 
-    def commit(self, library: libraries_models.Library) -> None:
-        from .. import models as libraries_models
+    def commit(self, library: Library) -> None:
+        from ..models import File, Record
 
         # The path.join stuff adds an additional slash at the end, making sure really
         # only files inside of the directory are targeted (not that other records should
@@ -365,12 +359,10 @@ class DirectoryMovedEvent(Event):
 
         # We intentionally don't filter out unavailable files so they are moved along
         # with the other files in the directory. Yay, ghosts :)
-        file_queryset = libraries_models.File.objects.filter(
+        file_queryset = File.objects.filter(
             record__library=library, path__regex=path_regex
         )
-        touched_records = list(
-            libraries_models.Record.objects.filter(file__in=file_queryset).distinct()
-        )
+        touched_records = list(Record.objects.filter(file__in=file_queryset).distinct())
 
         if library.check_path_ignored(self.new_path):
             affected_rows = file_queryset.update(availability=None)
@@ -382,7 +374,7 @@ class DirectoryMovedEvent(Event):
 
             for record in touched_records:
                 resolved_record = record.resolve_instance()
-                libraries_signals.files_changed.send_robust(
+                files_changed.send_robust(
                     sender=type(resolved_record), record=resolved_record
                 )
         else:
@@ -407,20 +399,18 @@ class DirectoryRemovedEvent(Event):
 
     path: str
 
-    def commit(self, library: libraries_models.Library) -> None:
-        from .. import models as libraries_models
+    def commit(self, library: Library) -> None:
+        from ..models import File, Record
 
         # As before, use regex instead of startswith because SQLite doesn't support the
         # latter case-sensitively.
         # TODO: Check if we have a case-insensitive filesystem.
         path_regex = "^" + re.escape(os.path.join(self.path, ""))
 
-        file_queryset = libraries_models.File.objects.filter(
+        file_queryset = File.objects.filter(
             record__library=library, path__regex=path_regex, availability__isnull=False
         )
-        touched_records = list(
-            libraries_models.Record.objects.filter(file__in=file_queryset).distinct()
-        )
+        touched_records = list(Record.objects.filter(file__in=file_queryset).distinct())
 
         affected_rows = file_queryset.update(availability=None)
         _logger.debug(
@@ -430,7 +420,7 @@ class DirectoryRemovedEvent(Event):
 
         for record in touched_records:
             resolved_record = record.resolve_instance()
-            libraries_signals.files_changed.send_robust(
+            files_changed.send_robust(
                 sender=type(resolved_record), record=resolved_record
             )
 
@@ -440,7 +430,7 @@ class ScanEvent(Event):
 
     The event object should be created before beginning the scan and committed after all
     other events of the scan have been processed. It takes care of any leftover
-    :class:`libraries_models.File` objects that are no longer available.
+    :class:`File` objects that are no longer available.
 
     .. warning::
         When using multiprocessing, this event should be treated as a critical section!
@@ -451,19 +441,17 @@ class ScanEvent(Event):
     def __init__(self) -> None:
         self.start_timestamp = timezone.now()
 
-    def commit(self, library: libraries_models.Library) -> None:
-        from .. import models as libraries_models
+    def commit(self, library: Library) -> None:
+        from ..models import File, Record
 
-        file_queryset = libraries_models.File.objects.filter(
+        file_queryset = File.objects.filter(
             # Since all events mark their touched files as available with a new
             # timestamp, we can use that to find all the old records that are no
             # longer available.
             availability__lte=self.start_timestamp,
             record__library=library,
         )
-        touched_records = list(
-            libraries_models.Record.objects.filter(file__in=file_queryset).distinct()
-        )
+        touched_records = list(Record.objects.filter(file__in=file_queryset).distinct())
 
         affected_rows = file_queryset.update(availability=None)
         _logger.debug(
@@ -472,6 +460,6 @@ class ScanEvent(Event):
 
         for record in touched_records:
             resolved_record = record.resolve_instance()
-            libraries_signals.files_changed.send_robust(
+            files_changed.send_robust(
                 sender=type(resolved_record), record=resolved_record
             )

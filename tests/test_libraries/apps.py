@@ -1,7 +1,7 @@
 from django.apps import AppConfig
 
-from tumpara.libraries import signals as libraries_signals
 from tumpara.libraries import storage
+from tumpara.libraries.signals import files_changed, new_file
 
 
 class TestLibrariesConfig(AppConfig):
@@ -11,10 +11,8 @@ class TestLibrariesConfig(AppConfig):
         from .models import GenericHandler
         from .storage import TestingStorage
 
-        libraries_signals.new_file.connect(
-            GenericHandler.handle_new_file, sender="test_storage"
-        )
-        libraries_signals.files_changed.connect(
+        new_file.connect(GenericHandler.handle_new_file, sender="test_storage")
+        files_changed.connect(
             GenericHandler.handle_files_changed,
             sender=GenericHandler,
         )
