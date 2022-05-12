@@ -84,7 +84,10 @@ class RecordVisibilityFilter:
     )
 
     def build_query(
-        self, visibility_field_name: str, library_visibility_field_name: str
+        self,
+        info: api.InfoType,
+        visibility_field_name: str,
+        library_visibility_field_name: str,
     ) -> models.Q:
         query = models.Q()
         if self.public:

@@ -539,7 +539,7 @@ class DjangoConnectionField(ConnectionField):
             given_filter = kwargs.pop("filter")
             # Since we are filtering objects directly in the queryset (and not some
             # subfield), the field name is an empty string here:
-            query_result = given_filter.build_query("")
+            query_result = given_filter.build_query(info, "")
             if isinstance(query_result, models.Q):
                 query, aliases = query_result, {}
             else:

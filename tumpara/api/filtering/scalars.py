@@ -7,6 +7,8 @@ import strawberry
 from django.db import models
 from django.db.models import functions
 
+from ..utils import InfoType
+
 _T = TypeVar("_T")
 _N = TypeVar("_N", bound="SupportsFloat")
 
@@ -17,7 +19,7 @@ class ScalarFilter(Generic[_T], abc.ABC):
     exclude: Optional[list[_T]] = None
 
     @abc.abstractmethod
-    def build_query(self, field_name: str) -> models.Q:
+    def build_query(self, info: InfoType, field_name: str) -> models.Q:
         query = models.Q()
 
         if self.include is not None:
@@ -81,8 +83,8 @@ class StringFilter(ScalarFilter[str]):
         "filtering.",
     )
 
-    def build_query(self, field_name: str) -> models.Q:
-        query = super().build_query(field_name)
+    def build_query(self, info: InfoType, field_name: str) -> models.Q:
+        query = super().build_query(info, field_name)
         prefix = f"{field_name}__{'' if self.case_sensitive else 'i'}"
 
         if self.contains is not None:
@@ -147,8 +149,8 @@ class NumberFilter(Generic[_N], ScalarFilter[_N]):
 
         super().__init_subclass__(**kwargs)
 
-    def build_query(self, field_name: str) -> models.Q:
-        query = super().build_query(field_name)
+    def build_query(self, info: InfoType, field_name: str) -> models.Q:
+        query = super().build_query(info, field_name)
 
         if (
             self.inclusive_minimum
@@ -219,7 +221,7 @@ class DateFilter:
     )
 
     def build_query(
-        self, field_name: str
+        self, info: InfoType, field_name: str
     ) -> tuple[models.Q, dict[str, models.Expression]]:
         query = models.Q()
         aliases = dict[str, models.Expression]()
@@ -233,19 +235,19 @@ class DateFilter:
         if self.year is not None:
             alias = f"_{field_name}_year"
             aliases[alias] = functions.ExtractYear(field_name)
-            query &= self.year.build_query(alias)
+            query &= self.year.build_query(info, alias)
         if self.month is not None:
             alias = f"_{field_name}_month"
             aliases[alias] = functions.ExtractMonth(field_name)
-            query &= self.month.build_query(alias)
+            query &= self.month.build_query(info, alias)
         if self.day is not None:
             alias = f"_{field_name}_day"
             aliases[alias] = functions.ExtractDay(field_name)
-            query &= self.day.build_query(alias)
+            query &= self.day.build_query(info, alias)
         if self.week_day is not None:
             alias = f"_{field_name}_week_day"
             aliases[alias] = functions.ExtractWeekDay(field_name)
-            query &= self.week_day.build_query(alias)
+            query &= self.week_day.build_query(info, alias)
 
         return query, aliases
 
@@ -258,14 +260,14 @@ class DateTimeFilter(DateFilter):
     )
 
     def build_query(
-        self, field_name: str
+        self, info: InfoType, field_name: str
     ) -> tuple[models.Q, dict[str, models.Expression]]:
-        query, aliases = super().build_query(field_name)
+        query, aliases = super().build_query(info, field_name)
 
         if self.hour is not None:
             alias = f"_{field_name}_hour"
             aliases[alias] = functions.ExtractHour(field_name)
-            query &= self.hour.build_query(alias)
+            query &= self.hour.build_query(info, alias)
 
         return query, aliases
 
@@ -286,7 +288,7 @@ class TimeFilter:
         "inclusive.",
     )
 
-    def build_query(self, field_name: str) -> models.Q:
+    def build_query(self, info: InfoType, field_name: str) -> models.Q:
         query = models.Q()
 
         inclusivity_suffix = "e" if self.inclusive else ""

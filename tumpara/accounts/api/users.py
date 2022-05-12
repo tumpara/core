@@ -19,21 +19,21 @@ class UserFilter:
     )
     is_active: Optional[bool] = None
 
-    def build_query(self, field_name: Optional[str]) -> models.Q:
+    def build_query(self, info: api.InfoType, field_name: Optional[str]) -> models.Q:
         prefix = field_name + "__" if field_name else ""
         query = models.Q()
 
         if self.username is not None:
-            query &= self.username.build_query(f"{prefix}username")
+            query &= self.username.build_query(info, f"{prefix}username")
         if self.full_name is not None:
-            query &= self.full_name.build_query(f"{prefix}full_name")
+            query &= self.full_name.build_query(info, f"{prefix}full_name")
         if self.short_name is not None:
-            query &= self.short_name.build_query(f"{prefix}short_name")
+            query &= self.short_name.build_query(info, f"{prefix}short_name")
         if self.any_name is not None:
             query &= (
-                self.any_name.build_query(f"{prefix}username")
-                | self.any_name.build_query(f"{prefix}full_name")
-                | self.any_name.build_query(f"{prefix}short_name")
+                self.any_name.build_query(info, f"{prefix}username")
+                | self.any_name.build_query(info, f"{prefix}full_name")
+                | self.any_name.build_query(info, f"{prefix}short_name")
             )
         if self.is_active is not None:
             query &= models.Q((f"{prefix}is_active", self.is_active))

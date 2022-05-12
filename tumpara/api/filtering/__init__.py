@@ -2,13 +2,16 @@ from typing import Mapping, Protocol
 
 from django.db import models
 
+from ..utils import InfoType
+
 
 class GenericFilter(Protocol):
     def build_query(
-        self, field_name: str
+        self, info: InfoType, field_name: str
     ) -> models.Q | tuple[models.Q, Mapping[str, models.Expression]]:
         """Build the database lookup for this filter.
 
+        :param info: Resolve information for the current API request.
         :param field_name: Name of the field or related field lookup the filter should
             be applied on. For example, if you want to query a name field, this should
             be set to ``name``. If you want to query the name field of a related

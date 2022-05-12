@@ -13,7 +13,7 @@ from ..models import GalleryRecord, GalleryRecordModel
 
 class GalleryRecordFilter:
     def build_query(
-        self, field_name: Optional[str]
+        self, info: api.InfoType, field_name: Optional[str]
     ) -> tuple[models.Q, dict[str, models.Expression]]:
         return models.Q(), {}
 
@@ -38,23 +38,33 @@ def register_gallery_record_filter(
 class MainGalleryRecordFilter(GalleryRecordFilter):
     media_timestamp: Optional[api.DateTimeFilter] = None
     visibility: Optional[RecordVisibilityFilter] = None
+    use_stacks: bool = strawberry.field(
+        default=True,
+        description="Whether to use stacks. If this is `true`, only one record is "
+        "returned per stack. Records not in any stack are returned as well.",
+    )
 
     def build_query(
-        self, field_name: Optional[str]
+        self, info: api.InfoType, field_name: Optional[str]
     ) -> tuple[models.Q, dict[str, models.Expression]]:
         prefix = field_name + "__" if field_name else ""
-        query, aliases = super().build_query(field_name)
+        query, aliases = super().build_query(info, field_name)
 
         if self.media_timestamp is not None:
             next_query, next_aliases = self.media_timestamp.build_query(
-                f"{prefix}media_timestamp"
+                info, f"{prefix}media_timestamp"
             )
             query &= next_query
             aliases |= next_aliases
 
         if self.visibility is not None:
             query &= self.visibility.build_query(
-                f"{prefix}visibility", f"{prefix}library__visibility"
+                info, f"{prefix}visibility", f"{prefix}library__visibility"
+            )
+
+        if self.use_stacks:
+            query &= models.Q(stack_key__isnull=True) | models.Q(
+                stack_representative=True
             )
 
         return query, aliases
