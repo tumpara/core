@@ -288,6 +288,17 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
                 f"filter and don't perform grouping"
             )
 
+    def with_effective_visibility(self) -> RecordQuerySet[_Record]:
+        return self.alias(
+            effective_visibility=models.Case(
+                models.When(
+                    visibility=Visibility.FROM_LIBRARY,
+                    then=models.F("library__default_visibility"),
+                ),
+                default=models.F("visibility"),
+            )
+        )
+
     def resolve_instances(
         self, *prefetch_types: type[RecordModel]
     ) -> RecordQuerySet[_Record]:
@@ -329,12 +340,18 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
     ) -> RecordQuerySet[_Record]:
         """Narrow down the queryset to only return elements where the given user has
         a specific permission."""
-        if not user.is_authenticated or not user.is_active:
+        if not user.is_authenticated:
+            return self.with_effective_visibility().filter(
+                effective_visibility=Visibility.PUBLIC
+            )
+        if not user.is_active:
             return self.none()
         if user.is_superuser:
             return self
 
         if permission in (
+            build_permission_name(Record, "change"),
+            build_permission_name(Record, "delete"),
             build_permission_name(self.model, "change"),
             build_permission_name(self.model, "delete"),
         ):
@@ -343,7 +360,10 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
             return self.filter(
                 library__in=Library.objects.for_user(user, "libraries.change_library")
             )
-        elif permission == build_permission_name(self.model, "view"):
+        elif permission in (
+            build_permission_name(Record, "view"),
+            build_permission_name(self.model, "view"),
+        ):
             return self.filter(
                 library__in=Library.objects.for_user(user, "libraries.view_library")
             )

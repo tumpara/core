@@ -5,6 +5,7 @@ from typing import Generic, TypeVar, cast
 
 from django.contrib.gis.db import models
 from django.db import NotSupportedError, transaction
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from tumpara.accounts.models import AnonymousUser, User
@@ -34,6 +35,15 @@ class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryReco
         user: User | AnonymousUser,
         permission: str,
     ) -> GalleryRecordQuerySet[_GalleryRecord]:
+        # Rewrite the permission string so .for_user() from the superclass understands
+        # it.
+        if permission in (
+            "gallery.change_galleryrecord",
+            "gallery.delete_galleryrecord",
+            "gallery.view_galleryrecord",
+        ):
+            permission = f"libraries.{permission[8:][:-14]}_record"
+
         queryset = (
             super()
             .for_user(user, permission)
@@ -163,7 +173,7 @@ class GalleryRecord(RecordModel):
 
     media_timestamp = models.DateTimeField(
         _("media timestamp"),
-        auto_now_add=True,
+        default=timezone.now,
         help_text=_(
             "Timestamp associated with the record's medium. For records without a "
             "media file, this should be the creation date."
@@ -229,8 +239,11 @@ class GalleryRecord(RecordModel):
             ),
         ]
 
-    def represent_stack(self) -> None:
-        """Make this record the representative of its stack."""
+    def represent_stack(self, commit: bool = True) -> None:
+        """Make this record the representative of its stack.
+
+        :param commit: Set this to ``False`` to disable saving of the model.
+        """
         if self.stack_key is None:
             raise NotSupportedError(
                 "cannot set an unstacked record as a representative"
@@ -246,6 +259,8 @@ class GalleryRecord(RecordModel):
             )
         )
         self.stack_representative = True
+        if commit:
+            self.save()
 
 
 class GalleryRecordModel(GalleryRecord):

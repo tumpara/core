@@ -87,7 +87,7 @@ class RecordVisibilityFilter:
         self,
         info: api.InfoType,
         visibility_field_name: str,
-        library_visibility_field_name: str,
+        library_default_visibility_field_name: str,
     ) -> models.Q:
         query = models.Q()
         if self.public:
@@ -103,19 +103,27 @@ class RecordVisibilityFilter:
         if self.public_from_library or (
             self.public_from_library is None and self.public
         ):
-            subquery |= models.Q((library_visibility_field_name), Visibility.PUBLIC)
+            subquery |= models.Q(
+                (library_default_visibility_field_name, Visibility.PUBLIC)
+            )
         if self.internal_from_library or (
             self.internal_from_library is None and self.internal
         ):
-            subquery |= models.Q((library_visibility_field_name), Visibility.INTERNAL)
+            subquery |= models.Q(
+                (library_default_visibility_field_name, Visibility.INTERNAL)
+            )
         if self.members_from_library or (
             self.members_from_library is None and self.members
         ):
-            subquery |= models.Q((library_visibility_field_name), Visibility.MEMBERS)
+            subquery |= models.Q(
+                (library_default_visibility_field_name, Visibility.MEMBERS)
+            )
         if self.owners_from_library or (
             self.owners_from_library is None and self.owners
         ):
-            subquery |= models.Q((library_visibility_field_name), Visibility.OWNERS)
+            subquery |= models.Q(
+                (library_default_visibility_field_name, Visibility.OWNERS)
+            )
 
         if subquery != models.Q():
             query |= (

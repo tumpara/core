@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from typing import Optional
 
 import strawberry
-from django.db import models
+from django.db import NotSupportedError, models
 
 from tumpara import api
 from tumpara.libraries.api import RecordNode, RecordVisibilityFilter
@@ -59,7 +59,7 @@ class MainGalleryRecordFilter(GalleryRecordFilter):
 
         if self.visibility is not None:
             query &= self.visibility.build_query(
-                info, f"{prefix}visibility", f"{prefix}library__visibility"
+                info, f"{prefix}visibility", f"{prefix}library__default_visibility"
             )
 
         if self.use_stacks:
@@ -117,8 +117,17 @@ class StackingMutationSuccess:
 StackingMutationResult = strawberry.union(
     "StackingMutationResult", types=(StackingMutationSuccess, api.NodeError)
 )
+
+
+@strawberry.type
+class SetStackRepresentativeSuccess:
+    representative: GalleryRecordNode = strawberry.field(
+        description="The new representative of the stack."
+    )
+
+
 SetStackRepresentativeResult = strawberry.union(
-    "StackingMutationResult", types=(GalleryRecordNode, api.NodeError)
+    "SetStackRepresentativeResult", types=(SetStackRepresentativeSuccess, api.NodeError)
 )
 
 
@@ -158,12 +167,17 @@ class Mutation:
         )
         return StackingMutationSuccess(stack_size=stack_size)
 
-    @strawberry.field(description="Make.")
+    @strawberry.field(
+        description="Make the given entry the representative of its stack."
+    )
     def set_stack_representative(
         self, info: api.InfoType, id: strawberry.ID
     ) -> SetStackRepresentativeResult:
         node = api.resolve_node(info, id, "gallery.change_galleryrecord")
         if not isinstance(node, GalleryRecordNode):
             return api.NodeError(requested_id=id)
-        node.obj.represent_stack()
-        return node
+        try:
+            node.obj.represent_stack()
+        except NotSupportedError:
+            return api.NodeError(requested_id=id)
+        return SetStackRepresentativeSuccess(representative=node)
