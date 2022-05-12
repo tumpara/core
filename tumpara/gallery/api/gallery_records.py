@@ -41,7 +41,11 @@ class MainGalleryRecordFilter(GalleryRecordFilter):
     use_stacks: bool = strawberry.field(
         default=True,
         description="Whether to use stacks. If this is `true`, only one record is "
-        "returned per stack. Records not in any stack are returned as well.",
+        "returned per stack. Records not in any stack are returned as well.\n\n"
+        "Note that when using this option, records in a stack that are not the "
+        "representative will directly be filtered out. That means that a stack might "
+        "not appear at all if its representative is either not visible to the current "
+        "user or filtered out by other options.",
     )
 
     def build_query(
