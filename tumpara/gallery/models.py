@@ -43,7 +43,7 @@ class GalleryAssetQuerySet(Generic[_GalleryAsset], AssetQuerySet[_GalleryAsset])
             "gallery.delete_galleryasset",
             "gallery.view_galleryasset",
         ):
-            permission = f"libraries.{permission[8:][:-14]}_asset"
+            permission = f"libraries.{permission[8:][:-13]}_asset"
 
         queryset = (
             super()
