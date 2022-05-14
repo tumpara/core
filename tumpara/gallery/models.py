@@ -4,6 +4,7 @@ from typing import Any  # noqa: F401
 from typing import Generic, TypeVar, cast
 
 from django.contrib.gis.db import models
+from django.core.exceptions import EmptyResultSet
 from django.db import NotSupportedError, transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -74,9 +75,14 @@ class GalleryRecordQuerySet(Generic[_GalleryRecord], RecordQuerySet[_GalleryReco
         compiler = self.query.get_compiler(self.db)
         connection = compiler.connection
 
-        selected_records_query, selected_records_params = compiler.compile(
-            self.values("record_id", "stack_key", "stack_representative").query
-        )
+        try:
+            selected_records_query, selected_records_params = compiler.compile(
+                self.values("record_id", "stack_key", "stack_representative").query
+            )
+        except EmptyResultSet:
+            # This case occurs when we try to stack an empty queryset,for example
+            # because the permission filtering logic explicitly returned .none().
+            return 0
 
         with connection.cursor() as cursor:
             records_table = GalleryRecord._meta.db_table

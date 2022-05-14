@@ -340,14 +340,6 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
     ) -> RecordQuerySet[_Record]:
         """Narrow down the queryset to only return elements where the given user has
         a specific permission."""
-        if not user.is_authenticated:
-            return self.with_effective_visibility().filter(
-                effective_visibility=Visibility.PUBLIC
-            )
-        if not user.is_active:
-            return self.none()
-        if user.is_superuser:
-            return self
 
         if permission in (
             build_permission_name(Record, "change"),
@@ -355,20 +347,37 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
             build_permission_name(self.model, "change"),
             build_permission_name(self.model, "delete"),
         ):
+            writing = True
+        elif permission in (
+            build_permission_name(Record, "view"),
+            build_permission_name(self.model, "view"),
+        ):
+            writing = False
+        else:
+            raise ValueError(f"unsupported permission: {permission}")
+
+        if not user.is_authenticated:
+            if writing:
+                return self.none()
+            else:
+                return self.with_effective_visibility().filter(
+                    effective_visibility=Visibility.PUBLIC
+                )
+        if not user.is_active:
+            return self.none()
+        if user.is_superuser:
+            return self
+
+        if writing:
             # We explicitly don't differentiate between the change and delete permission
             # because we want change_library to be the important one here:
             return self.filter(
                 library__in=Library.objects.for_user(user, "libraries.change_library")
             )
-        elif permission in (
-            build_permission_name(Record, "view"),
-            build_permission_name(self.model, "view"),
-        ):
+        else:
             return self.filter(
                 library__in=Library.objects.for_user(user, "libraries.view_library")
             )
-        else:
-            raise ValueError(f"unsupported permission: {permission}")
 
 
 # Patch the methods related to getting instance methods with the new counterparts (see

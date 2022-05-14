@@ -273,16 +273,29 @@ def test_record_stacking(user: User, notes: list[Note]):
     assert result.data is not None
     node_ids = [node["id"] for node in result.data["galleryRecords"]["nodes"]]
 
-    result = api.execute_sync(
-        """mutation StackRecords($ids: [ID!]!) {
+    stack_mutation = """
+        mutation StackRecords($ids: [ID!]!) {
             stackGalleryRecords(input: {ids: $ids}) {
                 __typename
                 ... on StackingMutationSuccess { stackSize }
             }
-        }""",
-        user,
-        ids=node_ids,
-    )
+        }
+    """
+
+    result = api.execute_sync(stack_mutation, None, ids=node_ids)
+    assert result.errors is None
+    assert result.data == {
+        "stackGalleryRecords": {"__typename": "StackingMutationSuccess", "stackSize": 0}
+    }
+
+    other_user = User.objects.create_user("carl")
+    result = api.execute_sync(stack_mutation, other_user, ids=node_ids)
+    assert result.errors is None
+    assert result.data == {
+        "stackGalleryRecords": {"__typename": "StackingMutationSuccess", "stackSize": 0}
+    }
+
+    result = api.execute_sync(stack_mutation, user, ids=node_ids)
     assert result.errors is None
     assert result.data == {
         "stackGalleryRecords": {"__typename": "StackingMutationSuccess", "stackSize": 7}
@@ -357,5 +370,41 @@ def test_record_stacking(user: User, notes: list[Note]):
                 {"content": "Ninth note."},
                 {"content": "Tenth note."},
             ]
+        }
+    }
+
+    unstack_mutation = """
+        mutation UnstackRecords($ids: [ID!]!) {
+            unstackGalleryRecords(input: {ids: $ids}) {
+                __typename
+                ... on StackingMutationSuccess { stackSize }
+            }
+        }
+    """
+
+    result = api.execute_sync(unstack_mutation, None, ids=node_ids)
+    assert result.errors is None
+    assert result.data == {
+        "unstackGalleryRecords": {
+            "__typename": "StackingMutationSuccess",
+            "stackSize": 0,
+        }
+    }
+
+    result = api.execute_sync(unstack_mutation, other_user, ids=node_ids)
+    assert result.errors is None
+    assert result.data == {
+        "unstackGalleryRecords": {
+            "__typename": "StackingMutationSuccess",
+            "stackSize": 0,
+        }
+    }
+
+    result = api.execute_sync(unstack_mutation, user, ids=node_ids)
+    assert result.errors is None
+    assert result.data == {
+        "unstackGalleryRecords": {
+            "__typename": "StackingMutationSuccess",
+            "stackSize": 7,
         }
     }
