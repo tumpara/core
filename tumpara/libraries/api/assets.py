@@ -9,7 +9,7 @@ from django.db import models
 from tumpara import api
 from tumpara.accounts.utils import build_permission_name
 
-from ..models import File, Record, RecordQuerySet, Visibility
+from ..models import Asset, AssetQuerySet, File, Visibility
 from .libraries import LibraryNode
 
 
@@ -34,7 +34,7 @@ class FileConnection(
 
 
 @strawberry.enum
-class RecordVisibility(enum.Enum):
+class AssetVisibility(enum.Enum):
     PUBLIC = Visibility.PUBLIC
     INTERNAL = Visibility.INTERNAL
     MEMBERS = Visibility.MEMBERS
@@ -42,43 +42,43 @@ class RecordVisibility(enum.Enum):
     FROM_LIBRARY = Visibility.FROM_LIBRARY
 
 
-@strawberry.input(description="Filtering options for record visibility fields.")
-class RecordVisibilityFilter:
+@strawberry.input(description="Filtering options for asset visibility fields.")
+class AssetVisibilityFilter:
     public: bool = strawberry.field(
-        default=True, description="Whether to include public records."
+        default=True, description="Whether to include public assets."
     )
     internal: bool = strawberry.field(
-        default=True, description="Whether to include internal records."
+        default=True, description="Whether to include internal assets."
     )
     members: bool = strawberry.field(
         default=True,
-        description="Whether to include records visible only to library members.",
+        description="Whether to include assets visible only to library members.",
     )
     owners: bool = strawberry.field(
         default=True,
-        description="Whether to include records visible only to library owners.",
+        description="Whether to include assets visible only to library owners.",
     )
     public_from_library: Optional[bool] = strawberry.field(
         default=None,
-        description="Whether to include public records, where the visibility has been"
+        description="Whether to include public assets, where the visibility has been"
         "inherited from the library. By default (or when set to `null`) this will take"
         "the same value as the `public` option.",
     )
     internal_from_library: Optional[bool] = strawberry.field(
         default=None,
-        description="Whether to include internal records, where the visibility has been"
+        description="Whether to include internal assets, where the visibility has been"
         "inherited from the library. By default (or when set to `null`) this will take"
         "the same value as the `internal` option.",
     )
     members_from_library: Optional[bool] = strawberry.field(
         default=None,
-        description="Whether to include records visible only to library members, where"
+        description="Whether to include assets visible only to library members, where"
         "the visibility has been inherited from the library. By default (or when set "
         "to `null`) this will take the same value as the `members` option.",
     )
     owners_from_library: Optional[bool] = strawberry.field(
         default=None,
-        description="Whether to include records visible only to library owners, where"
+        description="Whether to include assets visible only to library owners, where"
         "the visibility has been inherited from the library. By default (or when set "
         "to `null`) this will take the same value as the `owners` option.",
     )
@@ -133,25 +133,25 @@ class RecordVisibilityFilter:
         return query
 
 
-@strawberry.interface(name="Record")
-class RecordNode(api.DjangoNode, fields=["library", "visibility"]):
-    obj: strawberry.Private[Record]
+@strawberry.interface(name="Asset")
+class AssetNode(api.DjangoNode, fields=["library", "visibility"]):
+    obj: strawberry.Private[Asset]
     # The explicit fields here are to please MyPy:
     library: Optional[LibraryNode] = dataclasses.field(init=False)
-    visibility: RecordVisibility = dataclasses.field(init=False)
+    visibility: AssetVisibility = dataclasses.field(init=False)
 
     @api.DjangoConnectionField(
         FileConnection,
-        description="Each record may have files attached to it. This field returns a "
+        description="Each asset may have files attached to it. This field returns a "
         "connection to those currently available.",
     )
     def files(self) -> models.QuerySet[File]:
         return self.obj.files.filter(availability__isnull=False)
 
     @classmethod
-    def get_queryset(cls, info: api.InfoType, permission: str) -> RecordQuerySet[Any]:
+    def get_queryset(cls, info: api.InfoType, permission: str) -> AssetQuerySet[Any]:
         model = cls._get_model_type()
-        assert issubclass(model, Record)
+        assert issubclass(model, Asset)
         resolved_permission = permission or build_permission_name(model, "view")
         return model._default_manager.for_user(
             info.context.user, resolved_permission
@@ -163,60 +163,60 @@ class RecordNode(api.DjangoNode, fields=["library", "visibility"]):
     ) -> api.NodeError | Set[str]:
         """Extract primary keys from a list of node IDs.
 
-        If one of the provided IDs does not belong to this record type, a
+        If one of the provided IDs does not belong to this asset type, a
         :class:`api.NodeError` will be returned. Also note that this method not validate
-        the IDs in any way - neither if they actually belong to an existing record
+        the IDs in any way - neither if they actually belong to an existing asset
         object nor if the user has adequate permissions.
         """
         primary_keys = set[str]()
-        for record_id in ids:
-            type_name, *key = api.decode_key(record_id)
+        for asset_id in ids:
+            type_name, *key = api.decode_key(asset_id)
             origin, _ = api.get_node_origin(type_name, info)
 
             # This check is crucial - we make sure that the ID is from some kind of
-            # record type. Since our inheritance is set up by using a foreign key to
-            # the 'record' table as the primary key of the child type, we know that any
-            # primary key of the concrete record type will also work on the parent.
-            if not issubclass(origin, RecordNode) or not len(key) == 1:
-                return api.NodeError(requested_id=record_id)
+            # asset type. Since our inheritance is set up by using a foreign key to
+            # the 'asset' table as the primary key of the child type, we know that any
+            # primary key of the concrete asset type will also work on the parent.
+            if not issubclass(origin, AssetNode) or not len(key) == 1:
+                return api.NodeError(requested_id=asset_id)
 
             primary_keys.add(key[0])
         return primary_keys
 
 
 @strawberry.input
-class SetRecordVisibilityInput:
+class SetAssetVisibilityInput:
     ids: list[strawberry.ID] = strawberry.field(
-        description="Record IDs to update. IDs for records that do not exist will"
+        description="Asset IDs to update. IDs for assets that do not exist will"
         "silently be dropped, invalid IDs will return a `NodeError`."
     )
-    visibility: RecordVisibility = strawberry.field(
-        description="Visibility value that should be set for all records."
+    visibility: AssetVisibility = strawberry.field(
+        description="Visibility value that should be set for all assets."
     )
 
 
 @strawberry.type
-class SetRecordVisibilitySuccess:
+class SetAssetVisibilitySuccess:
     update_count: int
 
 
-SetRecordVisibilityResult = strawberry.union(
-    "SetRecordVisibilityResult", types=(SetRecordVisibilitySuccess, api.NodeError)
+SetAssetVisibilityResult = strawberry.union(
+    "SetAssetVisibilityResult", types=(SetAssetVisibilitySuccess, api.NodeError)
 )
 
 
 @api.schema.mutation
 class Mutation:
-    @strawberry.field(description="Set the visibility of one or more record(s).")
-    def set_record_visibility(
-        self, info: api.InfoType, input: SetRecordVisibilityInput
-    ) -> SetRecordVisibilityResult:
-        primary_keys = RecordNode.extract_primary_keys_from_ids(info, input.ids)
+    @strawberry.field(description="Set the visibility of one or more asset(s).")
+    def set_asset_visibility(
+        self, info: api.InfoType, input: SetAssetVisibilityInput
+    ) -> SetAssetVisibilityResult:
+        primary_keys = AssetNode.extract_primary_keys_from_ids(info, input.ids)
         if isinstance(primary_keys, api.NodeError):
             return primary_keys
         update_count = (
-            Record.objects.for_user(info.context.user, "libraries.change_record")
+            Asset.objects.for_user(info.context.user, "libraries.change_asset")
             .filter(pk__in=primary_keys)
             .update(visibility=input.visibility.value)
         )
-        return SetRecordVisibilitySuccess(update_count=update_count)
+        return SetAssetVisibilitySuccess(update_count=update_count)

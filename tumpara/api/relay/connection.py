@@ -512,7 +512,7 @@ class DjangoConnectionField(ConnectionField):
 
         if self.filter_type is not None:
             # Make sure there is always a filter (even though it might be empty). This
-            # is required for the gallery record connection resolver to function
+            # is required for the gallery asset connection resolver to function
             # properly.
             kwargs.setdefault("filter", self.filter_type())
 

@@ -5,44 +5,44 @@ import strawberry
 from django.db import NotSupportedError, models
 
 from tumpara import api
-from tumpara.libraries.api import RecordNode, RecordVisibilityFilter
+from tumpara.libraries.api import AssetNode, AssetVisibilityFilter
 
-from ..models import GalleryRecordQuerySet  # noqa: F401
-from ..models import GalleryRecord, GalleryRecordModel
+from ..models import GalleryAssetQuerySet  # noqa: F401
+from ..models import GalleryAsset, GalleryAssetModel
 
 
-class GalleryRecordFilter:
+class GalleryAssetFilter:
     def build_query(
         self, info: api.InfoType, field_name: Optional[str]
     ) -> tuple[models.Q, dict[str, models.Expression]]:
         return models.Q(), {}
 
-    def get_instance_types(self) -> Sequence[type[GalleryRecordModel]]:
+    def get_instance_types(self) -> Sequence[type[GalleryAssetModel]]:
         """List of instance types that should be passed to
-        :meth:`GalleryRecordQuerySet.resolve_instances`"""
+        :meth:`GalleryAssetQuerySet.resolve_instances`"""
         return []
 
 
-gallery_record_filter_types = list[type[GalleryRecordFilter]]()
+gallery_asset_filter_types = list[type[GalleryAssetFilter]]()
 
 
-def register_gallery_record_filter(
-    filter_type: type[GalleryRecordFilter],
-) -> type[GalleryRecordFilter]:
+def register_gallery_asset_filter(
+    filter_type: type[GalleryAssetFilter],
+) -> type[GalleryAssetFilter]:
     prepped_type = api.schema.prep_type(filter_type, is_input=True)
-    gallery_record_filter_types.append(prepped_type)
+    gallery_asset_filter_types.append(prepped_type)
     return prepped_type
 
 
-@register_gallery_record_filter
-class MainGalleryRecordFilter(GalleryRecordFilter):
+@register_gallery_asset_filter
+class MainGalleryAssetFilter(GalleryAssetFilter):
     media_timestamp: Optional[api.DateTimeFilter] = None
-    visibility: Optional[RecordVisibilityFilter] = None
+    visibility: Optional[AssetVisibilityFilter] = None
     use_stacks: bool = strawberry.field(
         default=True,
-        description="Whether to use stacks. If this is `true`, only one record is "
-        "returned per stack. Records not in any stack are returned as well.\n\n"
-        "Note that when using this option, records in a stack that are not the "
+        description="Whether to use stacks. If this is `true`, only one asset is "
+        "returned per stack. Assets not in any stack are returned as well.\n\n"
+        "Note that when using this option, assets in a stack that are not the "
         "representative will directly be filtered out. That means that a stack might "
         "not appear at all if its representative is either not visible to the current "
         "user or filtered out by other options.",
@@ -75,40 +75,40 @@ class MainGalleryRecordFilter(GalleryRecordFilter):
 
 
 @api.remove_duplicate_node_interface
-@strawberry.interface(name="GalleryRecord")
-class GalleryRecordNode(RecordNode, api.DjangoNode, fields=["media_timestamp"]):
-    obj: strawberry.Private[GalleryRecord]
+@strawberry.interface(name="GalleryAsset")
+class GalleryAssetNode(AssetNode, api.DjangoNode, fields=["media_timestamp"]):
+    obj: strawberry.Private[GalleryAsset]
 
 
 @strawberry.type
-class GalleryRecordEdge(api.Edge[GalleryRecordNode]):
-    node: GalleryRecordNode
+class GalleryAssetEdge(api.Edge[GalleryAssetNode]):
+    node: GalleryAssetNode
 
 
-@strawberry.type(description="A connection to a list of gallery records.")
-class GalleryRecordConnection(
-    api.DjangoConnection[GalleryRecordNode, GalleryRecord],
-    name="gallery record",
-    pluralized_name="gallery records",
+@strawberry.type(description="A connection to a list of gallery assets.")
+class GalleryAssetConnection(
+    api.DjangoConnection[GalleryAssetNode, GalleryAsset],
+    name="gallery asset",
+    pluralized_name="gallery assets",
 ):
-    edges: list[Optional[GalleryRecordEdge]]
-    nodes: list[Optional[GalleryRecordNode]]
+    edges: list[Optional[GalleryAssetEdge]]
+    nodes: list[Optional[GalleryAssetNode]]
 
     @classmethod
-    def create_node(cls, obj: models.Model) -> GalleryRecordNode:
+    def create_node(cls, obj: models.Model) -> GalleryAssetNode:
         from ..models import Note
         from .notes import NoteNode
 
         if isinstance(obj, Note):
             return NoteNode(obj)
         else:
-            raise TypeError(f"unsupported gallery record type: {type(obj)}")
+            raise TypeError(f"unsupported gallery asset type: {type(obj)}")
 
 
 @strawberry.input
 class StackingMutationInput:
     ids: list[strawberry.ID] = strawberry.field(
-        description="Gallery record IDs to update. IDs for records that do not exist "
+        description="Gallery asset IDs to update. IDs for assets that do not exist "
         "will silently be dropped, invalid IDs will return a `NodeError`."
     )
 
@@ -125,7 +125,7 @@ StackingMutationResult = strawberry.union(
 
 @strawberry.type
 class SetStackRepresentativeSuccess:
-    representative: GalleryRecordNode = strawberry.field(
+    representative: GalleryAssetNode = strawberry.field(
         description="The new representative of the stack."
     )
 
@@ -137,16 +137,16 @@ SetStackRepresentativeResult = strawberry.union(
 
 @api.schema.mutation
 class Mutation:
-    @strawberry.field(description="Stack the given set of gallery records together.")
-    def stack_gallery_records(
+    @strawberry.field(description="Stack the given set of gallery assets together.")
+    def stack_gallery_assets(
         self, info: api.InfoType, input: StackingMutationInput
     ) -> StackingMutationResult:
-        primary_keys = GalleryRecordNode.extract_primary_keys_from_ids(info, input.ids)
+        primary_keys = GalleryAssetNode.extract_primary_keys_from_ids(info, input.ids)
         if isinstance(primary_keys, api.NodeError):
             return primary_keys
         stack_size = (
-            GalleryRecord.objects.for_user(
-                info.context.user, "gallery.change_galleryrecord"
+            GalleryAsset.objects.for_user(
+                info.context.user, "gallery.change_galleryasset"
             )
             .filter(pk__in=primary_keys)
             .stack()
@@ -154,17 +154,17 @@ class Mutation:
         return StackingMutationSuccess(stack_size=stack_size)
 
     @strawberry.field(
-        description="Clear the stack of each of the given gallery records."
+        description="Clear the stack of each of the given gallery assets."
     )
-    def unstack_gallery_records(
+    def unstack_gallery_assets(
         self, info: api.InfoType, input: StackingMutationInput
     ) -> StackingMutationResult:
-        primary_keys = GalleryRecordNode.extract_primary_keys_from_ids(info, input.ids)
+        primary_keys = GalleryAssetNode.extract_primary_keys_from_ids(info, input.ids)
         if isinstance(primary_keys, api.NodeError):
             return primary_keys
         stack_size = (
-            GalleryRecord.objects.for_user(
-                info.context.user, "gallery.change_galleryrecord"
+            GalleryAsset.objects.for_user(
+                info.context.user, "gallery.change_galleryasset"
             )
             .filter(pk__in=primary_keys)
             .unstack()
@@ -177,8 +177,8 @@ class Mutation:
     def set_stack_representative(
         self, info: api.InfoType, id: strawberry.ID
     ) -> SetStackRepresentativeResult:
-        node = api.resolve_node(info, id, "gallery.change_galleryrecord")
-        if not isinstance(node, GalleryRecordNode):
+        node = api.resolve_node(info, id, "gallery.change_galleryasset")
+        if not isinstance(node, GalleryAssetNode):
             return api.NodeError(requested_id=id)
         try:
             node.obj.represent_stack()

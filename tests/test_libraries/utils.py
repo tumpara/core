@@ -206,19 +206,19 @@ class LibraryActionsStateMachine(hypothesis.stateful.RuleBasedStateMachine):
 
     def assert_library_state(self, library: Library) -> None:
         """Helper method that asserts the state of a given library matches what is on
-        record."""
+        asset."""
         assert set(self.files.keys()) == set(self.file_timestamps.keys())
         file_queryset = File.objects.filter(
-            record__library=library, availability__isnull=False
+            asset__library=library, availability__isnull=False
         )
 
         assert file_queryset.count() == len(self.files)
         for content in self.files.values():
-            record = GenericHandler.objects.get(library=library, content=content)
+            asset = GenericHandler.objects.get(library=library, content=content)
             paths = {item[0] for item in self.files.items() if item[1] == content}
-            assert record.files.filter(availability__isnull=False).count() == len(paths)
+            assert asset.files.filter(availability__isnull=False).count() == len(paths)
             for path in paths:
-                file = record.files.get(availability__isnull=False, path=path)
+                file = asset.files.get(availability__isnull=False, path=path)
                 assert file.availability is not None
                 assert file.availability >= self.file_timestamps[path]
 

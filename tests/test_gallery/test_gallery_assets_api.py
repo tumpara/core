@@ -83,12 +83,12 @@ def notes(library: Library) -> list[Note]:
 
 
 @pytest.mark.django_db
-def test_listing_records(user: User, notes: list[Note]) -> None:
-    """Listing gallery records works as expected, with all types successfully
+def test_listing_assets(user: User, notes: list[Note]) -> None:
+    """Listing gallery assets works as expected, with all types successfully
     resolved."""
     query = """
         query {
-          galleryRecords(first: 10) {
+          galleryAssets(first: 10) {
             nodes {
               __typename
               ... on Note { content }
@@ -100,7 +100,7 @@ def test_listing_records(user: User, notes: list[Note]) -> None:
     result = api.execute_sync(query, None)
     assert result.errors is None
     assert result.data == {
-        "galleryRecords": {
+        "galleryAssets": {
             "nodes": [
                 {"__typename": "Note", "content": notes[1].content},
                 {"__typename": "Note", "content": notes[5].content},
@@ -112,10 +112,10 @@ def test_listing_records(user: User, notes: list[Note]) -> None:
     assert result.errors is None
     assert result.data is not None
     assert result.data == {
-        "galleryRecords": {
+        "galleryAssets": {
             "nodes": [
                 {"__typename": "Note", "content": note.content}
-                # Note that we expect gallery records to be ordered by their timestamp.
+                # Note that we expect gallery assets to be ordered by their timestamp.
                 # That means they are ordered chronologically, with the oldest entry
                 # first. This is so that the connection API with 'first', 'after', etc.
                 # makes more sense.
@@ -126,11 +126,11 @@ def test_listing_records(user: User, notes: list[Note]) -> None:
 
 
 @pytest.mark.django_db
-def test_record_pagination(user: User, notes: list[Note]) -> None:
-    """Paginating through records in both directions works as expected."""
+def test_asset_pagination(user: User, notes: list[Note]) -> None:
+    """Paginating through assets in both directions works as expected."""
     query = """
-        query GalleryRecordPagination($after: String, $before: String, $first: Int, $last: Int) {
-          galleryRecords(after: $after, before: $before, first: $first, last: $last) {
+        query GalleryAssetPagination($after: String, $before: String, $first: Int, $last: Int) {
+          galleryAssets(after: $after, before: $before, first: $first, last: $last) {
             pageInfo { hasNextPage hasPreviousPage startCursor endCursor }
             nodes {
               __typename
@@ -150,32 +150,32 @@ def test_record_pagination(user: User, notes: list[Note]) -> None:
     result = api.execute_sync(query, user, first=6)
     assert result.errors is None
     assert result.data is not None
-    assert result.data["galleryRecords"]["nodes"] == expected_nodes[:6]
-    cursor = result.data["galleryRecords"]["pageInfo"]["endCursor"]
+    assert result.data["galleryAssets"]["nodes"] == expected_nodes[:6]
+    cursor = result.data["galleryAssets"]["pageInfo"]["endCursor"]
     assert isinstance(cursor, str)
-    assert result.data["galleryRecords"]["pageInfo"]["hasNextPage"]
+    assert result.data["galleryAssets"]["pageInfo"]["hasNextPage"]
 
     result = api.execute_sync(query, user, first=6, after=cursor)
     assert result.errors is None
     assert result.data is not None
-    assert result.data["galleryRecords"]["nodes"] == expected_nodes[6:]
-    assert not result.data["galleryRecords"]["pageInfo"]["hasNextPage"]
+    assert result.data["galleryAssets"]["nodes"] == expected_nodes[6:]
+    assert not result.data["galleryAssets"]["pageInfo"]["hasNextPage"]
 
     # Backwards
 
     result = api.execute_sync(query, user, last=6)
     assert result.errors is None
     assert result.data is not None
-    assert result.data["galleryRecords"]["nodes"] == expected_nodes[-6:]
-    cursor = result.data["galleryRecords"]["pageInfo"]["startCursor"]
+    assert result.data["galleryAssets"]["nodes"] == expected_nodes[-6:]
+    cursor = result.data["galleryAssets"]["pageInfo"]["startCursor"]
     assert isinstance(cursor, str)
-    assert result.data["galleryRecords"]["pageInfo"]["hasPreviousPage"]
+    assert result.data["galleryAssets"]["pageInfo"]["hasPreviousPage"]
 
     result = api.execute_sync(query, user, last=6, before=cursor)
     assert result.errors is None
     assert result.data is not None
-    assert result.data["galleryRecords"]["nodes"] == expected_nodes[:-6]
-    assert not result.data["galleryRecords"]["pageInfo"]["hasPreviousPage"]
+    assert result.data["galleryAssets"]["nodes"] == expected_nodes[:-6]
+    assert not result.data["galleryAssets"]["pageInfo"]["hasPreviousPage"]
 
 
 @pytest.mark.django_db
@@ -183,28 +183,28 @@ def test_record_pagination(user: User, notes: list[Note]) -> None:
     "filter,result_subset",
     [
         (
-            # Find all records from 4. January.
+            # Find all assets from 4. January.
             {"mediaTimestamp": {"month": {"include": [1]}, "day": {"include": [4]}}},
             [0, 1, 3, 4, 5],
         ),
         (
-            # Find all records after 2022.
+            # Find all assets after 2022.
             {"mediaTimestamp": {"year": {"minimum": 2022}}},
             [2, 3, 4, 5, 6, 7, 8, 9],
         ),
         (
-            # Find all records after 2022, again.
+            # Find all assets after 2022, again.
             {"mediaTimestamp": {"after": "2022-01-01"}},
             [2, 3, 4, 5, 6, 7, 8, 9],
         ),
         (
-            # This should return all records with internal, member-only and unset
+            # This should return all assets with internal, member-only and unset
             # visibility settings, because the library's default value is member-only.
             {"visibility": {"public": False, "owners": False}},
             [0, 2, 3, 6, 7, 9],
         ),
         (
-            # This time, exclude visiblity settings inherited from the library.
+            # This time, exclude visibility settings inherited from the library.
             {
                 "visibility": {
                     "public": False,
@@ -215,7 +215,7 @@ def test_record_pagination(user: User, notes: list[Note]) -> None:
             [2, 3, 6, 7],
         ),
         (
-            # Public records from before 2022.
+            # Public assets from before 2022.
             {
                 "visibility": {
                     "internal": False,
@@ -230,8 +230,8 @@ def test_record_pagination(user: User, notes: list[Note]) -> None:
         ),
     ],
 )
-def test_record_filtering(
-    user: User, notes: list[Note], filter: dict, result_subset: list[int]
+def test_asset_filtering(
+    user: User, notes: list[Note], filter: dict[Any, Any], result_subset: list[int]
 ) -> None:
     expected_nodes = [
         {"__typename": "Note", "content": notes[index].content}
@@ -239,8 +239,8 @@ def test_record_filtering(
     ]
 
     result = api.execute_sync(
-        """query GetRecord($filter: GalleryRecordFilter!) {
-            galleryRecords(first: 10, filter: $filter) {
+        """query GetAsset($filter: GalleryAssetFilter!) {
+            galleryAssets(first: 10, filter: $filter) {
                 nodes {
                     __typename
                     ... on Note { content }
@@ -252,15 +252,15 @@ def test_record_filtering(
     )
     assert result.errors is None
     assert result.data is not None
-    assert result.data["galleryRecords"]["nodes"] == expected_nodes
+    assert result.data["galleryAssets"]["nodes"] == expected_nodes
 
 
 @pytest.mark.django_db
-def test_record_stacking(user: User, notes: list[Note]):
+def test_asset_stacking(user: User, notes: list[Note]) -> None:
     # Get all the node IDs from 2022. Stack them together later.
     result = api.execute_sync(
         """query {
-            galleryRecords(
+            galleryAssets(
                 first: 10,
                 filter: {mediaTimestamp: {year: {include: [2022]}}},
             ) {
@@ -271,11 +271,11 @@ def test_record_stacking(user: User, notes: list[Note]):
     )
     assert result.errors is None
     assert result.data is not None
-    node_ids = [node["id"] for node in result.data["galleryRecords"]["nodes"]]
+    node_ids = [node["id"] for node in result.data["galleryAssets"]["nodes"]]
 
     stack_mutation = """
-        mutation StackRecords($ids: [ID!]!) {
-            stackGalleryRecords(input: {ids: $ids}) {
+        mutation StackAssets($ids: [ID!]!) {
+            stackGalleryAssets(input: {ids: $ids}) {
                 __typename
                 ... on StackingMutationSuccess { stackSize }
             }
@@ -285,20 +285,20 @@ def test_record_stacking(user: User, notes: list[Note]):
     result = api.execute_sync(stack_mutation, None, ids=node_ids)
     assert result.errors is None
     assert result.data == {
-        "stackGalleryRecords": {"__typename": "StackingMutationSuccess", "stackSize": 0}
+        "stackGalleryAssets": {"__typename": "StackingMutationSuccess", "stackSize": 0}
     }
 
     other_user = User.objects.create_user("carl")
     result = api.execute_sync(stack_mutation, other_user, ids=node_ids)
     assert result.errors is None
     assert result.data == {
-        "stackGalleryRecords": {"__typename": "StackingMutationSuccess", "stackSize": 0}
+        "stackGalleryAssets": {"__typename": "StackingMutationSuccess", "stackSize": 0}
     }
 
     result = api.execute_sync(stack_mutation, user, ids=node_ids)
     assert result.errors is None
     assert result.data == {
-        "stackGalleryRecords": {"__typename": "StackingMutationSuccess", "stackSize": 7}
+        "stackGalleryAssets": {"__typename": "StackingMutationSuccess", "stackSize": 7}
     }
 
     result = api.execute_sync(
@@ -325,7 +325,7 @@ def test_record_stacking(user: User, notes: list[Note]):
 
     result = api.execute_sync(
         """query {
-            galleryRecords(first: 10) {
+            galleryAssets(first: 10) {
                 nodes {
                     ... on Note { content }
                 }
@@ -335,7 +335,7 @@ def test_record_stacking(user: User, notes: list[Note]):
     )
     assert result.errors is None
     assert result.data == {
-        "galleryRecords": {
+        "galleryAssets": {
             "nodes": [
                 {"content": "First note."},
                 {"content": "Second note."},
@@ -347,7 +347,7 @@ def test_record_stacking(user: User, notes: list[Note]):
 
     result = api.execute_sync(
         """query {
-            galleryRecords(first: 10, filter: {useStacks: false}) {
+            galleryAssets(first: 10, filter: {useStacks: false}) {
                 nodes {
                     ... on Note { content }
                 }
@@ -357,7 +357,7 @@ def test_record_stacking(user: User, notes: list[Note]):
     )
     assert result.errors is None
     assert result.data == {
-        "galleryRecords": {
+        "galleryAssets": {
             "nodes": [
                 {"content": "First note."},
                 {"content": "Second note."},
@@ -374,8 +374,8 @@ def test_record_stacking(user: User, notes: list[Note]):
     }
 
     unstack_mutation = """
-        mutation UnstackRecords($ids: [ID!]!) {
-            unstackGalleryRecords(input: {ids: $ids}) {
+        mutation UnstackAssets($ids: [ID!]!) {
+            unstackGalleryAssets(input: {ids: $ids}) {
                 __typename
                 ... on StackingMutationSuccess { stackSize }
             }
@@ -385,7 +385,7 @@ def test_record_stacking(user: User, notes: list[Note]):
     result = api.execute_sync(unstack_mutation, None, ids=node_ids)
     assert result.errors is None
     assert result.data == {
-        "unstackGalleryRecords": {
+        "unstackGalleryAssets": {
             "__typename": "StackingMutationSuccess",
             "stackSize": 0,
         }
@@ -394,7 +394,7 @@ def test_record_stacking(user: User, notes: list[Note]):
     result = api.execute_sync(unstack_mutation, other_user, ids=node_ids)
     assert result.errors is None
     assert result.data == {
-        "unstackGalleryRecords": {
+        "unstackGalleryAssets": {
             "__typename": "StackingMutationSuccess",
             "stackSize": 0,
         }
@@ -403,7 +403,7 @@ def test_record_stacking(user: User, notes: list[Note]):
     result = api.execute_sync(unstack_mutation, user, ids=node_ids)
     assert result.errors is None
     assert result.data == {
-        "unstackGalleryRecords": {
+        "unstackGalleryAssets": {
             "__typename": "StackingMutationSuccess",
             "stackSize": 7,
         }

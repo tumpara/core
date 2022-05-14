@@ -268,7 +268,7 @@ AUTHENTICATION_BACKENDS = [
     "tumpara.accounts.backends.UserViewingBackend",
     "tumpara.accounts.backends.JoinablesBackend",
     "tumpara.libraries.backends.LibraryCreatingBackend",
-    "tumpara.libraries.backends.LibraryRecordsBackend",
+    "tumpara.libraries.backends.LibraryAssetsBackend",
 ]
 AUTH_USER_MODEL = "accounts.user"
 

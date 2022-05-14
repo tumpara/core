@@ -5,37 +5,37 @@ from django.db import models
 
 from tumpara import api
 
-from ..models import GalleryRecord, GalleryRecordModel
-from .gallery_records import (
-    GalleryRecordConnection,
-    GalleryRecordFilter,
-    GalleryRecordNode,
-    gallery_record_filter_types,
+from ..models import GalleryAsset, GalleryAssetModel
+from .gallery_assets import (
+    GalleryAssetConnection,
+    GalleryAssetFilter,
+    GalleryAssetNode,
+    gallery_asset_filter_types,
 )
 
-CombinedGalleryRecordFilter = strawberry.input(
-    description="Filtering options when querying `GalleryRecord` objects."
-)(type("GalleryRecordFilter", tuple(gallery_record_filter_types), {}))
+CombinedGalleryAssetFilter = strawberry.input(
+    description="Filtering options when querying `GalleryAsset` objects."
+)(type("GalleryAssetFilter", tuple(gallery_asset_filter_types), {}))
 
 
 @api.schema.query
 class Query:
     @api.DjangoConnectionField(
-        GalleryRecordConnection,
-        filter_type=CombinedGalleryRecordFilter,
-        description="This connection contains all gallery records that are currently "
+        GalleryAssetConnection,
+        filter_type=CombinedGalleryAssetFilter,
+        description="This connection contains all gallery assets that are currently "
         "available.",
     )
-    def gallery_records(
+    def gallery_assets(
         self, info: api.InfoType, **kwargs: Any
-    ) -> models.QuerySet[GalleryRecord]:
-        queryset = GalleryRecordNode.get_queryset(info, "gallery.view_galleryrecord")
+    ) -> models.QuerySet[GalleryAsset]:
+        queryset = GalleryAssetNode.get_queryset(info, "gallery.view_galleryasset")
 
         filter = kwargs["filter"]
         # While the filter is technically optional in the GraphQL schema, the
         # DjangoConnectionField implementation ensures that there is always a filter
         # instance present when this resolver is called.
-        assert isinstance(filter, GalleryRecordFilter)
+        assert isinstance(filter, GalleryAssetFilter)
 
         instance_types = filter.get_instance_types()
         if len(instance_types) == 0:

@@ -5,29 +5,29 @@ import strawberry
 from django import forms
 
 from tumpara import api
-from tumpara.libraries.api import RecordVisibility
+from tumpara.libraries.api import AssetVisibility
 
-from ..models import GalleryRecordModel, Note
-from .gallery_records import (
-    GalleryRecordFilter,
-    GalleryRecordNode,
-    register_gallery_record_filter,
+from ..models import GalleryAssetModel, Note
+from .gallery_assets import (
+    GalleryAssetFilter,
+    GalleryAssetNode,
+    register_gallery_asset_filter,
 )
 
 
-@register_gallery_record_filter
-class NoteGalleryRecordFilter(GalleryRecordFilter):
+@register_gallery_asset_filter
+class NoteGalleryAssetFilter(GalleryAssetFilter):
     include_notes: bool = strawberry.field(
         default=True, description="Whether to include note results."
     )
 
-    def get_instance_types(self) -> Sequence[type[GalleryRecordModel]]:
+    def get_instance_types(self) -> Sequence[type[GalleryAssetModel]]:
         return [*super().get_instance_types(), Note]
 
 
 @api.remove_duplicate_node_interface
-@strawberry.type(name="Note", description="A user-created note record.")
-class NoteNode(GalleryRecordNode, api.DjangoNode, fields=["content"]):
+@strawberry.type(name="Note", description="A user-created note asset.")
+class NoteNode(GalleryAssetNode, api.DjangoNode, fields=["content"]):
     obj: strawberry.Private[Note]
 
 
@@ -41,14 +41,14 @@ class NoteForm(forms.ModelForm[Note]):
 class CreateNoteInput(
     api.CreateFormInput[NoteForm, NoteNode],
 ):
-    visibility: RecordVisibility
+    visibility: AssetVisibility
 
 
 @strawberry.input(description="Edit and existing note.")
 class UpdateNoteInput(
     api.UpdateFormInput[NoteForm, NoteNode],
 ):
-    visibility: Optional[RecordVisibility]
+    visibility: Optional[AssetVisibility]
 
 
 NoteMutationResult = strawberry.union(

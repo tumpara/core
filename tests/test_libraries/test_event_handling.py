@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from tumpara import testing
 from tumpara.libraries import scanner
-from tumpara.libraries.models import File, Library, Record
+from tumpara.libraries.models import Asset, File, Library
 from tumpara.testing import strategies as st
 
 from .models import GenericHandler
@@ -36,10 +36,10 @@ def test_basic_file_scanning(library: Library, monkeypatch: pytest.MonkeyPatch) 
     assert file.library == library
     assert file.path == "foo"
     assert file.availability is not None
-    record = file.record.resolve_instance()
-    assert isinstance(record, GenericHandler)
-    assert record.initialized
-    assert record.content == b"hello"
+    asset = file.asset.resolve_instance()
+    assert isinstance(asset, GenericHandler)
+    assert asset.initialized
+    assert asset.content == b"hello"
 
     with monkeypatch.context() as patch_context:
         patch_context.setattr(
@@ -54,9 +54,9 @@ def test_basic_file_scanning(library: Library, monkeypatch: pytest.MonkeyPatch) 
         scanner.FileModifiedEvent("foo").commit(library)
         assert File.objects.count() == 1
         file.refresh_from_db()
-        record = file.record.resolve_instance()
-        assert isinstance(record, GenericHandler)
-        assert record.content == b"bye"
+        asset = file.asset.resolve_instance()
+        assert isinstance(asset, GenericHandler)
+        assert asset.content == b"bye"
 
 
 @pytest.mark.django_db
@@ -92,36 +92,36 @@ def test_ignoring_directories(library: Library) -> None:
 
 @pytest.mark.django_db
 def test_file_copying(library: Library) -> None:
-    """A copied file (with the same content) is added to an existing record object."""
+    """A copied file (with the same content) is added to an existing asset object."""
     TestingStorage.set("foo", "content")
     TestingStorage.set("bar", "content")
     scanner.FileEvent("foo").commit(library)
     scanner.FileEvent("bar").commit(library)
-    first_record = Record.objects.get()
-    assert first_record.files.filter(availability__isnull=False).count() == 2
+    first_asset = Asset.objects.get()
+    assert first_asset.files.filter(availability__isnull=False).count() == 2
 
     # Now add a new file, which we later edit so that it has the same content. It should
-    # get its own record the first time and then be moved into the other record once
+    # get its own asset the first time and then be moved into the other asset once
     # it's edited.
     TestingStorage.set("baz", "content2")
     scanner.FileEvent("baz").commit(library)
-    second_record = Record.objects.exclude(pk=first_record.pk).get()
-    assert second_record.files.filter(availability__isnull=False).count() == 1
+    second_asset = Asset.objects.exclude(pk=first_asset.pk).get()
+    assert second_asset.files.filter(availability__isnull=False).count() == 1
 
     TestingStorage.set("baz", "content")
     scanner.FileEvent("baz").commit(library)
-    assert first_record.files.filter(availability__isnull=False).count() == 3
-    assert second_record.files.filter().count() == 1
-    assert not second_record.files.filter(availability__isnull=False).exists()
+    assert first_asset.files.filter(availability__isnull=False).count() == 3
+    assert second_asset.files.filter().count() == 1
+    assert not second_asset.files.filter(availability__isnull=False).exists()
 
     # When moving back to the old content, the former file object should be marked as
     # available again.
     TestingStorage.set("baz", "content2")
     scanner.FileEvent("baz").commit(library)
-    assert first_record.files.filter().count() == 3
-    assert first_record.files.filter(availability__isnull=False).count() == 2
-    assert second_record.files.filter().count() == 1
-    assert second_record.files.filter(availability__isnull=False).count() == 1
+    assert first_asset.files.filter().count() == 3
+    assert first_asset.files.filter(availability__isnull=False).count() == 2
+    assert second_asset.files.filter().count() == 1
+    assert second_asset.files.filter(availability__isnull=False).count() == 1
 
 
 @pytest.mark.django_db
@@ -137,16 +137,16 @@ def test_refinding_files(library: Library) -> None:
     scanner.FileEvent("foo").commit(library)
     scanner.FileEvent("bar").commit(library)
 
-    # Now we should have two files on record, and both should be unavailable.
+    # Now we should have two files on asset, and both should be unavailable.
     assert File.objects.count() == 2
     foo_file = File.objects.get(path="foo")
     assert not foo_file.available
     bar_file = File.objects.get(path="bar")
     assert not bar_file.available
     bar_digest = bar_file.digest
-    bar_record = bar_file.record.resolve_instance()
-    assert isinstance(bar_record, GenericHandler)
-    assert bar_record.content == b"bar"
+    bar_asset = bar_file.asset.resolve_instance()
+    assert isinstance(bar_asset, GenericHandler)
+    assert bar_asset.content == b"bar"
 
     # Move the first file's content to a different location and add it back in. Then the
     # existing file object should be used.
@@ -164,16 +164,16 @@ def test_refinding_files(library: Library) -> None:
     assert foo_file.path == "foo2"
 
     # Now add the second file back in, but with a new content. This should also lead to
-    # the existing record being reused.
+    # the existing asset being reused.
     TestingStorage.set("bar", "whooo")
     scanner.FileEvent("bar").commit(library)
     bar_file.refresh_from_db()
     bar_file = bar_file  # Trick MyPy again, see above
     assert bar_file.available
     assert bar_file.digest != bar_digest
-    bar_record = bar_file.record.resolve_instance()
-    assert isinstance(bar_record, GenericHandler)
-    assert bar_record.content == b"whooo"
+    bar_asset = bar_file.asset.resolve_instance()
+    assert isinstance(bar_asset, GenericHandler)
+    assert bar_asset.content == b"whooo"
 
 
 @pytest.mark.django_db
@@ -185,7 +185,7 @@ def test_moving_and_deleting_file(library: Library) -> None:
     TestingStorage.set("bar", "content")
     scanner.FileMovedEvent("foo", "bar").commit(library)
 
-    # Make sure we only have one file on record (that's why we use .get()) and that the
+    # Make sure we only have one file on asset (that's why we use .get()) and that the
     # path has been updated.
     file = File.objects.get()
     assert file.path == "bar"
@@ -211,7 +211,7 @@ def test_moving_and_deleting_directory(library: Library) -> None:
         TestingStorage.set(f"bar/{name}", "content")
     scanner.DirectoryMovedEvent("foo", "bar").commit(library)
 
-    # Make sure the file records have been reused and their paths are updated.
+    # Make sure the file assets have been reused and their paths are updated.
     files = list(File.objects.order_by("path"))
     assert len(files) == 4
     for name, file in enumerate(files):
@@ -257,9 +257,9 @@ def test_transparent_new_files(library: Library) -> None:
     scanner.FileModifiedEvent("foo").commit(library)
     scanner.FileMovedEvent("something", "bar").commit(library)
 
-    record = Record.objects.get()
+    asset = Asset.objects.get()
     assert list(
-        record.files.order_by("path")
+        asset.files.order_by("path")
         .filter(availability__isnull=False)
         .values_list("path")
     ) == [("bar",), ("foo",)]

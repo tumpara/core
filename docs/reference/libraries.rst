@@ -9,7 +9,7 @@ Data Model
 .. autoclass:: tumpara.libraries.models.Library
   :members:
 
-.. autoclass:: tumpara.libraries.models.Record
+.. autoclass:: tumpara.libraries.models.Asset
   :members:
 
 .. autoclass:: tumpara.libraries.models.File

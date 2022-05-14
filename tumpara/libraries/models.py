@@ -24,7 +24,7 @@ _logger = logging.getLogger(__name__)
 
 
 class Visibility:
-    """Visibility settings shared by libraries and library records."""
+    """Visibility settings shared by libraries and library assets."""
 
     PUBLIC = 0
     INTERNAL = 1
@@ -63,7 +63,7 @@ LibraryManager = models.Manager.from_queryset(LibraryQuerySet)
 class Library(Joinable):
     """A Library is a data source that supports scanning for files.
 
-    Libraries hold content in form of :class:`Record` objects.
+    Libraries hold content in form of :class:`Asset` objects.
     """
 
     source = models.CharField(
@@ -86,7 +86,7 @@ class Library(Joinable):
         choices=Visibility.VISIBILTY_CHOICES,
         default=Visibility.MEMBERS,
         validators=[validate_library_default_visibility],
-        help_text=_("Default visibility value for records where it is not defined."),
+        help_text=_("Default visibility value for assets where it is not defined."),
     )
 
     objects = LibraryManager()
@@ -149,7 +149,7 @@ class Library(Joinable):
     def scan(self, watch: bool = False, *, thread_count: Optional[int] = None) -> Any:
         """Perform a full scan of file in this library.
 
-        This will make sure that all :class:`File` objects linked to a :class:`Record`
+        This will make sure that all :class:`File` objects linked to an :class:`Asset`
         of this library are up-to-date. However, that does not mean that all files in
         the database are actually readable - implementors are advised to check whether
         the :attr:`File.availability` attribute is `None` and act accordingly.
@@ -210,17 +210,17 @@ class Library(Joinable):
         scanner.run(self, watch_events(), thread_count=thread_count)
 
 
-_Record = TypeVar("_Record", bound="Record")
+_Asset = TypeVar("_Asset", bound="Asset")
 
 
-class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
+class AssetQuerySet(Generic[_Asset], models.QuerySet[_Asset]):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._resolve_instances = False
 
     # The following three methods are the replacements for __getitem__(), __iter__() and
     # get(). Instead of directly returning the models they were asked for, we call
-    # resolve_instance() on the record so that we get the actual subclass. Enable this
+    # resolve_instance() on the asset so that we get the actual subclass. Enable this
     # behaviour by using resolve_instances() on the queryset.
     # However, we can't directly override them, because then MyPy throws a fit. It seems
     # to have something to do with the Django plugin meddling with the method types on
@@ -229,16 +229,16 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
     # new methods that do what we want them to do and patch them it later:
 
     @overload
-    def _getitem(self, item: int) -> _Record:
+    def _getitem(self, item: int) -> _Asset:
         ...
 
     @overload
-    def _getitem(self, item: slice) -> RecordQuerySet[_Record] | list[_Record]:
+    def _getitem(self, item: slice) -> AssetQuerySet[_Asset] | list[_Asset]:
         ...
 
     def _getitem(
         self, item: int | slice
-    ) -> _Record | RecordQuerySet[_Record] | list[_Record]:
+    ) -> _Asset | AssetQuerySet[_Asset] | list[_Asset]:
         result = super().__getitem__(item)
         if not self._resolve_instances:
             return result
@@ -246,38 +246,38 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
         assert self._iterable_class is ModelIterable  # type: ignore
 
         if isinstance(result, models.Model):
-            assert isinstance(result, Record)
-            return cast(_Record, result.resolve_instance())
+            assert isinstance(result, Asset)
+            return cast(_Asset, result.resolve_instance())
         elif isinstance(result, list):
-            assert all(isinstance(obj, Record) for obj in result)  # type: ignore
-            return cast(list[_Record], [obj.resolve_instance() for obj in result])
+            assert all(isinstance(obj, Asset) for obj in result)  # type: ignore
+            return cast(list[_Asset], [obj.resolve_instance() for obj in result])
         else:
-            return cast(RecordQuerySet[_Record], result)
+            return cast(AssetQuerySet[_Asset], result)
 
-    def _iter(self) -> Iterator[_Record]:
+    def _iter(self) -> Iterator[_Asset]:
         if not self._resolve_instances:
             yield from super().__iter__()
             return
         assert self._iterable_class is ModelIterable  # type: ignore
         for item in super().__iter__():
-            assert isinstance(item, Record)
-            yield cast(_Record, item.resolve_instance())
+            assert isinstance(item, Asset)
+            yield cast(_Asset, item.resolve_instance())
 
-    def _get(self, *args: Any, **kwargs: Any) -> _Record:
+    def _get(self, *args: Any, **kwargs: Any) -> _Asset:
         result = super().get(*args, **kwargs)
         if not self._resolve_instances:
             return result
         assert self._iterable_class is ModelIterable  # type: ignore
-        assert isinstance(result, Record)
-        return cast(_Record, result.resolve_instance())
+        assert isinstance(result, Asset)
+        return cast(_Asset, result.resolve_instance())
 
-    def _clone(self) -> RecordQuerySet[_Record]:
-        clone = cast(RecordQuerySet[_Record], super()._clone())  # type: ignore
+    def _clone(self) -> AssetQuerySet[_Asset]:
+        clone = cast(AssetQuerySet[_Asset], super()._clone())  # type: ignore
         clone._resolve_instances = self._resolve_instances
         return clone
 
     # This is only so that we get a type annotation:
-    def _chain(self) -> RecordQuerySet[_Record]:
+    def _chain(self) -> AssetQuerySet[_Asset]:
         return super()._chain()  # type: ignore
 
     def _not_support_grouping(self, operation_name: str) -> None:
@@ -288,7 +288,7 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
                 f"filter and don't perform grouping"
             )
 
-    def with_effective_visibility(self) -> RecordQuerySet[_Record]:
+    def with_effective_visibility(self) -> AssetQuerySet[_Asset]:
         return self.alias(
             effective_visibility=models.Case(
                 models.When(
@@ -300,12 +300,12 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
         )
 
     def resolve_instances(
-        self, *prefetch_types: type[RecordModel]
-    ) -> RecordQuerySet[_Record]:
-        """Return a queryset that returns concrete record subclasses instead of the
-        generic :class:`Record` supertype.
+        self, *prefetch_types: type[AssetModel]
+    ) -> AssetQuerySet[_Asset]:
+        """Return a queryset that returns concrete asset subclasses instead of the
+        generic :class:`Asset` supertype.
 
-        Pass subclasses of :class:`RecordModel` to automatically prefetch the
+        Pass subclasses of :class:`AssetModel` to automatically prefetch the
         corresponding tables, reducing the total number of database queries.
         """
         if (
@@ -313,7 +313,7 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
             or self._iterable_class is not ModelIterable  # type: ignore
         ):
             raise NotSupportedError(
-                "Calling RecordQuerySet.resolve_instances() is not supported after "
+                "Calling AssetQuerySet.resolve_instances() is not supported after "
                 ".values() or .values_list()."
             )
         self._not_support_grouping("resolve_instances")
@@ -321,10 +321,10 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
         if prefetch_types:
             related_names = list[str]()
             for prefetch_type in prefetch_types:
-                if not issubclass(prefetch_type, RecordModel):
+                if not issubclass(prefetch_type, AssetModel):
                     raise TypeError(
-                        f"automatic record prefetching requires types to be "
-                        f"subclasses of RecordModel, got {prefetch_type}"
+                        f"automatic asset prefetching requires types to be "
+                        f"subclasses of AssetModel, got {prefetch_type}"
                     )
                 related_names.append(f"{prefetch_type._meta.model_name}_instance")
             clone = self.select_related(*related_names)
@@ -337,19 +337,19 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
         self,
         user: User | AnonymousUser,
         permission: str,
-    ) -> RecordQuerySet[_Record]:
+    ) -> AssetQuerySet[_Asset]:
         """Narrow down the queryset to only return elements where the given user has
         a specific permission."""
 
         if permission in (
-            build_permission_name(Record, "change"),
-            build_permission_name(Record, "delete"),
+            build_permission_name(Asset, "change"),
+            build_permission_name(Asset, "delete"),
             build_permission_name(self.model, "change"),
             build_permission_name(self.model, "delete"),
         ):
             writing = True
         elif permission in (
-            build_permission_name(Record, "view"),
+            build_permission_name(Asset, "view"),
             build_permission_name(self.model, "view"),
         ):
             writing = False
@@ -382,22 +382,22 @@ class RecordQuerySet(Generic[_Record], models.QuerySet[_Record]):
 
 # Patch the methods related to getting instance methods with the new counterparts (see
 # the comment above for details).
-RecordQuerySet.__getitem__ = RecordQuerySet._getitem  # type: ignore
-RecordQuerySet.__iter__ = RecordQuerySet._iter  # type: ignore
-RecordQuerySet.get = RecordQuerySet._get  # type: ignore
+AssetQuerySet.__getitem__ = AssetQuerySet._getitem  # type: ignore
+AssetQuerySet.__iter__ = AssetQuerySet._iter  # type: ignore
+AssetQuerySet.get = AssetQuerySet._get  # type: ignore
 
-RecordManager = models.Manager.from_queryset(RecordQuerySet)
+AssetManager = models.Manager.from_queryset(AssetQuerySet)
 
 
-class Record(models.Model):
+class Asset(models.Model):
     """A piece of content in a library.
 
     This model's purpose is mainly to facilitate listing of all content in a library and
-    provide a generalized permission model with visibility settings. Records that hold
-    actual content should be implemented by subclassing :class:`RecordModel`.
+    provide a generalized permission model with visibility settings. Assets that hold
+    actual content should be implemented by subclassing :class:`AssetModel`.
 
-    Records may be linked to any number of :class:`File` objects. Although not strictly
-    required (there may be library records that don't depend on a file), most will have
+    Assets may be linked to any number of :class:`File` objects. Although not strictly
+    required (there may be library assets that don't depend on a file), most will have
     at least one file.
     """
 
@@ -408,8 +408,8 @@ class Record(models.Model):
     library = models.ForeignKey(
         Library,
         on_delete=models.CASCADE,
-        related_name="records",
-        related_query_name="record",
+        related_name="assets",
+        related_query_name="asset",
         verbose_name=_("library"),
         help_text=_(
             "Library the object is attached to. Users will have access depending on "
@@ -427,14 +427,14 @@ class Record(models.Model):
     import_timestamp = models.DateTimeField(
         _("add timestamp"),
         auto_now_add=True,
-        help_text=_("Timestamp when the record was created / imported."),
+        help_text=_("Timestamp when the asset was created / imported."),
     )
 
-    objects = RecordManager()
+    objects = AssetManager()
 
     class Meta:
-        verbose_name = _("record")
-        verbose_name_plural = _("records")
+        verbose_name = _("asset")
+        verbose_name_plural = _("assets")
         indexes = [
             models.Index(
                 fields=("id", "visibility", "library"),
@@ -442,18 +442,18 @@ class Record(models.Model):
             )
         ]
 
-    def resolve_instance(self, *, recursive: bool = True) -> Record:
-        """Resolve the actual instance of this record.
+    def resolve_instance(self, *, recursive: bool = True) -> Asset:
+        """Resolve the actual instance of this asset.
 
         This will go through all known subclasses and see which type implements the
-        record. Performance-wise this is very much suboptimal, as a lot of database
+        asset. Performance-wise this is very much suboptimal, as a lot of database
         queries are required. It is recommended to call this on models coming from a
         queryset where :meth:`models.QuerySet.select_related` was used to prefetch
-        data for the concrete :class:`Record` implementations.
+        data for the concrete :class:`Asset` implementations.
 
-        Further note that this assumes that subclasses add a related descriptor on this
+        Further, note that this assumes that subclasses add a related descriptor on this
         parent class named something like ``photo_instance``. This is done automatically
-        by subclassing :class:`RecordModel` instead of :class:`Record` directly.
+        by subclassing :class:`AssetModel` instead of :class:`Asset` directly.
 
         :param recursive: By default, instances are resolved recursively. Set this to
             ``False`` to only resolve the first child.
@@ -468,7 +468,7 @@ class Record(models.Model):
                 # OneToOneField from a subclass with parent_link set.
                 continue
             try:
-                subtype = cast(Record, getattr(self, field.name))
+                subtype = cast(Asset, getattr(self, field.name))
                 return subtype.resolve_instance() if recursive else subtype
             except field.related_model.DoesNotExist:
                 pass
@@ -477,15 +477,15 @@ class Record(models.Model):
         return self
 
 
-class RecordModel(Record):
-    record = models.OneToOneField(
-        Record,
+class AssetModel(Asset):
+    asset = models.OneToOneField(
+        Asset,
         on_delete=models.CASCADE,
         primary_key=True,
         parent_link=True,
         related_name="%(class)s_instance",
         related_query_name="%(class)s_instance",
-        verbose_name=_("record reference"),
+        verbose_name=_("asset reference"),
     )
 
     class Meta:
@@ -493,16 +493,16 @@ class RecordModel(Record):
 
 
 class File(models.Model):
-    """A file linked to a :class:`Record`."""
+    """A file linked to an :class:`Asset`."""
 
-    record = models.ForeignKey(
-        Record,
+    asset = models.ForeignKey(
+        Asset,
         on_delete=models.CASCADE,
         db_index=True,
         related_name="files",
         related_query_name="file",
-        verbose_name=_("library record"),
-        help_text=_("The library record this file is attached to."),
+        verbose_name=_("library asset"),
+        help_text=_("The library asset this file is attached to."),
     )
 
     path = models.CharField(
@@ -535,20 +535,20 @@ class File(models.Model):
             # Ideally, these would be unique per library, but Django doesn't currently
             # support constraints spanning relationships. Further, we only care about
             # unique paths. A digest may very well be present for multiple files in a
-            # record, since we want copied files to both be attached to the same record.
+            # asset, since we want copied files to both be attached to the same asset.
             models.UniqueConstraint(
-                fields=["record", "path"],
+                fields=["asset", "path"],
                 condition=models.Q(availability__isnull=False),
-                name="path_unique_per_record",
+                name="path_unique_per_asset",
             ),
         ]
 
     def __str__(self) -> str:
-        return f"{self.path} in {self.record.library}"
+        return f"{self.path} in {self.asset.library}"
 
     @property
     def library(self) -> Library:
-        return self.record.library
+        return self.asset.library
 
     @property
     def available(self) -> bool:
@@ -564,4 +564,4 @@ class File(models.Model):
 
         :param mode: The file open mode – currently only reading is supported.
         """
-        return self.record.library.storage.open(self.path, mode)
+        return self.asset.library.storage.open(self.path, mode)

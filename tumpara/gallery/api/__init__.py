@@ -1,8 +1,8 @@
-from .gallery_records import (
-    GalleryRecordConnection,
-    GalleryRecordEdge,
-    GalleryRecordFilter,
-    GalleryRecordNode,
-    register_gallery_record_filter,
+from .gallery_assets import (
+    GalleryAssetConnection,
+    GalleryAssetEdge,
+    GalleryAssetFilter,
+    GalleryAssetNode,
+    register_gallery_asset_filter,
 )
 from .notes import NoteNode

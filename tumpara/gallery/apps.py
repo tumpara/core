@@ -12,5 +12,5 @@ class GalleryConfig(django.apps.AppConfig):
         from . import api as gallery_api  # noqa: F401
 
         @api.schema.before_finalizing
-        def load_record_list_query() -> None:
-            from .api import gallery_record_list  # noqa: F401
+        def load_gallery_asset_list_query() -> None:
+            from .api import gallery_asset_list  # noqa: F401
