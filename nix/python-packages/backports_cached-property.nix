@@ -1,18 +1,18 @@
 { buildPythonPackage, fetchPypi, setuptools-scm }:
 
 buildPythonPackage rec {
-  pname = "backports_cached-property";
-  version = "1.0.1";
+	pname = "backports_cached-property";
+	version = "1.0.1";
 
 	# https://pypi.org/project/backports.cached-property/
-  src = fetchPypi {
-    pname = "backports.cached-property";
-    inherit version;
-    sha256 = "Gl7x51D4vH0CBMgHqujg9FDGVb4M9LMEB6Nf1LsnGGw=";
-  };
+	src = fetchPypi {
+		pname = "backports.cached-property";
+		inherit version;
+		sha256 = "Gl7x51D4vH0CBMgHqujg9FDGVb4M9LMEB6Nf1LsnGGw=";
+	};
 
-  nativeBuildInputs = [ setuptools-scm ];
+	nativeBuildInputs = [ setuptools-scm ];
 
-  doCheck = false;
-  pythonImportsCheck = [ "backports.cached_property" ];
+	doCheck = false;
+	pythonImportsCheck = [ "backports.cached_property" ];
 }
