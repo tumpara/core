@@ -47,18 +47,13 @@
             # yet ported in the official nixpkgs repo:
 
             backports_cached-property = self.callPackage ./nix/python-packages/backports_cached-property.nix {};
-            blurhash = self.callPackage ./nix/python-packages/blurhash.nix {};
             django-stubs = self.callPackage ./nix/python-packages/django-stubs.nix {};
             django-stubs-ext = self.callPackage ./nix/python-packages/django-stubs-ext.nix {};
-            inotifyrecursive = self.callPackage ./nix/python-packages/inotifyrecursive.nix {};
             pygments-graphql = self.callPackage ./nix/python-packages/pygments-graphql.nix {};
-            pytest-mypy-plugins = self.callPackage ./nix/python-packages/pytest-mypy-plugins.nix {};
             rawpy = self.callPackage ./nix/python-packages/rawpy.nix {};
             singledispatch = self.callPackage ./nix/python-packages/singledispatch.nix {};
             strawberry-graphql = self.callPackage ./nix/python-packages/strawberry-graphql.nix {};
-            types-freezegun = self.callPackage ./nix/python-packages/types-freezegun.nix {};
             types-pillow = self.callPackage ./nix/python-packages/types-pillow.nix {};
-            types-python-dateutil = self.callPackage ./nix/python-packages/types-python-dateutil.nix {};
             types-PyYAML = self.callPackage ./nix/python-packages/types-pyyaml.nix {};
             types-selenium = self.callPackage ./nix/python-packages/types-selenium.nix {};
             types-six = self.callPackage ./nix/python-packages/types-six.nix {};
@@ -93,7 +88,7 @@
           selenium
           types-freezegun
           types-pillow
-          types-python-dateutil
+          types-dateutil
           types-setuptools
           types-six
           types-toml

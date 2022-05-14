@@ -12,6 +12,7 @@ buildPythonPackage rec {
   pname = "rawpy";
   version = "0.17.1";
 
+	# https://pypi.org/project/rawpy/
   src = fetchFromGitHub {
     owner = "letmaik";
     repo = "rawpy";
