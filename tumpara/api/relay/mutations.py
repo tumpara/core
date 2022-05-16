@@ -340,11 +340,14 @@ class UpdateFormInput(
         ):
             return NodeError(requested_id=self.id)
 
+        form_keys = set(self._get_form_type().base_fields.keys())
+
         return super()._create_form(
             info,
             {
                 key: getattr(node.obj, key) if value is None else value
                 for key, value in data.items()
+                if key in form_keys
             },
             instance=node.obj,
             **kwargs,

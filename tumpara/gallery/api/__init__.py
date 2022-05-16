@@ -1,3 +1,4 @@
+from .albums import AlbumNode
 from .gallery_assets import (
     GalleryAssetConnection,
     GalleryAssetEdge,

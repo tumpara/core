@@ -9,7 +9,7 @@ from django.db import NotSupportedError, transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from tumpara.accounts.models import AnonymousUser, User
+from tumpara.accounts.models import AnonymousUser, Joinable, JoinableQuerySet, User
 from tumpara.libraries.models import AssetManager, AssetModel, AssetQuerySet, File
 
 _GalleryAsset = TypeVar("_GalleryAsset", bound="GalleryAsset")
@@ -282,6 +282,54 @@ class GalleryAssetModel(GalleryAsset):
         abstract = True
 
 
+class AlbumQuerySet(JoinableQuerySet["Album"]):
+    pass
+
+
+AlbumManager = models.Manager.from_queryset(AlbumQuerySet)
+
+
+class Album(Joinable):
+    """An album is a user-created collection of gallery assets."""
+
+    title = models.CharField(
+        _("title"),
+        max_length=250,
+        help_text=_("Title of the album."),
+    )
+
+    assets = models.ManyToManyField(
+        GalleryAsset,
+        through="AlbumItem",
+        related_name="albums",
+        related_query_name="album",
+    )
+
+    objects = AlbumManager()
+
+    class Meta:
+        verbose_name = _("gallery asset")
+        verbose_name_plural = _("gallery assets")
+        ordering = ("title",)
+
+
+class AlbumItem(models.Model):
+    """The reference of an asset inside an album."""
+
+    album = models.ForeignKey(
+        Album,
+        on_delete=models.CASCADE,
+        verbose_name=_("album"),
+        help_text=_("The album the asset is placed in."),
+    )
+    asset = models.ForeignKey(
+        GalleryAsset,
+        on_delete=models.CASCADE,
+        verbose_name=_("asset"),
+        help_text=_("The gallery asset to place in the album."),
+    )
+
+
 class Note(GalleryAssetModel):
     """A note is the simplest asset type available in the gallery.
 
@@ -297,3 +345,7 @@ class Note(GalleryAssetModel):
     )
 
     objects: AssetManager[Note]
+
+    class Meta:
+        verbose_name = _("note")
+        verbose_name_plural = _("notes")

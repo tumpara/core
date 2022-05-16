@@ -267,6 +267,7 @@ AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
     "tumpara.accounts.backends.UserViewingBackend",
     "tumpara.accounts.backends.JoinablesBackend",
+    "tumpara.gallery.backends.AlbumCreatingBackend",
     "tumpara.libraries.backends.LibraryCreatingBackend",
     "tumpara.libraries.backends.LibraryAssetsBackend",
 ]
