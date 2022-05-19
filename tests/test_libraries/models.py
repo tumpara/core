@@ -58,7 +58,7 @@ class GenericHandler(AssetModel):
         **kwargs: Any,
     ) -> None:
         if sender is not GenericHandler or not isinstance(asset, GenericHandler):
-            pass
+            return
 
         for file in asset.files.filter(availability__isnull=False).order_by("-pk"):
             try:
