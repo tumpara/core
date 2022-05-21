@@ -21,7 +21,7 @@ class AlbumFilter:
         query = models.Q()
 
         if self.title is not None:
-            query &= self.username.build_query(info, f"{prefix}title")
+            query &= self.title.build_query(info, f"{prefix}title")
 
         return query
 
@@ -118,17 +118,21 @@ class Mutation:
 
         add_asset_nodes = list[GalleryAssetNode]()
         for asset_node_id in input.add_asset_ids or []:
-            asset = api.resolve_node(info, asset_node_id, "gallery.view_galleryasset")
-            if asset is None:
+            asset_node = api.resolve_node(
+                info, asset_node_id, "gallery.view_galleryasset"
+            )
+            if not isinstance(asset_node, GalleryAssetNode):
                 return api.NodeError(requested_id=asset_node_id)
-            add_asset_nodes.append(asset)
+            add_asset_nodes.append(asset_node)
 
         remove_asset_nodes = list[GalleryAssetNode]()
         for asset_node_id in input.remove_asset_ids or []:
-            asset = api.resolve_node(info, asset_node_id, "gallery.view_galleryasset")
-            if asset is None:
+            asset_node = api.resolve_node(
+                info, asset_node_id, "gallery.view_galleryasset"
+            )
+            if not isinstance(asset_node, GalleryAssetNode):
                 return api.NodeError(requested_id=asset_node_id)
-            remove_asset_nodes.append(asset)
+            remove_asset_nodes.append(asset_node)
 
         album = album_node.obj
         album.assets.add(*[node.obj for node in add_asset_nodes])

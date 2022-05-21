@@ -111,6 +111,7 @@ def test_album_creating() -> None:
 def test_album_updating(user: User, notes: Note) -> None:
     result = api.execute_sync(mutation, user, "CreateAlbum", input={"title": "Hello"})
     assert result.errors is None
+    assert result.data is not None
     album_id = result.data["createAlbum"]["id"]
     album = Album.objects.get()
 
