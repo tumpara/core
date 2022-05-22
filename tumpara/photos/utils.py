@@ -46,7 +46,7 @@ METADATA_DIGEST_FIELDS: list[
 ]
 
 
-def load_image(library: Library, path: str) -> PIL.Image:
+def load_image(library: Library, path: str) -> PIL.Image.Image:
     """Open an image file with Pillow."""
     image = PIL.Image.open(library.storage.open(path, "rb"))
     return PIL.ImageOps.exif_transpose(image)
