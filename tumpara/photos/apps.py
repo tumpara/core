@@ -9,6 +9,7 @@ class PhotosConfig(django.apps.AppConfig):
     verbose_name = _("photos")
 
     def ready(self) -> None:
+        from . import api  # noqa: F401
         from .models import Photo
 
         new_file.connect(Photo.handle_new_file, sender="gallery")

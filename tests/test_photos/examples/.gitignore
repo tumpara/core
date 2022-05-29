@@ -1,0 +1,12 @@
+# Images
+*.JPG
+*.jpg
+
+# RAWs
+*.CR2
+*.arw
+*.cr2
+*.dng
+*.nef
+*.orf
+*.raf

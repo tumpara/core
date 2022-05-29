@@ -2,6 +2,7 @@ import hashlib
 import itertools
 import math
 import os.path
+import unicodedata
 from typing import Literal, Optional, TypeVar
 
 import blurhash
@@ -75,7 +76,7 @@ def extract_metadata_value(
             value = metadata[key].value
             value = cast(value)  # type: ignore
             if isinstance(value, str):
-                value = value.strip()
+                value = unicodedata.normalize("NFC", value.strip())
             return value  # type: ignore
         except:
             continue

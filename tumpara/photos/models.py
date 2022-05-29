@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os.path
+from fractions import Fraction
 from typing import Any, Optional, cast
 
 import PIL
@@ -43,40 +45,36 @@ class Photo(GalleryAssetModel):
         "multiple variations of the same photo to a single asset.",
     )
 
-    width = models.PositiveIntegerField(_("width"))
-    height = models.PositiveIntegerField(_("height"))
+    width = models.PositiveIntegerField(_("width"), null=True)
+    height = models.PositiveIntegerField(_("height"), null=True)
 
-    camera_make = models.CharField(_("camera maker"), max_length=50, blank=True)
-    camera_model = models.CharField(_("camera model"), max_length=50, blank=True)
-
-    iso_value = models.PositiveIntegerField(_("ISO sensitivity value"), null=True)
-    exposure_time = models.DecimalField(
-        _("exposure time"),
-        null=True,
-        max_digits=8,
-        decimal_places=4,
-        validators=(
-            validators.MinValueValidator(0.0001),
-            validators.MaxValueValidator(9999),
-        ),
-        help_text=_("The shot's exposure time, in seconds."),
-    )
     aperture_size = models.DecimalField(
         _("aperture size"),
         null=True,
         max_digits=3,
         decimal_places=1,
-        validators=(validators.MinValueValidator(1), validators.MaxValueValidator(100)),
+        validators=[validators.MinValueValidator(1), validators.MaxValueValidator(100)],
         help_text=_(
             "Aperture / F-Stop value of the shot, in inverse. A value of 4 in this "
             "field implies an f-value of f/4."
         ),
     )
+    exposure_time = models.FloatField(
+        _("exposure time"),
+        null=True,
+        validators=[validators.MinValueValidator(0.0001)],
+        help_text=_("The shot's exposure time, in seconds."),
+    )
     focal_length = models.FloatField(
         _("focal length"),
         null=True,
+        validators=[validators.MinValueValidator(0.0001)],
         help_text=_("Focal length of the camera, in millimeters."),
     )
+    iso_value = models.PositiveIntegerField(_("ISO sensitivity value"), null=True)
+
+    camera_make = models.CharField(_("camera maker"), max_length=50, blank=True)
+    camera_model = models.CharField(_("camera model"), max_length=50, blank=True)
 
     blurhash = models.CharField(
         "blurhash",
@@ -93,7 +91,13 @@ class Photo(GalleryAssetModel):
         verbose_name = _("photo")
         verbose_name_plural = _("photos")
 
-    # TODO getters: aspect_ratio, camear_name, exposure_time_fraction, megapixels
+    @property
+    def exposure_time_fraction(self) -> Optional[Fraction]:
+        """Exposure time of the shot, in sections."""
+        try:
+            return Fraction(self.exposure_time).limit_denominator(10000)
+        except TypeError:
+            return None
 
     def scan_metadata(self, commit: bool = True) -> None:
         """Update the metadata for this photo object.
@@ -140,12 +144,31 @@ class Photo(GalleryAssetModel):
             or extract_timestamp_from_filename(first_path)
             or timezone.now()
         )
+
+        self.width = image.width
+        self.height = image.height
+
         self.camera_make = (
             extract_metadata_value(metadata, str, "Exif.Image.Make") or ""
         )
         self.camera_model = (
             extract_metadata_value(metadata, str, "Exif.Image.Model") or ""
         )
+        # Some camera vendors put their name in the model field as well, which is a bit
+        # redundant. We would like to be able to concatenate the make and model fields
+        # and get a string that nicely describes the camera, so we remove any redundancy
+        # here. Otherwise, we might get things like this when putting the make and model
+        # together:
+        # - "NIKON CORPORATION NIKON D90"
+        # - "Canon Canon EOS 5D Mark III"
+        # By removing the common prefix from the model field, the two examples above
+        # become "NIKON CORPORATION D90" and "Canon EOS 5D Mark III" when put together.
+        camera_prefix = os.path.commonprefix(
+            [self.camera_make.lower(), self.camera_model.lower()]
+        )
+        if camera_prefix:
+            self.camera_model = self.camera_model[len(camera_prefix) :].strip()
+
         self.iso_value = extract_metadata_value(
             metadata, int, "Exif.Photo.ISOSpeedRatings"
         )
@@ -158,6 +181,7 @@ class Photo(GalleryAssetModel):
         self.focal_length = extract_metadata_value(
             metadata, float, "Exif.Photo.FocalLength"
         )
+
         # TODO Extract GPS information.
         self.media_location = None
 
