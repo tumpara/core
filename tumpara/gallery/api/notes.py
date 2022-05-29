@@ -3,6 +3,7 @@ from typing import Optional
 
 import strawberry
 from django import forms
+from django.db import models
 
 from tumpara import api
 from tumpara.libraries.api import AssetVisibility
@@ -20,6 +21,17 @@ class NoteGalleryAssetFilter(GalleryAssetFilter):
     include_notes: bool = strawberry.field(
         default=True, description="Whether to include note results."
     )
+
+    def build_query(
+        self, info: api.InfoType, field_name: Optional[str]
+    ) -> tuple[models.Q, dict[str, models.Expression | models.F]]:
+        prefix = field_name + "__" if field_name else ""
+        query, aliases = super().build_query(info, field_name)
+
+        if not self.include_notes:
+            query &= models.Q((f"{prefix}note_instance__isnull", True))
+
+        return query, aliases
 
     def get_instance_types(self) -> Sequence[type[GalleryAssetModel]]:
         return [*super().get_instance_types(), Note]

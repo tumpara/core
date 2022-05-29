@@ -5,7 +5,7 @@ from django.db import models
 
 from tumpara import api
 
-from ..models import GalleryAsset, GalleryAssetModel
+from ..models import GalleryAsset
 from .gallery_assets import (
     GalleryAssetConnection,
     GalleryAssetFilter,
@@ -14,7 +14,9 @@ from .gallery_assets import (
 )
 
 CombinedGalleryAssetFilter = strawberry.input(
-    description="Filtering options when querying `GalleryAsset` objects."
+    description="Filtering options when querying `GalleryAsset` objects.\n\n"
+    "Most options here are prefixed with the type of asset they apply on. Use the"
+    "`include_` options to select which types are returned."
 )(type("GalleryAssetFilter", tuple(gallery_asset_filter_types), {}))
 
 

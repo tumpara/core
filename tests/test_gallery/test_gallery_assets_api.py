@@ -228,6 +228,11 @@ def test_asset_pagination(user: User, notes: list[Note]) -> None:
             },
             [1],
         ),
+        (
+            # Nothing.
+            {"includeNotes": False},
+            [],
+        ),
     ],
 )
 def test_asset_filtering(

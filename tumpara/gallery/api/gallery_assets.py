@@ -14,7 +14,7 @@ from ..models import GalleryAsset, GalleryAssetModel
 class GalleryAssetFilter:
     def build_query(
         self, info: api.InfoType, field_name: Optional[str]
-    ) -> tuple[models.Q, dict[str, models.Expression]]:
+    ) -> tuple[models.Q, dict[str, models.Expression | models.F]]:
         return models.Q(), {}
 
     def get_instance_types(self) -> Sequence[type[GalleryAssetModel]]:
@@ -50,7 +50,7 @@ class MainGalleryAssetFilter(GalleryAssetFilter):
 
     def build_query(
         self, info: api.InfoType, field_name: Optional[str]
-    ) -> tuple[models.Q, dict[str, models.Expression]]:
+    ) -> tuple[models.Q, dict[str, models.Expression | models.F]]:
         prefix = field_name + "__" if field_name else ""
         query, aliases = super().build_query(info, field_name)
 

@@ -222,7 +222,7 @@ class DateFilter:
 
     def build_query(
         self, info: InfoType, field_name: str
-    ) -> tuple[models.Q, dict[str, models.Expression]]:
+    ) -> tuple[models.Q, dict[str, models.Expression | models.F]]:
         query = models.Q()
         aliases = dict[str, models.Expression]()
 
@@ -261,7 +261,7 @@ class DateTimeFilter(DateFilter):
 
     def build_query(
         self, info: InfoType, field_name: str
-    ) -> tuple[models.Q, dict[str, models.Expression]]:
+    ) -> tuple[models.Q, dict[str, models.Expression | models.F]]:
         query, aliases = super().build_query(info, field_name)
 
         if self.hour is not None:

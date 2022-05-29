@@ -8,7 +8,7 @@ from ..utils import InfoType
 class GenericFilter(Protocol):
     def build_query(
         self, info: InfoType, field_name: str
-    ) -> models.Q | tuple[models.Q, Mapping[str, models.Expression]]:
+    ) -> models.Q | tuple[models.Q, Mapping[str, models.Expression | models.F]]:
         """Build the database lookup for this filter.
 
         :param info: Resolve information for the current API request.
