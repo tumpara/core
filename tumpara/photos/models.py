@@ -4,8 +4,9 @@ import os.path
 from fractions import Fraction
 from typing import Any, Optional, cast
 
-import PIL
+import PIL.Image
 from django.core import validators
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -15,7 +16,7 @@ from tumpara.gallery.models import (
     GalleryAssetModel,
     GalleryAssetQuerySet,
 )
-from tumpara.libraries.models import Library
+from tumpara.libraries.models import File, Library
 
 from .utils import (
     calculate_blurhash,
@@ -44,6 +45,13 @@ class Photo(GalleryAssetModel):
         help_text="Hash value of the image's metadata. This is used to attribute "
         "multiple variations of the same photo to a single asset.",
     )
+    main_path = models.CharField(
+        _("main path"),
+        max_length=File._meta.get_field("path").max_length,
+        default="",
+        help_text="Path of the main image that should be used for generating "
+        "thumbnails and other information.",
+    )
 
     width = models.PositiveIntegerField(_("width"), null=True)
     height = models.PositiveIntegerField(_("height"), null=True)
@@ -53,7 +61,7 @@ class Photo(GalleryAssetModel):
         null=True,
         max_digits=3,
         decimal_places=1,
-        validators=[validators.MinValueValidator(1), validators.MaxValueValidator(100)],
+        validators=[validators.MinValueValidator(0), validators.MaxValueValidator(100)],
         help_text=_(
             "Aperture / F-Stop value of the shot, in inverse. A value of 4 in this "
             "field implies an f-value of f/4."
@@ -62,13 +70,13 @@ class Photo(GalleryAssetModel):
     exposure_time = models.FloatField(
         _("exposure time"),
         null=True,
-        validators=[validators.MinValueValidator(0.0001)],
+        validators=[validators.MinValueValidator(0)],
         help_text=_("The shot's exposure time, in seconds."),
     )
     focal_length = models.FloatField(
         _("focal length"),
         null=True,
-        validators=[validators.MinValueValidator(0.0001)],
+        validators=[validators.MinValueValidator(0)],
         help_text=_("Focal length of the camera, in millimeters."),
     )
     iso_value = models.PositiveIntegerField(_("ISO sensitivity value"), null=True)
@@ -107,28 +115,54 @@ class Photo(GalleryAssetModel):
         This will re-scan one of the files associated with this record and populate
         the database.
         """
-        # Pick one of the files and extract the metadata from there. This approach
-        # currently has two flaws, but they should both be negligible for typical usage
-        # patterns:
-        # a) The file we pick is arbitrary. Since the metadata checksum includes all
-        #    fields that we extract, all files should however have the exact same
-        #    metadata information encoded, which makes this point moot.
-        # b) We need to open the file twice. This might become a problem when using
-        #    storage backends where it's more expensive to open (and read) a file twice,
-        #    for example network-backed storage. There are two plausible solutions here:
-        #    either the storage backend performs some sort of caching or we only read
-        #    the file once and pass it to calculate_metadata_checksum() up above and use
-        #    it here again.
-        first_paths = (
-            self.files.filter(availability__isnull=False).values("path").first()
-        )
-        if first_paths is None:
-            # This photo object is effectively dead and will be filtered out in the API.
-            return
-        first_path = first_paths["path"]
+        # Pick one of the files to use as the main source. We mainly want to prefer
+        # JPEGs and other non-raw sources because:
+        # a) They don't require any post-processing.
+        # b) We assume that the user has edited the raw photo and therefore the JPEG (or
+        #    whatever format the output has) will probably be more to their liking than
+        #    the raw image, or whatever we can automatically develop.
+        # c) If the user has not explicitly edited the photo, there might still be an
+        #    out-of-camera rendition in JPEG form, which is probably of better quality
+        #    than what we can produce.
+        self.main_path = ""
+        main_image: Optional[PIL.Image.Image] = None
+        main_path_raw_original = False
+        main_path_pixel_count = 0
+        for (path,) in self.files.filter(availability__isnull=False).values_list(
+            "path"
+        ):
+            image, raw_original = load_image(self.library, path)
+            pixel_count = image.width * image.height
 
-        image = load_image(self.library, first_path)
-        metadata = load_metadata(self.library, first_path)
+            # As mentioned before, the picked image will ideally be non-raw. If there
+            # are multiple to choose from, we want to end up with the one with the
+            # highest resolution.
+            if (
+                self.main_path == ""
+                # Non-raws are better than raws.
+                or (main_path_raw_original and not raw_original)
+                # If we can get a higher resolution, use that.
+                or (
+                    main_path_raw_original == raw_original
+                    and main_path_pixel_count < pixel_count
+                )
+            ):
+                self.main_path = path
+                main_image = image
+                main_path_raw_original = raw_original
+                main_path_pixel_count = pixel_count
+
+        if main_image is None:
+            # This photo object is effectively dead and will be filtered out in the API.
+            self.main_path = ""
+            if commit:
+                self.save()
+            return
+
+        # We could have cached the original image
+        assert self.main_path != ""
+        image = main_image
+        metadata = load_metadata(self.library, self.main_path)
 
         try:
             self.blurhash = calculate_blurhash(image)
@@ -143,7 +177,7 @@ class Photo(GalleryAssetModel):
                 "Exif.Image.DateTime",
                 "Exif.Image.DateTimeDigitized",
             )
-            or extract_timestamp_from_filename(first_path)
+            or extract_timestamp_from_filename(self.main_path)
             or timezone.now()
         )
 
@@ -174,15 +208,24 @@ class Photo(GalleryAssetModel):
         self.iso_value = extract_metadata_value(
             metadata, int, "Exif.Photo.ISOSpeedRatings"
         )
-        self.exposure_time = extract_metadata_value(
-            metadata, float, "Exif.Photo.ExposureTime"
-        )
-        self.aperture_size = extract_metadata_value(
-            metadata, float, "Exif.Photo.FNumber", "Exif.Photo.ApertureValue"
-        )
-        self.focal_length = extract_metadata_value(
-            metadata, float, "Exif.Photo.FocalLength"
-        )
+        try:
+            self.exposure_time = extract_metadata_value(
+                metadata, float, "Exif.Photo.ExposureTime"
+            )
+        except ValidationError:
+            self.exposure_time = None
+        try:
+            self.aperture_size = extract_metadata_value(
+                metadata, float, "Exif.Photo.FNumber", "Exif.Photo.ApertureValue"
+            )
+        except ValidationError:
+            self.aperture_size = None
+        try:
+            self.focal_length = extract_metadata_value(
+                metadata, float, "Exif.Photo.FocalLength"
+            )
+        except ValidationError:
+            self.focal_length = None
 
         # TODO Extract GPS information.
         self.media_location = None

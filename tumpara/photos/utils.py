@@ -10,6 +10,7 @@ import dateutil.parser
 import PIL.Image
 import PIL.ImageOps
 import pyexiv2
+import rawpy
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
@@ -47,10 +48,26 @@ METADATA_DIGEST_FIELDS: list[
 ]
 
 
-def load_image(library: Library, path: str) -> PIL.Image.Image:
-    """Open an image file with Pillow."""
-    image = PIL.Image.open(library.storage.open(path, "rb"))
-    return PIL.ImageOps.exif_transpose(image)
+def load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
+    """Open an image file with Pillow.
+
+    :return: A tuple containing the Pillow :class:`~PIL.Image.Image` and a boolean that
+        indicates whether the file was a raw image.
+    """
+    with library.storage.open(path, "rb") as file_io:
+        try:
+            raw_image = rawpy.imread(file_io)
+            image = PIL.Image.fromarray(
+                raw_image.postprocess(),
+            )
+            raw_original = True
+        except rawpy.LibRawFileUnsupportedError:
+            file_io.seek(0)
+            image = PIL.Image.open(file_io)
+            raw_original = False
+
+        image = PIL.ImageOps.exif_transpose(image)
+    return image, raw_original
 
 
 def load_metadata(library: Library, path: str) -> pyexiv2.ImageMetadata:
