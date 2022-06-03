@@ -10,7 +10,7 @@ buildPythonPackage rec {
 	pname = "django-stubs-ext";
 	version = "0.4.0";
 
-	# https://pypi.org/project/django-stubs/
+	# https://pypi.org/project/django-stubs-ext/
 	src = fetchPypi {
 		inherit pname version;
 		sha256 = "MQTEdIw0vXQcMQo+avkN/7pG5BvMviQ4luOKcIJih2s=";

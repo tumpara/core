@@ -26,25 +26,6 @@
 							'';
 						});
 
-						pylint-plugin-utils = super.pylint-plugin-utils.overridePythonAttrs (oldAttrs: rec {
-							version = "0.7";
-							src = pkgs.fetchFromGitHub {
-								owner = "PyCQA";
-								repo = oldAttrs.pname;
-								rev = version;
-								sha256 = "uDsSSUWdlzuQz6umoYLbIotOYNEnLQu041ZZVMRd2ww=";
-							};
-
-							checkPhase = "";
-							checkInputs = [ self.pytestCheckHook ];
-						});
-
-						pylint-django = super.pylint-django.overridePythonAttrs (oldAttrs: {
-							disabledTests = oldAttrs.disabledTests ++ [
-								"external_tastypie_noerror_foreign_key"
-							];
-						});
-
 						# All the remaining packages in the overlay are ones that are not
 						# yet ported in the official nixpkgs repo:
 
@@ -108,6 +89,12 @@
 					pygments-graphql
 					sphinx
 				];
+
+				allDependencies = pythonPackages:
+					(runtimeDependencies pythonPackages)
+					++ (testDependencies pythonPackages)
+					++ (developmentDependencies pythonPackages)
+					++ (documentationDependencies pythonPackages);
 			in
 			rec {
 				packages = {
@@ -120,12 +107,7 @@
 					#          };
 					tumpara = python.withPackages runtimeDependencies;
 
-					devEnv = python.withPackages (pythonPackages:
-						(runtimeDependencies pythonPackages)
-						++ (testDependencies pythonPackages)
-						++ (developmentDependencies pythonPackages)
-						++ (documentationDependencies pythonPackages)
-					);
+					devEnv = python.withPackages allDependencies;
 				};
 				defaultPackage = packages.tumpara;
 
