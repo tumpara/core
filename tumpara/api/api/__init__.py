@@ -97,7 +97,7 @@ class Query:
     def node(
         self,
         info: api.InfoType,
-        node_id: Annotated[  # type: ignore
+        node_id: Annotated[
             strawberry.ID,
             strawberry.argument(name="id", description="The global ID to resolve."),
         ],
@@ -119,7 +119,7 @@ class Mutation:
     def create_token(
         self,
         info: api.InfoType,
-        credentials: Annotated[  # type: ignore
+        credentials: Annotated[
             list[str],
             strawberry.argument(
                 description="Credentials to log in with. This must be a list with "

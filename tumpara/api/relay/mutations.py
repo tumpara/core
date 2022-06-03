@@ -234,7 +234,7 @@ class DjangoModelFormInput(
 
     @classmethod
     def _get_model_type(cls) -> type[models.Model]:
-        return cls._get_form_type()._meta.model  # type: ignore
+        return cls._get_form_type()._meta.model
 
     @classmethod
     def _get_node_type(cls) -> type[_DjangoNode]:
@@ -258,8 +258,10 @@ class DjangoModelFormInput(
                 # strawberry.ID, which is a string:
                 assert isinstance(data[field_name], str)
                 node = resolve_node(info, data[field_name])
+                queryset_type = field.queryset
+                assert queryset_type is not None
                 if not isinstance(node, DjangoNode) or not isinstance(
-                    node.obj, field.queryset.model
+                    node.obj, queryset_type.model
                 ):
                     return NodeError(requested_id=data[field_name])
                 data[field_name] = node.obj

@@ -559,7 +559,7 @@ class File(models.Model):
         """Name of the directory the file is stored in, relative to the library root."""
         return os.path.dirname(self.path)
 
-    def open(self, mode: Literal["r", "rb"] = "r") -> django_files.File:
+    def open(self, mode: Literal["r", "rb"] = "r") -> django_files.File:  # type: ignore
         """Return an IO object for this file.
 
         :param mode: The file open mode – currently only reading is supported.

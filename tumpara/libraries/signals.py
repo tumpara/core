@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import collections
-from typing import TYPE_CHECKING, Any, Optional, Protocol, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Optional, Protocol, TypeVar, Union, cast
 
 import django.dispatch
 
@@ -60,22 +60,24 @@ class NewFileSignal(django.dispatch.Signal):
     def send(  # type: ignore
         self, context: str, path: str, library: Library
     ) -> list[tuple[NewFileReceiver, Optional[str]]]:
-        return super().send(
+        result = super().send(
             sender=context_references[context],
             context=context,
             path=path,
             library=library,
         )
+        return cast(list[tuple[NewFileReceiver, Optional[str]]], result)
 
     def send_robust(  # type: ignore
         self, context: str, path: str, library: Library
     ) -> list[tuple[NewFileReceiver, Union[ValueError, str]]]:
-        return super().send_robust(
+        result = super().send_robust(
             sender=context_references[context],
             context=context,
             path=path,
             library=library,
         )
+        return cast(list[tuple[NewFileReceiver, Union[ValueError, str]]], result)
 
 
 new_file = NewFileSignal()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Collection, Generic, Optional, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Generic, Iterable, Optional, TypeVar, cast
 
 import django.contrib.auth
 import django.contrib.auth.validators
@@ -129,7 +129,7 @@ class User(auth_models.AbstractBaseUser, auth_models.PermissionsMixin):
 
     def has_perms(
         self,
-        perm_list: Collection[str],
+        perm_list: Iterable[str],
         obj: Optional[models.Model | AnonymousUser] = None,
     ) -> bool:
         """Check if the user has all the specified permissions.
@@ -148,19 +148,20 @@ class User(auth_models.AbstractBaseUser, auth_models.PermissionsMixin):
 
         See :class:`JoinablesBackend` for some examples on how they are used.
         """
-        assert len(perm_list) > 0
+        perm_set = set(perm_list)
+        assert len(perm_set) > 0
 
         if self.is_active and self.is_superuser:
             return True
 
-        normal_permissions = set(perm for perm in perm_list if "__" not in perm)
+        normal_permissions = set(perm for perm in perm_set if "__" not in perm)
         if not super().has_perms(normal_permissions, obj):
             return False
 
         # Go through all the backends with the set of keyed permissions and check
         # them.
         keyed_permissions = defaultdict[str, set[str]](set)
-        for permission in perm_list:
+        for permission in perm_set:
             if "__" not in permission:
                 continue
             permission_name, key = permission.split("__")

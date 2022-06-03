@@ -1,6 +1,7 @@
 from typing import Optional, cast
 
 from django.contrib.auth.backends import BaseBackend
+from django.contrib.auth.models import AbstractBaseUser
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
 from django.db import models
@@ -15,7 +16,7 @@ class UserViewingBackend(BaseBackend):
 
     def get_user_permissions(
         self,
-        user_obj: models.Model | AnonymousUser,
+        user_obj: AbstractBaseUser | AnonymousUser,
         obj: Optional[models.Model] = None,
     ) -> set[str]:
         if (
@@ -88,7 +89,9 @@ class JoinablesBackend(BaseBackend):
     """
 
     def get_user_permissions(
-        self, user_obj: models.Model | AnonymousUser, obj: Optional[models.Model] = None
+        self,
+        user_obj: AbstractBaseUser | AnonymousUser,
+        obj: Optional[models.Model] = None,
     ) -> set[str]:
         # The Joinable instance check isn't actually required for this to function, but
         # it improves performance.
@@ -120,7 +123,9 @@ class JoinablesBackend(BaseBackend):
             return set()
 
     def get_all_permissions(
-        self, user_obj: models.Model | AnonymousUser, obj: Optional[models.Model] = None
+        self,
+        user_obj: AbstractBaseUser | AnonymousUser,
+        obj: Optional[models.Model] = None,
     ) -> set[str]:
         if obj is None:
             return super().get_user_permissions(user_obj, obj)

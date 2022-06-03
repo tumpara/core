@@ -163,10 +163,13 @@ def get_field_description(
         inspect.isclass(form_or_model) and issubclass(form_or_model, models.Model)
     ) or isinstance(form_or_model, models.Model):
         model_field = form_or_model._meta.get_field(field_name)
-        return encoding.force_str(model_field.help_text)
+        if isinstance(model_field, models.Field):
+            return encoding.force_str(model_field.help_text)
+        else:
+            raise TypeError(f"expected a model field, got {model_field!r}")
     else:
         raise TypeError(
-            f"expected form or model instance or class, got {form_or_model}"
+            f"expected form or model instance or class, got {form_or_model!r}"
         )
 
 

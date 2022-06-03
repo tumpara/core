@@ -56,7 +56,7 @@ def load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
     """
     with library.storage.open(path, "rb") as file_io:
         try:
-            raw_image = rawpy.imread(file_io)
+            raw_image = rawpy.imread(file_io)  # type: ignore
             image = PIL.Image.fromarray(
                 raw_image.postprocess(),
             )

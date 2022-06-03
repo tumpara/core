@@ -37,7 +37,7 @@ class FileSystemLibraryStorage(LibraryStorage, django_storage.FileSystemStorage)
     def watch(self) -> WatchGenerator:
         inotify = inotifyrecursive.INotify()
         watch = inotify.add_watch_recursive(
-            self.base_location,
+            str(self.base_location),
             inotify_flags.CREATE
             | inotify_flags.DELETE
             | inotify_flags.MODIFY
