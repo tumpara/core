@@ -7,7 +7,7 @@ from tumpara.photos.models import Photo
 
 
 @pytest.mark.django_db
-def test_photo_scanning():
+def test_photo_scanning() -> None:
     path = pathlib.Path(__file__).parent / "examples" / "unsplash"
     library = Library.objects.create(context="gallery", source=f"file://{path}")
     library.scan()

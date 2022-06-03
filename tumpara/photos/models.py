@@ -94,6 +94,8 @@ class Photo(GalleryAssetModel):
     @property
     def exposure_time_fraction(self) -> Optional[Fraction]:
         """Exposure time of the shot, in sections."""
+        if self.exposure_time is None:
+            return None
         try:
             return Fraction(self.exposure_time).limit_denominator(10000)
         except TypeError:

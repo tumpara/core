@@ -224,7 +224,7 @@ class DateFilter:
         self, info: InfoType, field_name: str
     ) -> tuple[models.Q, dict[str, models.Expression | models.F]]:
         query = models.Q()
-        aliases = dict[str, models.Expression]()
+        aliases = dict[str, models.Expression | models.F]()
 
         inclusivity_suffix = "e" if self.inclusive else ""
         if self.before is not None:
