@@ -86,6 +86,7 @@
 					pytest-cov
 					pytest-django
 					pytest-mypy-plugins
+					pytest-subtests
 					pyyaml
 					selenium
 					types-freezegun
