@@ -1,9 +1,10 @@
-import io
 import os.path
 import urllib.parse
 from collections.abc import Generator
-from typing import ClassVar
+from typing import Any, ClassVar
 
+from django.core.files import File
+from django.core.files.base import ContentFile
 from django.utils import timezone
 
 from tumpara.libraries import storage
@@ -23,17 +24,14 @@ class TestingStorage(storage.LibraryStorage):
     def check(self) -> None:
         return
 
-    def open(self, name: str, mode: str = "rb") -> io.BytesIO:  # type: ignore
+    def open(self, name: str, mode: str = "rb") -> "File[Any]":
         assert (
             mode == "rb"
         ), "the testing backend only supports opening files with mode 'rb'"
         if name not in self._data:
             raise FileNotFoundError(f"file path {name!r} not found in dataset")
         _, content = self._data[name]
-        if isinstance(content, str):
-            return io.BytesIO(content.encode())
-        else:
-            return io.BytesIO(content)
+        return ContentFile(content)
 
     def get_modified_time(self, name: str) -> timezone.datetime:
         if name not in self._data:
