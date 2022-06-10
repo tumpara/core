@@ -67,12 +67,16 @@ class PhotoGalleryAssetFilter(GalleryAssetFilter):
                 subquery &= filter.build_query(info, prefix + attribute_name)
         if self.photo_aspect_ratio:
             alias = f"_{field_name}_photo_aspect_ratio"
-            aliases[alias] = models.F(f"{prefix}width") / models.F(f"{prefix}width")
+            aliases[alias] = models.ExpressionWrapper(
+                models.F(f"{prefix}width") / models.F(f"{prefix}height"),
+                models.FloatField(),
+            )
             subquery &= self.photo_aspect_ratio.build_query(info, alias)
         if self.photo_megapixels:
             alias = f"_{field_name}_photo_megapixels"
-            aliases[alias] = (
-                models.F(f"{prefix}width") * models.F(f"{prefix}width") / 1000000
+            aliases[alias] = models.ExpressionWrapper(
+                models.F(f"{prefix}width") * models.F(f"{prefix}height") / 1000000,
+                models.FloatField(),
             )
             subquery &= self.photo_megapixels.build_query(info, alias)
 

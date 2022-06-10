@@ -149,24 +149,31 @@ class NumberFilter(Generic[_N], ScalarFilter[_N]):
 
         super().__init_subclass__(**kwargs)
 
+    @classmethod
+    def value_for(cls, value: _N) -> models.Value:
+        return models.Value(value)
+
     def build_query(self, info: InfoType, field_name: str) -> models.Q:
         query = super().build_query(info, field_name)
+
+        minimum = None if self.minimum is None else self.value_for(self.minimum)
+        maximum = None if self.maximum is None else self.value_for(self.maximum)
 
         if (
             self.inclusive_minimum
             and self.inclusive_maximum
-            and self.minimum is not None
-            and self.maximum is not None
+            and minimum is not None
+            and maximum is not None
         ):
-            query &= models.Q((f"{field_name}__range", (self.minimum, self.maximum)))
+            query &= models.Q((f"{field_name}__range", (minimum, maximum)))
         else:
-            if self.minimum is not None:
+            if minimum is not None:
                 equals_suffix = "e" if self.inclusive_minimum else ""
-                query &= models.Q((f"{field_name}__gt{equals_suffix}", self.minimum))
+                query &= models.Q((f"{field_name}__gt{equals_suffix}", minimum))
 
-            if self.maximum is not None:
+            if maximum is not None:
                 equals_suffix = "e" if self.inclusive_maximum else ""
-                query &= models.Q((f"{field_name}__lt{equals_suffix}", self.maximum))
+                query &= models.Q((f"{field_name}__lt{equals_suffix}", maximum))
 
         return query
 
@@ -178,6 +185,10 @@ class IntFilter(NumberFilter[int]):
     minimum: Optional[int] = None
     maximum: Optional[int] = None
 
+    @classmethod
+    def value_for(cls, value: _N) -> models.Value:
+        return models.Value(int(value), output_field=models.IntegerField())
+
 
 @strawberry.input(description="Filtering options for float fields.")
 class FloatFilter(NumberFilter[float]):
@@ -185,6 +196,10 @@ class FloatFilter(NumberFilter[float]):
     exclude: Optional[list[float]] = None
     minimum: Optional[float] = None
     maximum: Optional[float] = None
+
+    @classmethod
+    def value_for(cls, value: _N) -> models.Value:
+        return models.Value(value, output_field=models.FloatField())
 
 
 @strawberry.input(description="Filtering options for date fields.")
