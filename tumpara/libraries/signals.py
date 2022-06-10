@@ -3,7 +3,7 @@ from __future__ import annotations
 import collections
 from typing import TYPE_CHECKING, Any, Optional, Protocol, TypeVar, Union, cast
 
-import django.dispatch
+from django import dispatch
 
 if TYPE_CHECKING:
     from .models import Asset, Library
@@ -34,7 +34,7 @@ class NewFileReceiver(Protocol):
         ...
 
 
-class NewFileSignal(django.dispatch.Signal):
+class NewFileSignal(dispatch.Signal):
     def connect(  # type: ignore
         self,
         receiver: NewFileReceiver,
@@ -120,7 +120,7 @@ class FilesChangedReceiver(Protocol[_Asset]):
         ...
 
 
-class FilesChangedSignal(django.dispatch.Signal):
+class FilesChangedSignal(dispatch.Signal):
     def connect(  # type: ignore
         self,
         receiver: FilesChangedReceiver[Any],
