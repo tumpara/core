@@ -145,7 +145,7 @@ class AssetNode(api.DjangoNode, fields=["library", "visibility"]):
         description="Each asset may have files attached to it. This field returns a "
         "connection to those currently available.",
     )
-    def files(self) -> models.QuerySet[File]:
+    def files(self, info: api.InfoType, **kwargs: Any) -> models.QuerySet[File]:
         return self.obj.files.filter(availability__isnull=False)
 
     @classmethod
