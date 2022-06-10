@@ -61,6 +61,7 @@
 					freezegun
 					hypothesis
 					mypy
+					parameterized
 					pylint
 					pylint-django
 					pytest
