@@ -96,11 +96,18 @@ class GalleryAssetConnection(
 
     @classmethod
     def create_node(cls, obj: models.Model) -> GalleryAssetNode:
+        from tumpara.photos.api import PhotoNode
+        from tumpara.photos.models import Photo
+
         from ..models import Note
         from .notes import NoteNode
 
+        # TODO This should probably be refactored into some sort of registration
+        #  pattern.
         if isinstance(obj, Note):
             return NoteNode(obj)
+        elif isinstance(obj, Photo):
+            return PhotoNode(obj)
         else:
             raise TypeError(f"unsupported gallery asset type: {type(obj)}")
 
