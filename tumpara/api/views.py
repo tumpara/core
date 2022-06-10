@@ -6,10 +6,12 @@ from typing import TYPE_CHECKING, Any, Optional, Union, cast
 import strawberry
 import strawberry.django.context
 import strawberry.django.views
+from django.core.files import storage
 from django.http import HttpRequest, HttpResponse, HttpResponseNotAllowed
 from django.http.response import HttpResponseBase
 from django.utils.decorators import method_decorator
 from django.views.decorators import csrf
+from django.views.static import serve
 
 if TYPE_CHECKING:
     from tumpara.accounts.models import AnonymousUser, User
@@ -94,3 +96,27 @@ class ApiView(strawberry.django.views.GraphQLView):
             user = AnonymousUser()
 
         return ApiContext(request=request, response=response, token=token, user=user)
+
+
+def serve_file(
+    request: HttpRequest, file_storage: storage.Storage, file_path: str
+) -> HttpResponseBase:
+    """Serve a file download.
+
+    :param storage: The storage engine to load the file from.
+    :param path: Path inside the storage.
+    """
+    if isinstance(file_storage, storage.FileSystemStorage):
+        # For file system backends, we can serve the file as is, without needing to open
+        # it here directly.
+        # TODO Use some sort of sendfile-like serving mechanism. See here:
+        #  https://github.com/johnsensible/django-sendfile/blob/master/sendfile/backends/nginx.py
+        return serve(request, file_path, str(file_storage.base_location))
+    else:
+        # TODO Implement this. We probably need to redo the serve() function from above
+        #   entirely because we want to support If-Modified-Since headers, content types
+        #   and so on.
+        raise NotImplementedError(
+            "File downloads are not implemented yet for backends other than the "
+            "filesystem backend."
+        )

@@ -12,6 +12,7 @@ import django.apps.registry
 import django_stubs_ext
 import PIL.ImageFile
 from django.core.exceptions import ImproperlyConfigured
+from django.core.files.storage import FileSystemStorage
 
 _Default = TypeVar("_Default")
 _T = TypeVar("_T")
@@ -315,8 +316,12 @@ STATIC_ROOT = DATA_ROOT / "static"
 
 # -- Tumpara-specific options ----------------------------------------------------------
 
-# Directories for saving preview caches.
-PREVIEW_ROOT = DATA_ROOT / "previews"
+# Amount of time links signed by the API are valid.
+API_LINK_VALIDITY_TIME = parse_env("TUMPARA_API_LINK_VALIDITY_TIME", 3600, int)
+
+# Directory for saving thumbnails.
+THUMBNAIL_PATH = parse_env("TUMPARA_THUMBNAIL_PATH", DATA_ROOT / "thumbnails", str)
+THUMBNAIL_STORAGE = FileSystemStorage(THUMBNAIL_PATH)
 
 # Approximate number of total components a blurhash should have.
 BLURHASH_SIZE = parse_env("TUMPARA_BLURHASH_SIZE", 12, int)

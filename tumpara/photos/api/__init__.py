@@ -1,7 +1,10 @@
 from collections.abc import Sequence
-from typing import Optional
+from typing import Annotated, Optional
 
 import strawberry
+from django import urls
+from django.conf import settings
+from django.core import signing
 from django.db import models
 
 from tumpara import api
@@ -80,6 +83,7 @@ class PhotoGalleryAssetFilter(GalleryAssetFilter):
         return [*super().get_instance_types(), Photo]
 
 
+@api.schema.extra_type
 @api.remove_duplicate_node_interface
 @strawberry.type(name="Photo", description="A photo scanned in a library.")
 class PhotoNode(
@@ -98,3 +102,31 @@ class PhotoNode(
     ],
 ):
     obj: strawberry.Private[Photo]
+
+    @strawberry.field(
+        description=f"Generate an URL for a thumbnail of this photo. The resulting URL "
+        f"will be valid for about {round(settings.API_LINK_VALIDITY_TIME / 60)} "
+        f"minute(s)."
+    )
+    def thumbnail_url(
+        self,
+        width: Annotated[
+            Optional[int],
+            strawberry.argument(
+                description="Maximum width of the thumbnail. The image will not be "
+                "wider than this. Use `null` or `0` to ignore this dimension."
+            ),
+        ] = None,
+        height: Annotated[
+            Optional[int],
+            strawberry.argument(
+                description="Maximum height of the thumbnail. The image will not be "
+                "higher than this. Use `null` or `0` to ignore this dimension."
+            ),
+        ] = None,
+    ) -> str:
+        description = signing.dumps(
+            (self.obj.pk, width, height),
+            salt="tumpara.photos.views.render_thumbnail",
+        )
+        return urls.reverse("photo_thumbnail", args=[description])

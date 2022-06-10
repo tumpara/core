@@ -1,10 +1,11 @@
-import django.urls
+from django import urls
 
 import tumpara.api
+import tumpara.photos.views
 from tumpara.api.views import ApiView
 
 urlpatterns = [
-    django.urls.path(
+    urls.path(
         "api/graphql",
         # Note: once we enable subscriptions here, the graphiql.html template needs
         # to be updated from here:
@@ -12,5 +13,10 @@ urlpatterns = [
         # The subscription-specific stuff was removed because the template isn't
         # currently rendered with any context if it is loaded from the app folder.
         ApiView.as_view(schema_manager=tumpara.api.schema),
+    ),
+    urls.path(
+        "api/photo_thumbnail/<description>",
+        tumpara.photos.views.render_thumbnail,
+        name="photo_thumbnail",
     ),
 ]

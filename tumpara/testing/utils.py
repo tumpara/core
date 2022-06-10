@@ -1,9 +1,12 @@
+import os
+import shutil
 from collections.abc import Callable
 from typing import Any
 
 import django.test
 import hypothesis.stateful
 import pytest
+from django.conf import settings
 from pytest_django.plugin import _blocking_manager as django_db_blocking_manager
 
 
@@ -24,6 +27,9 @@ class DjangoHypothesisExecutor:
     def teardown_example(self, *args: Any, **kwargs: Any) -> None:
         self.test_case._post_teardown()  # type: ignore
         django_db_blocking_manager.restore()
+
+        shutil.rmtree(settings.THUMBNAIL_STORAGE.base_location)
+        os.mkdir(settings.THUMBNAIL_STORAGE.base_location)
 
 
 def state_machine(
