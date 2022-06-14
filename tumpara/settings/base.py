@@ -63,11 +63,18 @@ def parse_env(
     ...
 
 
+@overload
+def parse_env(
+    variable_name: str, default_value: _Default, cast: Type[Path]
+) -> Union[Path, _Default]:
+    ...
+
+
 def parse_env(
     variable_name: str,
     default_value: _Default,
-    cast: Union[None, Type[bool], Callable[[str], _T]] = None,
-) -> Union[str, bool, _T, _Default]:
+    cast: Union[None, Type[bool], Type[Path], Callable[[str], _T]] = None,
+) -> Union[str, bool, Path, _T, _Default]:
     """Parse an environment variable into a native data type.
 
     :param variable_name: Name of the environment variable. For Tumpara-specific
@@ -320,8 +327,9 @@ STATIC_ROOT = DATA_ROOT / "static"
 API_LINK_VALIDITY_TIME = parse_env("TUMPARA_API_LINK_VALIDITY_TIME", 3600, int)
 
 # Directory for saving thumbnails.
-THUMBNAIL_PATH = parse_env("TUMPARA_THUMBNAIL_PATH", DATA_ROOT / "thumbnails", str)
+THUMBNAIL_PATH = parse_env("TUMPARA_THUMBNAIL_PATH", DATA_ROOT / "thumbnails", Path)
 THUMBNAIL_STORAGE = FileSystemStorage(THUMBNAIL_PATH)
+THUMBNAIL_PATH.mkdir(parents=True, exist_ok=True)
 
 # Approximate number of total components a blurhash should have.
 BLURHASH_SIZE = parse_env("TUMPARA_BLURHASH_SIZE", 12, int)
