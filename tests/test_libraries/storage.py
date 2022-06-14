@@ -31,6 +31,9 @@ class TestingStorage(storage.LibraryStorage):
         if name not in self._data:
             raise FileNotFoundError(f"file path {name!r} not found in dataset")
         _, content = self._data[name]
+        # Make sure we honor the "rb" mode.
+        if isinstance(content, str):
+            content = content.encode("utf-8")
         return ContentFile(content)
 
     def get_modified_time(self, name: str) -> timezone.datetime:
