@@ -6,6 +6,7 @@ from django import urls
 from django.conf import settings
 from django.core import signing
 from django.db import models
+from django.db.models import functions
 
 from tumpara import api
 from tumpara.gallery.api import (
@@ -52,6 +53,9 @@ class PhotoGalleryAssetFilter(GalleryAssetFilter):
 
         subquery = models.Q()
 
+        width_float = functions.Cast(models.F(f"{prefix}width"), models.FloatField())
+        height_float = functions.Cast(models.F(f"{prefix}height"), models.FloatField())
+
         for attribute_name in [
             "width",
             "height",
@@ -67,20 +71,15 @@ class PhotoGalleryAssetFilter(GalleryAssetFilter):
                 subquery &= filter.build_query(info, prefix + attribute_name)
         if self.photo_aspect_ratio:
             alias = f"_{field_name}_photo_aspect_ratio"
-            aliases[alias] = models.ExpressionWrapper(
-                models.F(f"{prefix}width") / models.F(f"{prefix}height"),
-                models.FloatField(),
-            )
+            aliases[alias] = width_float / height_float
             subquery &= self.photo_aspect_ratio.build_query(info, alias)
         if self.photo_megapixels:
             alias = f"_{field_name}_photo_megapixels"
-            aliases[alias] = models.ExpressionWrapper(
-                models.F(f"{prefix}width") * models.F(f"{prefix}height") / 1000000,
-                models.FloatField(),
-            )
+            aliases[alias] = width_float * height_float / 1000000
             subquery &= self.photo_megapixels.build_query(info, alias)
 
-        query &= models.Q((f"{prefix}isnull", True)) | subquery
+        if subquery:
+            query &= models.Q((f"{prefix}isnull", True)) | subquery
         return query, aliases
 
     def get_instance_types(self) -> Sequence[type[GalleryAssetModel]]:
