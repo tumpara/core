@@ -77,17 +77,9 @@ class ApiView(strawberry.django.views.GraphQLView):
 
         from .models import Token
 
-        token_header = request.headers.get("X-Token")
         token: Optional[Token] = None
-        if token_header:
-            try:
-                token = (
-                    Token.objects.filter_valid()
-                    .prefetch_related("user")
-                    .get(key=token_header)
-                )
-            except Token.DoesNotExist:
-                pass
+        if token_header := request.headers.get("X-Token"):
+            token = Token.objects.check_token(token_header)
 
         user: Union[AnonymousUser, User]
         if token is not None:

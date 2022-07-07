@@ -20,6 +20,7 @@ create_token_mutation = """
             __typename
             ...on Token {
                 key
+                header
             }
             ...on InvalidCredentialsError {
               scope
@@ -195,7 +196,7 @@ def test_token_creation_via_http(
     result = response.json()
     assert "errors" not in result
     assert result["data"]["createToken"]["__typename"] == "Token"
-    token = result["data"]["createToken"]["key"]
+    token = result["data"]["createToken"]["header"]
 
     response = client.post(
         "/api/graphql",
