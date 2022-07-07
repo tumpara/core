@@ -16,9 +16,11 @@ from ..utils import with_argument_annotation
 class TokenNode(api.DjangoNode, fields=["key", "user", "expiry_timestamp", "name"]):
     obj: strawberry.Private[Token]
     user: UserNode
-
-    def __init__(self, _obj: Token):
-        self.obj = _obj
+    header: Optional[str] = strawberry.field(
+        description="Token to use in the `X-Token` header while making API requests. "
+        "Note that this field is only available the when initially generating a "
+        "token - subsequent queries for the same token will leave this field empty."
+    )
 
 
 @strawberry.type(
@@ -158,8 +160,9 @@ class Mutation:
 
         # Create a token for the user. By default, it will be valid for a week, although
         # that setting should be changeable later on.
-        token = user.api_tokens.create(
+        token, api_token = Token.objects.generate_token(
+            user=user,
             expiry_timestamp=timezone.now() + timezone.timedelta(days=7),
             name=name or "",
         )
-        return TokenNode(token)
+        return TokenNode(token, api_token)

@@ -5,14 +5,14 @@ import base64
 import binascii
 import dataclasses
 import inspect
-import sys
 import typing
 from collections.abc import Collection
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, Optional, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, TypeVar, cast
 
 import django.db.models.fields.related
 import strawberry
 import strawberry.types.types
+from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 from django.utils import encoding
 from strawberry.field import StrawberryAnnotation, StrawberryField
@@ -192,11 +192,17 @@ class DjangoNode(Node):
         super().__init_subclass__(**kwargs)
 
     def __getattribute__(self, name: str) -> Any:
-        # Proxy attribute access to the model object. This is required so that the
-        # fields work.
         if name.startswith("_") or name not in self._get_field_names():
             return super().__getattribute__(name)
 
+        try:
+            self._get_model_type()._meta.get_field(name)
+        except FieldDoesNotExist:
+            # This isn't a Django field.
+            return super().__getattribute__(name)
+
+        # Proxy attribute access to the model object. This is required so that the
+        # fields work.
         if name in self._related_field_nodes:
             obj = getattr(self.obj, name)
             node_type = self._related_field_nodes[name]
