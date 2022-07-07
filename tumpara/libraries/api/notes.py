@@ -8,16 +8,12 @@ from django.db import models
 from tumpara import api
 from tumpara.libraries.api import AssetVisibility
 
-from ..models import GalleryAssetModel, Note
-from .gallery_assets import (
-    GalleryAssetFilter,
-    GalleryAssetNode,
-    register_gallery_asset_filter,
-)
+from ..models import AssetModel, Note
+from .assets import AssetFilter, AssetNode, register_asset_filter
 
 
-@register_gallery_asset_filter
-class NoteGalleryAssetFilter(GalleryAssetFilter):
+@register_asset_filter
+class NoteAssetFilter(AssetFilter):
     include_notes: bool = strawberry.field(
         default=True, description="Whether to include note results."
     )
@@ -33,13 +29,13 @@ class NoteGalleryAssetFilter(GalleryAssetFilter):
 
         return query, aliases
 
-    def get_instance_types(self) -> Sequence[type[GalleryAssetModel]]:
+    def get_instance_types(self) -> Sequence[type[AssetModel]]:
         return [*super().get_instance_types(), Note]
 
 
 @api.remove_duplicate_node_interface
 @strawberry.type(name="Note", description="A user-created note asset.")
-class NoteNode(GalleryAssetNode, api.DjangoNode, fields=["content"]):
+class NoteNode(AssetNode, api.DjangoNode, fields=["content"]):
     obj: strawberry.Private[Note]
 
 

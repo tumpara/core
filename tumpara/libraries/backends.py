@@ -6,11 +6,12 @@ from django.db import models
 from tumpara.accounts.models import AnonymousUser, User
 from tumpara.accounts.utils import build_permission_name
 
-from .models import Asset, Library
+from .models import Asset, Collection, Library
 
 
-class LibraryCreatingBackend(BaseBackend):
-    """Permission backend that allows all logged-in users to create libraries."""
+class LibraryAndCollectionCreatingBackend(BaseBackend):
+    """Permission backend that allows all logged-in users to create new libraries and
+    collections."""
 
     def get_user_permissions(
         self,
@@ -19,14 +20,15 @@ class LibraryCreatingBackend(BaseBackend):
     ) -> set[str]:
         if (
             obj is None
-            or not isinstance(obj, Library)
             or not cast(User, user_obj).is_active
             or not cast(User, user_obj).is_authenticated
         ):
             return set()
 
-        if obj._state.adding:
+        if isinstance(obj, Library) and obj._state.adding:
             return {"libraries.add_library"}
+        elif isinstance(obj, Collection) and obj._state.adding:
+            return {"libraries.add_collection"}
         else:
             return set()
 

@@ -234,7 +234,6 @@ INSTALLED_APPS = [
     "tumpara.accounts",
     "tumpara.api",
     "tumpara.libraries",
-    "tumpara.gallery",
     "tumpara.photos",
 ]
 
@@ -276,8 +275,7 @@ AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
     "tumpara.accounts.backends.UserViewingBackend",
     "tumpara.accounts.backends.JoinablesBackend",
-    "tumpara.gallery.backends.AlbumCreatingBackend",
-    "tumpara.libraries.backends.LibraryCreatingBackend",
+    "tumpara.libraries.backends.LibraryAndCollectionCreatingBackend",
     "tumpara.libraries.backends.LibraryAssetsBackend",
 ]
 AUTH_USER_MODEL = "accounts.user"

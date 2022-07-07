@@ -4,13 +4,17 @@ from collections.abc import Sequence, Set
 from typing import Any, Optional
 
 import strawberry
-from django.db import models
+from django.db import NotSupportedError, models
 
 from tumpara import api
 from tumpara.accounts.utils import build_permission_name
 
-from ..models import Asset, AssetQuerySet, File, Visibility
+from ..models import Asset, AssetModel, AssetQuerySet, File, Visibility
 from .libraries import LibraryNode
+
+########################################################################################
+# Files                                                                                #
+########################################################################################
 
 
 @strawberry.type(name="File")
@@ -31,6 +35,11 @@ class FileConnection(
 ):
     edges: list[Optional[FileEdge]]
     nodes: list[Optional[FileNode]]
+
+
+########################################################################################
+# Visibility                                                                           #
+########################################################################################
 
 
 @strawberry.enum
@@ -133,6 +142,79 @@ class AssetVisibilityFilter:
         return query
 
 
+########################################################################################
+# Filtering                                                                            #
+########################################################################################
+
+
+class AssetFilter:
+    def build_query(
+        self, info: api.InfoType, field_name: Optional[str]
+    ) -> tuple[models.Q, dict[str, models.Expression | models.F]]:
+        return models.Q(), {}
+
+    def get_instance_types(self) -> Sequence[type[AssetModel]]:
+        """List of instance types that should be passed to
+        :meth:`AssetQuerySet.resolve_instances`."""
+        return []
+
+
+asset_filter_types = list[type[AssetFilter]]()
+
+
+def register_asset_filter(
+    filter_type: type[AssetFilter],
+) -> type[AssetFilter]:
+    prepped_type = api.schema.prep_type(filter_type, is_input=True)
+    asset_filter_types.append(prepped_type)
+    return prepped_type
+
+
+@register_asset_filter
+class MainAssetFilter(AssetFilter):
+    media_timestamp: Optional[api.DateTimeFilter] = None
+    visibility: Optional[AssetVisibilityFilter] = None
+    use_stacks: bool = strawberry.field(
+        default=True,
+        description="Whether to use stacks. If this is `true`, only one asset is "
+        "returned per stack. Assets not in any stack are returned as well.\n\n"
+        "Note that when using this option, assets in a stack that are not the "
+        "representative will directly be filtered out. That means that a stack might "
+        "not appear at all if its representative is either not visible to the current "
+        "user or filtered out by other options.",
+    )
+
+    def build_query(
+        self, info: api.InfoType, field_name: Optional[str]
+    ) -> tuple[models.Q, dict[str, models.Expression | models.F]]:
+        prefix = field_name + "__" if field_name else ""
+        query, aliases = super().build_query(info, field_name)
+
+        if self.media_timestamp is not None:
+            next_query, next_aliases = self.media_timestamp.build_query(
+                info, f"{prefix}media_timestamp"
+            )
+            query &= next_query
+            aliases |= next_aliases
+
+        if self.visibility is not None:
+            query &= self.visibility.build_query(
+                info, f"{prefix}visibility", f"{prefix}library__default_visibility"
+            )
+
+        if self.use_stacks:
+            query &= models.Q(stack_key__isnull=True) | models.Q(
+                stack_representative=True
+            )
+
+        return query, aliases
+
+
+########################################################################################
+# Object types                                                                         #
+########################################################################################
+
+
 @strawberry.interface(name="Asset")
 class AssetNode(api.DjangoNode, fields=["library", "visibility"]):
     obj: strawberry.Private[Asset]
@@ -184,6 +266,43 @@ class AssetNode(api.DjangoNode, fields=["library", "visibility"]):
         return primary_keys
 
 
+@strawberry.type
+class AssetEdge(api.Edge[AssetNode]):
+    node: AssetNode
+
+
+@strawberry.type(description="A connection to a list of assets.")
+class AssetConnection(
+    api.DjangoConnection[AssetNode, Asset],
+    name="asset",
+    pluralized_name="assets",
+):
+    edges: list[Optional[AssetEdge]]
+    nodes: list[Optional[AssetNode]]
+
+    @classmethod
+    def create_node(cls, obj: models.Model) -> AssetNode:
+        from tumpara.photos.api import PhotoNode
+        from tumpara.photos.models import Photo
+
+        from ..models import Note
+        from .notes import NoteNode
+
+        # TODO This should probably be refactored into some sort of registration
+        #  pattern.
+        if isinstance(obj, Note):
+            return NoteNode(obj)
+        elif isinstance(obj, Photo):
+            return PhotoNode(obj)
+        else:
+            raise TypeError(f"unsupported asset type: {type(obj)}")
+
+
+########################################################################################
+# Mutations                                                                            #
+########################################################################################
+
+
 @strawberry.input
 class SetAssetVisibilityInput:
     ids: list[strawberry.ID] = strawberry.field(
@@ -205,6 +324,36 @@ SetAssetVisibilityResult = strawberry.union(
 )
 
 
+@strawberry.input
+class StackingMutationInput:
+    ids: list[strawberry.ID] = strawberry.field(
+        description="Asset IDs to update. IDs for assets that do not exist will "
+        "silently be dropped, invalid IDs will return a `NodeError`."
+    )
+
+
+@strawberry.type
+class StackingMutationSuccess:
+    stack_size: int = strawberry.field(description="Size of the stack.")
+
+
+StackingMutationResult = strawberry.union(
+    "StackingMutationResult", types=(StackingMutationSuccess, api.NodeError)
+)
+
+
+@strawberry.type
+class SetStackRepresentativeSuccess:
+    representative: AssetNode = strawberry.field(
+        description="The new representative of the stack."
+    )
+
+
+SetStackRepresentativeResult = strawberry.union(
+    "SetStackRepresentativeResult", types=(SetStackRepresentativeSuccess, api.NodeError)
+)
+
+
 @api.schema.mutation
 class Mutation:
     @strawberry.field(description="Set the visibility of one or more asset(s).")
@@ -220,3 +369,46 @@ class Mutation:
             .update(visibility=input.visibility.value)
         )
         return SetAssetVisibilitySuccess(update_count=update_count)
+
+    @strawberry.field(description="Stack the given set of assets together.")
+    def stack_assets(
+        self, info: api.InfoType, input: StackingMutationInput
+    ) -> StackingMutationResult:
+        primary_keys = AssetNode.extract_primary_keys_from_ids(info, input.ids)
+        if isinstance(primary_keys, api.NodeError):
+            return primary_keys
+        stack_size = (
+            Asset.objects.for_user(info.context.user, "libraries.change_asset")
+            .filter(pk__in=primary_keys)
+            .stack()
+        )
+        return StackingMutationSuccess(stack_size=stack_size)
+
+    @strawberry.field(description="Clear the stack of each of the given assets.")
+    def unstack_assets(
+        self, info: api.InfoType, input: StackingMutationInput
+    ) -> StackingMutationResult:
+        primary_keys = AssetNode.extract_primary_keys_from_ids(info, input.ids)
+        if isinstance(primary_keys, api.NodeError):
+            return primary_keys
+        stack_size = (
+            Asset.objects.for_user(info.context.user, "libraries.change_asset")
+            .filter(pk__in=primary_keys)
+            .unstack()
+        )
+        return StackingMutationSuccess(stack_size=stack_size)
+
+    @strawberry.field(
+        description="Make the given asset the representative of its stack."
+    )
+    def set_stack_representative(
+        self, info: api.InfoType, id: strawberry.ID
+    ) -> SetStackRepresentativeResult:
+        node = api.resolve_node(info, id, "libraries.change_asset")
+        if not isinstance(node, AssetNode):
+            return api.NodeError(requested_id=id)
+        try:
+            node.obj.represent_stack()
+        except NotSupportedError:
+            return api.NodeError(requested_id=id)
+        return SetStackRepresentativeSuccess(representative=node)

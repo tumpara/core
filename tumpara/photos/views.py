@@ -11,7 +11,7 @@ from .utils import load_image
 
 
 def render_thumbnail(request: HttpRequest, description: str) -> HttpResponseBase:
-    """Serve a thumbnailed version of a :class:`~tumpara.gallery.models.Photo`.
+    """Serve a thumbnailed version of a :class:`~tumpara.photos.models.Photo`.
 
     :param description: Information denoting which photo should be rendered and how.
         This must be a 3-tuple signed with the Django's :func:`signing.dumps`. It

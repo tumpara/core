@@ -40,7 +40,7 @@ class PhotoApiTestCase(TestCase):
         all_paths = set(index.keys())
         result = api.execute_sync(
             """query AllPhotos {
-                galleryAssets(first: 100) {
+                assets(first: 100) {
                     nodes {
                         __typename
                         id
@@ -55,7 +55,7 @@ class PhotoApiTestCase(TestCase):
         )
         assert result.errors is None
         assert result.data is not None
-        for node in result.data["galleryAssets"]["nodes"]:
+        for node in result.data["assets"]["nodes"]:
             assert isinstance(node["id"], str)
             for file_node in node["files"]["nodes"]:
                 if file_node["path"] in all_paths:
@@ -79,8 +79,8 @@ class PhotoApiTestCase(TestCase):
     ) -> None:
         """Photo filtering returns the correct subset."""
         result = api.execute_sync(
-            """query FilterPhotos($filter: GalleryAssetFilter!) {
-                galleryAssets(first: 10, filter: $filter) {
+            """query FilterPhotos($filter: AssetFilter!) {
+                assets(first: 10, filter: $filter) {
                     nodes {
                         __typename
                         files(first: 10) {
@@ -97,7 +97,7 @@ class PhotoApiTestCase(TestCase):
         assert result.errors is None
         assert result.data is not None
         received_paths = list[str]()
-        for node in result.data["galleryAssets"]["nodes"]:
+        for node in result.data["assets"]["nodes"]:
             assert node["__typename"] == "Photo"
             for file_node in node["files"]["nodes"]:
                 assert isinstance(file_node["path"], str)

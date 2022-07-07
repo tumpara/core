@@ -9,18 +9,14 @@ from django.db import models
 from django.db.models import functions
 
 from tumpara import api
-from tumpara.gallery.api import (
-    GalleryAssetFilter,
-    GalleryAssetNode,
-    register_gallery_asset_filter,
-)
-from tumpara.gallery.models import GalleryAssetModel
+from tumpara.libraries.api import AssetFilter, AssetNode, register_asset_filter
+from tumpara.libraries.models import AssetModel
 
 from ..models import Photo
 
 
-@register_gallery_asset_filter
-class PhotoGalleryAssetFilter(GalleryAssetFilter):
+@register_asset_filter
+class PhotoAssetFilter(AssetFilter):
     include_photos: bool = strawberry.field(
         default=True, description="Whether to include photo results."
     )
@@ -82,7 +78,7 @@ class PhotoGalleryAssetFilter(GalleryAssetFilter):
             query &= models.Q((f"{prefix}isnull", True)) | subquery
         return query, aliases
 
-    def get_instance_types(self) -> Sequence[type[GalleryAssetModel]]:
+    def get_instance_types(self) -> Sequence[type[AssetModel]]:
         return [*super().get_instance_types(), Photo]
 
 
@@ -90,7 +86,7 @@ class PhotoGalleryAssetFilter(GalleryAssetFilter):
 @api.remove_duplicate_node_interface
 @strawberry.type(name="Photo", description="A photo scanned in a library.")
 class PhotoNode(
-    GalleryAssetNode,
+    AssetNode,
     api.DjangoNode,
     fields=[
         "width",

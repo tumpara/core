@@ -11,12 +11,13 @@ from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from tumpara.gallery.models import (
-    GalleryAssetManager,
-    GalleryAssetModel,
-    GalleryAssetQuerySet,
+from tumpara.libraries.models import (
+    AssetManager,
+    AssetModel,
+    AssetQuerySet,
+    File,
+    Library,
 )
-from tumpara.libraries.models import File, Library
 
 from .utils import (
     calculate_blurhash,
@@ -28,14 +29,14 @@ from .utils import (
 )
 
 
-class PhotoQuerySet(GalleryAssetQuerySet["Photo"]):
+class PhotoQuerySet(AssetQuerySet["Photo"]):
     pass
 
 
-PhotoManager = GalleryAssetManager.from_queryset(PhotoQuerySet)
+PhotoManager = AssetManager.from_queryset(PhotoQuerySet)
 
 
-class Photo(GalleryAssetModel):
+class Photo(AssetModel):
     metadata_checksum = models.BinaryField(
         _("metadata checksum"),
         max_length=32,

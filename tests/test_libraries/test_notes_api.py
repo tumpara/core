@@ -4,8 +4,7 @@ import pytest
 
 from tumpara import api
 from tumpara.accounts.models import User
-from tumpara.gallery.models import Note
-from tumpara.libraries.models import Library
+from tumpara.libraries.models import Library, Note
 
 from ..test_libraries.test_library_api import mutation as create_library_mutation
 
