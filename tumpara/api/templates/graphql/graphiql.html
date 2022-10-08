@@ -3,10 +3,9 @@
 	<head>
 		<title>Tumpara GraphQL</title>
 
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/react/17.0.2/umd/react.production.min.js" integrity="sha512-qlzIeUtTg7eBpmEaS12NZgxz52YYZVF5myj89mjJEesBd/oE9UPsYOX2QAXzvOAZYEvQohKdcY8zKE02ifXDmA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/17.0.2/umd/react-dom.production.min.js" integrity="sha512-9jGNr5Piwe8nzLLYTk8QrEMPfjGU0px80GYzKZUxi7lmCfrBjtyCc1V5kkS5vxVwwIB7Qpzc7UxLiQxfAN30dw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-
-		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/graphiql/1.6.0/graphiql.min.css" integrity="sha512-6Z3DFK69TbD8GHEjY2/w0OkY7tjGLaXZwCJsZ48WEjpaLYjOyjbrZPm2fYat0xBvtdfgh49VQj5o0l1Ln1xDcg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" integrity="sha512-8Q6Y9XnTbOE+JNvjBQwJ2H8S+UV4uA6hiRykhdtIyDYZ2TprdNmWOUaKdGzOhyr4dCyk287OejbPvwl7lrfqrQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" integrity="sha512-MOCpqoRoisCTwJ8vQQiciZv0qcpROCidek3GTFS6KTk2+y7munJIlKCVkFCYY+p3ErYFXCjmFjnfTTRSC1OHWQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/graphiql/2.0.8/graphiql.min.css" integrity="sha512-J1X3K84CA7pyMUQUC7na/84Nfn3rJ93r3c9UnHDQY03T/ajzW1UZBnNvLN66CymKo/5tLRfBN40BIkNyeaz9CQ==" crossorigin="anonymous" referrerpolicy="no-referrer" />
 
 		<style>
 			html,
@@ -25,33 +24,31 @@
 	<body>
 		<div id="graphiql"></div>
 
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/graphiql/1.6.0/graphiql.min.js" integrity="sha512-+N+UyiLcnxkeVlbU3Y9MAEH3byxTPx3ok+BWxXUBLPoRQYuBr6vCsLiwtP9NI99cSIvZacWB1ZbS3kewMSVCXA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/graphiql/2.0.8/graphiql.min.js" integrity="sha512-l8+GGYg0BIh5Ejh/ygsNPjBBov/gbIWF1wJyzb57GVdPueVUmv7VQwXxyZSGmy56u3B7YMBeHwPou+gPVVx0Uw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 		<script>
-			async function fetchGraphQL(graphQLParams, options) {
-				const response = await fetch('/api/graphql', {
-					method: "post",
-					headers: {
-						Accept: "application/json",
-						"Content-Type": "application/json",
-						...(options.headers ?? {}),
-					},
-					body: JSON.stringify(graphQLParams),
-				});
-				try {
-					return await response.json();
-				} catch (error) {
-					console.error(error);
-					return await response.text();
-				}
-			}
+			let root = null
 
-			ReactDOM.render(
-				React.createElement(GraphiQL, {
-					fetcher: fetchGraphQL,
-          defaultVariableEditorOpen: true,
-					headerEditorEnabled: true,
-					docExplorerOpen: true,
-					defaultQuery: `# Welcome to Tumpara's GraphQL endpoint!
+			function setup(token) {
+				const fetcher = GraphiQL.createFetcher({
+					url: "/api/graphql",
+					headers: token ? {"X-Token": token} : undefined,
+				})
+
+				if (root !== null) {
+					root.unmount()
+				}
+
+				root = ReactDOM.createRoot(
+					document.getElementById("graphiql")
+				)
+				root.render(
+					React.createElement(GraphiQL, {
+						fetcher: fetcher,
+						defaultEditorToolsVisibility: "variables",
+						// If we are embedded, the token is provided from the outer frame.
+						// In that case we don't need to show it to the user.
+						isHeadersEditorEnabled: token === undefined,
+						defaultQuery: `# Welcome to Tumpara's GraphQL endpoint!
 # ======================================
 #
 # GraphiQL (what you are looking at now) is an in-browser tool for writing,
@@ -59,22 +56,23 @@
 # you execute here will be run on your live data, so be careful not to delete
 # anything you might still need. If you would like to run queries in an
 # anonymous session, open a private window in your browser.
-#
-# Keyboard shortcuts
-# ------------------
-# [Shift-Ctrl-P] Prettify query
-# [Shift-Ctrl-M] Merge query
-#   [Ctrl-Enter] Run query
-#   [Ctrl-Space] Activate autocomplete
 
 query {
 	__typename
 }`
-				}, [
-					React.createElement(GraphiQL.Logo, {}, [ 'Tumpara API Explorer' ])
-				]),
-				document.getElementById("graphiql")
-			);
+					}, [
+						React.createElement(GraphiQL.Logo, {}, ['Tumpara API Explorer'])
+					])
+				)
+			}
+
+			if (window.location.hash !== "#embed") {
+				// Only automatically setup if we aren't embedded in the web app. In
+				// that case, setup() will be called from the outer frame.
+				setup()
+			} else {
+				window.setup = setup
+			}
 		</script>
 	</body>
 </html>

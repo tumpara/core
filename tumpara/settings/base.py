@@ -271,6 +271,8 @@ WSGI_APPLICATION = "tumpara.wsgi.application"
 
 ALLOWED_HOSTS = parse_env("TUMPARA_HOST", list[str](), lambda host: [host])
 
+X_FRAME_OPTIONS = "SAMEORIGIN"
+
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
     "tumpara.accounts.backends.UserViewingBackend",
