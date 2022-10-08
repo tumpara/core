@@ -69,25 +69,25 @@ class AssetVisibilityFilter:
     )
     public_from_library: Optional[bool] = strawberry.field(
         default=None,
-        description="Whether to include public assets, where the visibility has been"
-        "inherited from the library. By default (or when set to `null`) this will take"
+        description="Whether to include public assets, where the visibility has been "
+        "inherited from the library. By default (or when set to `null`) this will take "
         "the same value as the `public` option.",
     )
     internal_from_library: Optional[bool] = strawberry.field(
         default=None,
-        description="Whether to include internal assets, where the visibility has been"
-        "inherited from the library. By default (or when set to `null`) this will take"
+        description="Whether to include internal assets, where the visibility has been "
+        "inherited from the library. By default (or when set to `null`) this will take "
         "the same value as the `internal` option.",
     )
     members_from_library: Optional[bool] = strawberry.field(
         default=None,
-        description="Whether to include assets visible only to library members, where"
+        description="Whether to include assets visible only to library members, where "
         "the visibility has been inherited from the library. By default (or when set "
         "to `null`) this will take the same value as the `members` option.",
     )
     owners_from_library: Optional[bool] = strawberry.field(
         default=None,
-        description="Whether to include assets visible only to library owners, where"
+        description="Whether to include assets visible only to library owners, where "
         "the visibility has been inherited from the library. By default (or when set "
         "to `null`) this will take the same value as the `owners` option.",
     )
