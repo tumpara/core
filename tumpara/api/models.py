@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import functools
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
@@ -26,10 +26,7 @@ class TokenQueryset(models.QuerySet["Token"]):
         )
 
 
-TokenManagerBase = models.Manager.from_queryset(TokenQueryset)
-
-
-class TokenManager(TokenManagerBase["Token"]):
+class TokenManager(models.Manager["Token"]):
     def generate_token(self, **kwargs: Any) -> tuple[Token, str]:
         """Generate a new token.
 
@@ -74,9 +71,8 @@ class TokenManager(TokenManagerBase["Token"]):
             return None
 
         try:
-            token = (
-                self.get_queryset().prefetch_related("user").filter_valid().get(key=key)
-            )
+            queryset = cast(TokenQueryset, self.get_queryset())
+            token = queryset.prefetch_related("user").filter_valid().get(key=key)
         except (Token.DoesNotExist, Token.MultipleObjectsReturned):
             return None
 
@@ -88,6 +84,9 @@ class TokenManager(TokenManagerBase["Token"]):
             return None
 
         return token
+
+
+TokenManagerFromTokenQueryset = TokenManager.from_queryset(TokenQueryset)
 
 
 class Token(models.Model):
@@ -128,7 +127,7 @@ class Token(models.Model):
     creation_timestamp = models.DateTimeField(_("created at"), auto_now_add=True)
     usage_timestamp = models.DateTimeField(_("last used"), auto_now=True)
 
-    objects = TokenManager()
+    objects = TokenManagerFromTokenQueryset()
 
     class Meta:
         verbose_name = _("API token")

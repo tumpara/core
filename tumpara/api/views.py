@@ -45,7 +45,7 @@ class ApiView(strawberry.django.views.GraphQLView):
         self.schema_manager = schema_manager
 
     @property  # type: ignore
-    def schema(self) -> strawberry.Schema:  # type: ignore
+    def schema(self) -> strawberry.Schema:
         assert self.schema_manager is not None
         return self.schema_manager.get()
 

@@ -170,7 +170,7 @@ class DjangoNode(Node):
                 assert inspect.isclass(inner_type)
                 assert issubclass(inner_type, DjangoNode)
                 # For some reason, mypy thinks inner_type is <nothing> here.
-                assert model_field.remote_field.model is inner_type._get_model_type()  # type: ignore
+                assert model_field.remote_field.model is inner_type._get_model_type()
                 cls._related_field_nodes[field_name] = inner_type
             elif isinstance(model_field, django.db.models.fields.related.RelatedField):
                 raise TypeError(
@@ -211,7 +211,7 @@ class DjangoNode(Node):
                 return None
             else:
                 assert isinstance(obj, node_type._get_model_type())
-                return node_type(obj)
+                return node_type(obj=obj)
         else:
             return getattr(self.obj, name)
 
@@ -293,7 +293,7 @@ class DjangoNode(Node):
         assert isinstance(
             obj, model
         ), f"wrong Django model type: expected {model}, got {type(model)}"
-        return cls(obj)
+        return cls(obj=obj)
 
     @classmethod
     def get_queryset(cls, info: InfoType, permission: str) -> models.QuerySet[Any]:

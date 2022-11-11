@@ -320,7 +320,7 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
         interface.
         """
         assert isinstance(obj, cls._get_model_type())
-        return cls._get_node_type()(obj)
+        return cls._get_node_type()(obj=obj)
 
     @classmethod
     def from_queryset(
@@ -496,7 +496,7 @@ class DjangoConnectionField(ConnectionField):
             ),
         ]
 
-    def get_result(
+    def get_result(  # type: ignore
         self, source: Any, info: InfoType, args: list[Any], kwargs: dict[str, Any]
     ) -> Any:
         connection_type = self.type

@@ -505,7 +505,7 @@ class AssetQuerySet(Generic[_Asset], models.QuerySet[_Asset]):
                 self.filter(stack_key__isnull=False).values("stack_key").distinct()
             )
         ).update(stack_key=None, stack_representative=False)
-        return cast(int, stack_size)
+        return stack_size
 
 
 # Patch the methods related to getting instance methods with the new counterparts (see

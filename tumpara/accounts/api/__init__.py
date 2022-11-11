@@ -26,7 +26,7 @@ class Query:
     def me(self, info: api.InfoType) -> Optional[UserNode]:
         if api.check_authentication(info):
             assert isinstance(info.context.user, User)
-            return UserNode(info.context.user)
+            return UserNode(obj=info.context.user)
         else:
             return None
 

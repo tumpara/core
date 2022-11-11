@@ -56,20 +56,6 @@ def parse_env(
     ...
 
 
-@overload
-def parse_env(
-    variable_name: str, default_value: _Default, cast: Type[bool]
-) -> Union[bool, _Default]:
-    ...
-
-
-@overload
-def parse_env(
-    variable_name: str, default_value: _Default, cast: Type[Path]
-) -> Union[Path, _Default]:
-    ...
-
-
 def parse_env(
     variable_name: str,
     default_value: _Default,
@@ -339,7 +325,6 @@ REPORT_INTERVAL = parse_env("TUMPARA_REPORT_INTERVAL", 500, int)
 
 # Whether to enable the 'demo://' storage backend.
 ENABLE_DEMO_BACKEND = parse_env("TUMPARA_ENABLE_DEMO_BACKEND", False, bool)
-
 # If a file in a folder exists with this name the entire folder will be recursively
 # ignored while scanning.
 DIRECTORY_IGNORE_FILENAME = parse_env(

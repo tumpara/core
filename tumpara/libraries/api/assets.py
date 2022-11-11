@@ -291,9 +291,9 @@ class AssetConnection(
         # TODO This should probably be refactored into some sort of registration
         #  pattern.
         if isinstance(obj, Note):
-            return NoteNode(obj)
+            return NoteNode(obj=obj)
         elif isinstance(obj, Photo):
-            return PhotoNode(obj)
+            return PhotoNode(obj=obj)
         else:
             raise TypeError(f"unsupported asset type: {type(obj)}")
 

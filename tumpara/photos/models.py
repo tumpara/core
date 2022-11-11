@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os.path
 from fractions import Fraction
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 import PIL.Image
 from django.core import validators
@@ -11,13 +11,7 @@ from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from tumpara.libraries.models import (
-    AssetManager,
-    AssetModel,
-    AssetQuerySet,
-    File,
-    Library,
-)
+from tumpara.libraries.models import AssetModel, AssetQuerySet, File, Library
 
 from .utils import (
     calculate_blurhash,
@@ -33,7 +27,7 @@ class PhotoQuerySet(AssetQuerySet["Photo"]):
     pass
 
 
-PhotoManager = AssetManager.from_queryset(PhotoQuerySet)
+PhotoManager = models.Manager.from_queryset(PhotoQuerySet)
 
 
 class Photo(AssetModel):
@@ -244,7 +238,7 @@ class Photo(AssetModel):
             photo, _ = Photo.objects.get_or_create(
                 library=library, metadata_checksum=metadata_checksum, **kwargs
             )
-        return cast(Photo, photo)
+        return photo
 
     @staticmethod
     def handle_new_file(

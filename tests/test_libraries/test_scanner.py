@@ -1,6 +1,9 @@
+import ctypes
 import functools
 import multiprocessing
+import multiprocessing.sharedctypes
 import queue
+from typing import cast
 
 import pytest
 from django.db import connection
@@ -28,7 +31,7 @@ def test_scanner_worker(monkeypatch: pytest.MonkeyPatch, library: Library) -> No
     event_queue.put(scanner.FileEvent("bar"))
     event_queue.put(scanner.FileEvent("baz"))
 
-    counter = multiprocessing.Value("i", 0)
+    counter = multiprocessing.Value(ctypes.c_int, 0, lock=False)
 
     # Make sure the queue doesn't block so our test actually runs through.
     monkeypatch.setattr(

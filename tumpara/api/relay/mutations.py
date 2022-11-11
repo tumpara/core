@@ -288,7 +288,7 @@ class DjangoModelFormInput(
 
         obj.save()
         form.save_m2m()
-        return self._get_node_type()(obj)
+        return self._get_node_type()(obj=obj)
 
 
 @dataclasses.dataclass
