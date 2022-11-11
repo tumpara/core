@@ -1,5 +1,6 @@
-from collections.abc import Sequence
-from typing import Literal, overload
+from typing import overload
+
+import numpy.typing
 
 def base83_decode(base83_str: str) -> int: ...
 def base83_encode(value: int, length: int) -> str: ...
@@ -9,15 +10,8 @@ def linear_to_srgb(value: float) -> int: ...
 def blurhash_components(blurhash: str) -> tuple[int, int]: ...
 @overload
 def blurhash_encode(
-    image: Sequence[tuple[float, float, float]],
+    image: numpy.typing.ArrayLike,
     components_x: int = ...,
     components_y: int = ...,
-    linear: Literal[True] = ...,
-) -> str: ...
-@overload
-def blurhash_encode(
-    image: Sequence[tuple[int, int, int]],
-    components_x: int = ...,
-    components_y: int = ...,
-    linear: Literal[False] = False,
+    linear: bool = ...,
 ) -> str: ...

@@ -27,6 +27,7 @@ def check_expected_metadata(library: Library, filename: str) -> None:
     assert photo.iso_value == expected_metadata.iso_value
     assert photo.camera_make == expected_metadata.camera_make
     assert photo.camera_model == expected_metadata.camera_model
+    assert photo.blurhash is not None
 
 
 def check_matched_files(library: Library, filename: str) -> None:

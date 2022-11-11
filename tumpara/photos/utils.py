@@ -1,5 +1,4 @@
 import hashlib
-import itertools
 import math
 import os.path
 import unicodedata
@@ -7,6 +6,7 @@ from typing import Literal, Optional, TypeVar
 
 import blurhash
 import dateutil.parser
+import numpy
 import PIL.Image
 import PIL.ImageOps
 import pyexiv2
@@ -159,18 +159,9 @@ def calculate_blurhash(image: PIL.Image.Image) -> str:
         PIL.Image.BICUBIC,
     )
 
-    raw_image = list(
-        itertools.chain.from_iterable(
-            zip(
-                thumbnail.getdata(band=0),
-                thumbnail.getdata(band=1),
-                thumbnail.getdata(band=2),
-            )
-        ),
-    )
     return blurhash.encode(
-        raw_image,
-        # Limit the components so we stay inside the CharField's bounds.
+        numpy.array(thumbnail),
+        # Limit the components, so we stay inside the CharField's bounds.
         components_x=max(0, min(math.ceil(a), 8)),
         components_y=max(0, min(math.ceil(b), 8)),
     )
