@@ -1,3 +1,4 @@
+import dataclasses
 from typing import Optional
 
 import pytest
@@ -50,9 +51,7 @@ def test_django_node_related_fields() -> None:
     @strawberry.type
     class ThingNode(api.DjangoNode, fields=["foo", "other"]):
         obj: strawberry.Private[Thing]
-        other: Optional[OtherNode] = strawberry.field(
-            init=False,  # type: ignore
-        )
+        other: Optional[OtherNode] = dataclasses.field(init=False)
 
     assert set(OtherNode._get_field_names()) == {"pk", "baz"}
     assert set(ThingNode._get_field_names()) == {"pk", "foo", "other"}

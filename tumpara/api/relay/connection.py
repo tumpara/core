@@ -9,6 +9,7 @@ from typing import Any, ClassVar, Generic, Optional, TypeVar, Union, cast
 import strawberry.annotation
 import strawberry.arguments
 from django.db import models
+from strawberry.annotation import StrawberryAnnotation
 from strawberry.field import StrawberryField
 from strawberry.type import StrawberryOptional
 
@@ -452,7 +453,7 @@ class DjangoConnectionField(ConnectionField):
         if connection_type is not None:
             kwargs.setdefault(
                 "type_annotation",
-                Optional[connection_type],
+                StrawberryAnnotation.from_annotation(Optional[connection_type]),
             )
 
         super().__init__(description=description, **kwargs)
@@ -467,11 +468,24 @@ class DjangoConnectionField(ConnectionField):
             "a type annotation (the connection type) must be provided when using a "
             "custom resolver in Django connection fields"
         )
+
         # Propagate our type annotation (if available) to the resolver. That way the
         # resolver can return (type-checked) querysets and the API will still have the
-        # connection type.
-        self.base_resolver.annotations["return"] = self.type_annotation
+        # connection type. In order to transfer the namespace as well, we need to
+        # calculate the wrong annotation first as well, though.
+        assert self.base_resolver.type_annotation is not None, (
+            "the resolver function for a Django connection field must have a return "
+            "type annotation"
+        )
+        self.type_annotation.namespace = self.base_resolver.type_annotation.namespace
+        self.base_resolver.__dict__["type_annotation"] = self.type_annotation
+
         return self
+
+    @property
+    def is_basic_field(self) -> bool:
+        # We need an Info object in order for this to work.
+        return False
 
     @property
     def arguments(self) -> list[strawberry.arguments.StrawberryArgument]:

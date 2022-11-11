@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import ctypes
 import logging
-import multiprocessing
-from typing import TYPE_CHECKING, Any, cast
+import multiprocessing.sharedctypes
+from typing import Any, cast
 
 import django
 from django.conf import settings
@@ -17,9 +18,7 @@ _logger = logging.getLogger(__name__)
 def process(
     library_pk: int,
     queue: multiprocessing.JoinableQueue[Event],
-    # multiprocessing.Value isn't really typed that well yet, see here:
-    # https://github.com/python/typeshed/issues/4266
-    counter: multiprocessing.Value,  # type: ignore
+    _counter: multiprocessing.sharedctypes.SynchronizedBase[ctypes.c_int],
 ) -> None:
     """Worker process for multiprocessed event handling.
 
@@ -34,7 +33,6 @@ def process(
     from ..models import Library
 
     library = Library.objects.get(pk=library_pk)
-    _counter = cast(Any, counter)
 
     try:
         while True:
@@ -63,12 +61,10 @@ def process(
                     )
 
             with _counter.get_lock():
-                _counter.value += 1
-                if (
-                    _counter.value % settings.REPORT_INTERVAL == 0
-                    and _counter.value > 0
-                ):
-                    _logger.info(f"{_counter.value} events processed so far.")
+                counter: ctypes.c_int = cast(ctypes.c_int, _counter)
+                counter.value += 1
+                if counter.value % settings.REPORT_INTERVAL == 0 and counter.value > 0:
+                    _logger.info(f"{counter.value} events processed so far.")
 
             queue.task_done()
     finally:

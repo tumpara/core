@@ -31,7 +31,7 @@ def test_scanner_worker(monkeypatch: pytest.MonkeyPatch, library: Library) -> No
     event_queue.put(scanner.FileEvent("bar"))
     event_queue.put(scanner.FileEvent("baz"))
 
-    counter = multiprocessing.Value(ctypes.c_int, 0, lock=False)
+    counter = multiprocessing.Value(ctypes.c_int, 0, lock=True)
 
     # Make sure the queue doesn't block so our test actually runs through.
     monkeypatch.setattr(
@@ -45,6 +45,6 @@ def test_scanner_worker(monkeypatch: pytest.MonkeyPatch, library: Library) -> No
     with pytest.raises(queue.Empty):
         worker.process(library.pk, event_queue, counter)
 
-    assert counter.value == 3
+    assert cast(ctypes.c_int, counter).value == 3
     GenericHandler.objects.get(content=b"content")
     assert File.objects.count() == 3

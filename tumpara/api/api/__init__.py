@@ -1,3 +1,4 @@
+import dataclasses
 from typing import Annotated, Optional, cast
 
 import strawberry
@@ -15,9 +16,7 @@ from ..utils import with_argument_annotation
 @strawberry.type(name="Token", description=Token.__doc__ or "")
 class TokenNode(api.DjangoNode, fields=["key", "user", "expiry_timestamp", "name"]):
     obj: strawberry.Private[Token]
-    user: UserNode = strawberry.field(
-        init=False,  # type: ignore
-    )
+    user: UserNode = dataclasses.field(init=False)
     header: Optional[str] = strawberry.field(
         description="Token to use in the `X-Token` header while making API requests. "
         "Note that this field is only available the when initially generating a "

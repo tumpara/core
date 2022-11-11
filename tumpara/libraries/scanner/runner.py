@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import logging
 import multiprocessing
 import os
@@ -96,7 +97,7 @@ def run_parallel(
     # Spawn the requested number of worker processes and initialize the queue.
     context = multiprocessing.get_context("spawn")
     queue = context.JoinableQueue(maxsize=2 * thread_count)
-    counter = context.Value("i", 0)
+    counter = context.Value(ctypes.c_int, 0, lock=True)
 
     # Close the active database connection as this can cause issues with
     # multiprocessing. See here for details: https://stackoverflow.com/a/10684672
