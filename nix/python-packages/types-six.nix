@@ -2,12 +2,11 @@
 
 buildPythonPackage rec {
 	pname = "types-six";
-	version = "1.16.15";
+	version = "1.16.21.2";
 
-	# https://pypi.org/project/types-six/
 	src = fetchPypi {
 		inherit pname version;
-		sha256 = "0kTwU32rDQVwpbxvimDE2n8FRtlgqGd1IOa/8hSmT7g=";
+		sha256 = "zVz1Zr14g7wQhj8phIelsgQUKzNinJevl5lnDMlabY4=";
 	};
 
 	pythonImportsCheck = [ "six-stubs" ];

@@ -26,19 +26,59 @@
 							'';
 						});
 
+						django-stubs = super.django-stubs.overridePythonAttrs (oldAttrs: rec {
+							version = "1.13.0";
+							src = self.fetchPypi {
+								inherit (oldAttrs) pname;
+								inherit version;
+								sha256 = "Qk/dGTX4WagCNlBW+cz02xLR2Tpas95tVjPd26DF/HY=";
+							};
+						});
+
+						django-stubs-ext = super.django-stubs-ext.overridePythonAttrs (oldAttrs: rec {
+							version = "0.7.0";
+							src = self.fetchPypi {
+								inherit (oldAttrs) pname;
+								inherit version;
+								sha256 = "T9jNvGjRpCHyG7fg2edtUPaktQTTULp4ZAXa9TbpDCE=";
+							};
+						});
+
+						strawberry-graphql = super.strawberry-graphql.overridePythonAttrs (oldAttrs: rec {
+							version = "0.142.0";
+							src = pkgs.fetchFromGitHub {
+								owner = "strawberry-graphql";
+								repo = "strawberry";
+								rev = version;
+								sha256 = "L3zGptNRHMrEtnObrdUw8JI+z3nLWn8Uvt1q6kWedX8=";
+							};
+							# Strip down to only the essential dependencies as well as the
+							# ones we need:
+							# https://github.com/strawberry-graphql/strawberry/blob/0.142.0/pyproject.toml#L34-L57
+							propagatedBuildInputs = [
+								self.django
+								self.asgiref
+								self.backports-cached-property
+								self.channels
+								self.click
+								self.graphql-core
+								self.pygments
+								self.python-dateutil
+								self.python-multipart
+								self.typing-extensions
+							];
+						});
+
 						# All the remaining packages in the overlay are ones that are not
 						# yet ported in the official nixpkgs repo:
 
-						backports_cached-property = self.callPackage ./nix/python-packages/backports_cached-property.nix { };
-						django-stubs = self.callPackage ./nix/python-packages/django-stubs.nix { };
-						django-stubs-ext = self.callPackage ./nix/python-packages/django-stubs-ext.nix { };
+						# https://pypi.org/project/pygments-graphql/
 						pygments-graphql = self.callPackage ./nix/python-packages/pygments-graphql.nix { };
+						# https://pypi.org/project/rawpy/
 						rawpy = self.callPackage ./nix/python-packages/rawpy.nix { };
-						singledispatch = self.callPackage ./nix/python-packages/singledispatch.nix { };
-						strawberry-graphql = self.callPackage ./nix/python-packages/strawberry-graphql.nix { };
+						# https://pypi.org/project/types-Pillow/
 						types-pillow = self.callPackage ./nix/python-packages/types-pillow.nix { };
-						types-PyYAML = self.callPackage ./nix/python-packages/types-pyyaml.nix { };
-						types-selenium = self.callPackage ./nix/python-packages/types-selenium.nix { };
+						# https://pypi.org/project/types-six/
 						types-six = self.callPackage ./nix/python-packages/types-six.nix { };
 					};
 				};
