@@ -176,12 +176,19 @@ class MainAssetFilter(AssetFilter):
     visibility: Optional[AssetVisibilityFilter] = None
     use_stacks: bool = strawberry.field(
         default=True,
-        description="Whether to use stacks. If this is `true`, only one asset is "
-        "returned per stack. Assets not in any stack are returned as well.\n\n"
+        description="Whether the result should adhere to asset stacking. If this is "
+        "option is set to `true`, only one asset from each stack will be returned. "
+        "This is ignored if `stacked_with` is set.\n\n"
         "Note that when using this option, assets in a stack that are not the "
         "representative will directly be filtered out. That means that a stack might "
         "not appear at all if its representative is either not visible to the current "
         "user or filtered out by other options.",
+    )
+    stacked_with: Optional[strawberry.ID] = strawberry.field(
+        default=None,
+        description="Filter by asset stacks. Set this to an ID of an Asset and the "
+        "result will contain all the other assets stacked together with the provided "
+        "one.",
     )
 
     def build_query(
@@ -202,7 +209,12 @@ class MainAssetFilter(AssetFilter):
                 info, f"{prefix}visibility", f"{prefix}library__default_visibility"
             )
 
-        if self.use_stacks:
+        if (
+            stacked_with_node := api.resolve_node(info, self.stacked_with, AssetNode)
+        ) is not None:
+            query &= models.Q(stack_key=stacked_with_node.obj.stack_key)
+
+        if self.use_stacks and stacked_with_node is None:
             query &= models.Q(stack_key__isnull=True) | models.Q(
                 stack_representative=True
             )

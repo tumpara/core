@@ -376,6 +376,33 @@ def test_asset_stacking(user: User, notes: list[Note]) -> None:
         }
     }
 
+    for node_id in node_ids:
+        result = api.execute_sync(
+            """query StackedWith($id: ID!) {
+                assets(first: 10, filter: {stackedWith: $id}) {
+                    nodes {
+                        ... on Note { content }
+                    }
+                }
+            }""",
+            user,
+            id=node_id,
+        )
+        assert result.errors is None
+        assert result.data == {
+            "assets": {
+                "nodes": [
+                    {"content": "Third note."},
+                    {"content": "Fourth note."},
+                    {"content": "Fifth note."},
+                    {"content": "Sixth note."},
+                    {"content": "Seventh note."},
+                    {"content": "Eighth note."},
+                    {"content": "Ninth note."},
+                ]
+            }
+        }
+
     unstack_mutation = """
         mutation UnstackAssets($ids: [ID!]!) {
             unstackAssets(input: {ids: $ids}) {

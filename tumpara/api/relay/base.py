@@ -323,7 +323,7 @@ def resolve_node(
         not be resolved if this permission is not fulfilled. Django nodes default to the
         viewing permission here.
     """
-    node_id = node_id.strip()
+    node_id = (node_id or "").strip()
     if not node_id:
         return None
 
