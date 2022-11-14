@@ -404,8 +404,10 @@ class Mutation:
     def set_stack_representative(
         self, info: api.InfoType, id: strawberry.ID
     ) -> SetStackRepresentativeResult:
-        node = api.resolve_node(info, id, "libraries.change_asset")
-        if not isinstance(node, AssetNode):
+        node = api.resolve_node(
+            info, id, AssetNode, permission="libraries.change_asset"
+        )
+        if node is None:
             return api.NodeError(requested_id=id)
         try:
             node.obj.represent_stack()

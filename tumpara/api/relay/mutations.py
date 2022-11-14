@@ -257,12 +257,10 @@ class DjangoModelFormInput(
                 # We assume that type_annotation_for_django_field resolved  the type to
                 # strawberry.ID, which is a string:
                 assert isinstance(data[field_name], str)
-                node = resolve_node(info, data[field_name])
                 queryset_type = field.queryset
                 assert queryset_type is not None
-                if not isinstance(node, DjangoNode) or not isinstance(
-                    node.obj, queryset_type.model
-                ):
+                node = resolve_node(info, data[field_name], DjangoNode)
+                if not isinstance(node.obj, queryset_type.model):
                     return NodeError(requested_id=data[field_name])
                 data[field_name] = node.obj
 
@@ -332,10 +330,9 @@ class UpdateFormInput(
 
         assert data["id"] == self.id
         data.pop("id")
-        node = resolve_node(info, self.id)
+        node = resolve_node(info, self.id, DjangoNode)
         if node is None:
             return NodeError(requested_id=self.id)
-        assert isinstance(node, DjangoNode)
         assert isinstance(node.obj, self._get_model_type())
         if not info.context.user.has_perm(
             build_permission_name(node.obj, "change"), node.obj

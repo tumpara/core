@@ -68,17 +68,15 @@ class Mutation:
     def manage_membership(
         self, info: api.InfoType, input: ManageMembershipInput
     ) -> ManageMembershipResult:
-        joinable_node = api.resolve_node(info, input.joinable_id)
-        if not isinstance(
-            joinable_node, JoinableNode
-        ) or not info.context.user.has_perm(
+        joinable_node = api.resolve_node(info, input.joinable_id, JoinableNode)
+        if joinable_node is None or not info.context.user.has_perm(
             build_permission_name(joinable_node.obj, "change"), joinable_node.obj
         ):
             return api.NodeError(requested_id=input.joinable_id)
         joinable: Joinable = joinable_node.obj
 
-        user_node = api.resolve_node(info, input.user_id)
-        if not isinstance(user_node, UserNode):
+        user_node = api.resolve_node(info, input.user_id, UserNode)
+        if user_node is None:
             return api.NodeError(requested_id=input.user_id)
         user: User = user_node.obj
 

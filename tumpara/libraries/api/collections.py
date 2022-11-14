@@ -118,15 +118,19 @@ class Mutation:
 
         add_asset_nodes = list[AssetNode]()
         for asset_node_id in input.add_asset_ids or []:
-            asset_node = api.resolve_node(info, asset_node_id, "libraries.view_asset")
-            if not isinstance(asset_node, AssetNode):
+            asset_node = api.resolve_node(
+                info, asset_node_id, AssetNode, permission="libraries.view_asset"
+            )
+            if asset_node is None:
                 return api.NodeError(requested_id=asset_node_id)
             add_asset_nodes.append(asset_node)
 
         remove_asset_nodes = list[AssetNode]()
         for asset_node_id in input.remove_asset_ids or []:
-            asset_node = api.resolve_node(info, asset_node_id, "libraries.view_asset")
-            if not isinstance(asset_node, AssetNode):
+            asset_node = api.resolve_node(
+                info, asset_node_id, AssetNode, permission="libraries.view_asset"
+            )
+            if asset_node is None:
                 return api.NodeError(requested_id=asset_node_id)
             remove_asset_nodes.append(asset_node)
 

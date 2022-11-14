@@ -308,16 +308,32 @@ class DjangoNode(Node):
 
 
 def resolve_node(
-    info: InfoType, node_id: str, permission: Optional[str] = None
-) -> Optional[Node]:
+    info: InfoType,
+    node_id: Optional[str],
+    node_type: type[_Node] = Node,
+    *,
+    permission: Optional[str] = None,
+) -> Optional[_Node]:
     """Resolve a single node instance by an ID.
 
     :param info: GraphQL info data.
     :param node_id: The node ID to resolve.
+    :param node_type: Node type to resolve.
     :param permission: Optional permission the current user should have. The node will
         not be resolved if this permission is not fulfilled. Django nodes default to the
         viewing permission here.
     """
-    type_name, *key = decode_key(node_id)
+    node_id = node_id.strip()
+    if not node_id:
+        return None
+
+    try:
+        type_name, *key = decode_key(node_id)
+    except ValueError:
+        return None
+
     origin, _ = get_node_origin(type_name, info)
+    if not issubclass(origin, node_type):
+        pass
+
     return origin.from_key(info, permission, *key)
