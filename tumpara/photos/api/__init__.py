@@ -47,7 +47,8 @@ class PhotoAssetFilter(AssetFilter):
             query &= models.Q((f"{prefix}isnull", True))
             return query, aliases
 
-        subquery = models.Q()
+        # Filter out photos with no main path (where we can't generate a thumbnail).
+        subquery = ~models.Q((f"{prefix}main_path", ""))
 
         width_float = functions.Cast(models.F(f"{prefix}width"), models.FloatField())
         height_float = functions.Cast(models.F(f"{prefix}height"), models.FloatField())
