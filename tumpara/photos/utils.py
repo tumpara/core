@@ -1,4 +1,5 @@
 import hashlib
+import io
 import math
 import os.path
 import unicodedata
@@ -57,11 +58,28 @@ def load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
     with library.storage.open(path, "rb") as file_io:
         try:
             raw_image = rawpy.imread(file_io)  # type: ignore
-            image = PIL.Image.fromarray(
-                raw_image.postprocess(),
-            )
-            raw_original = True
+            try:
+                # Case 1: we have a raw file with an embedded thumbnail. Use that
+                # because it's probably already processed by the camera or photo
+                # program, meaning it will look better than what we can render off of
+                # the source.
+                raw_thumb = raw_image.extract_thumb()
+                if raw_thumb.format == rawpy.ThumbFormat.JPEG:
+                    image = PIL.Image.open(io.BytesIO(raw_thumb.data))
+                elif raw_thumb.format == rawpy.ThumbFormat.BITMAP:
+                    image = PIL.Image.fromarray(raw_thumb.data)
+                else:
+                    raise rawpy.LibRawNoThumbnailError
+                raw_original = True
+
+            except rawpy.LibRawNoThumbnailError:
+                # Case 2: we have a raw file, but it doesn't have a thumbnail. Here, we
+                # need to process the image ourselves.
+                image = PIL.Image.fromarray(raw_image.postprocess())
+                raw_original = True
+
         except rawpy.LibRawFileUnsupportedError:
+            # Case 3: the image is not a raw file. Hopefully, Pillow can deal with it.
             file_io.seek(0)
             image = PIL.Image.open(file_io)
             raw_original = False
