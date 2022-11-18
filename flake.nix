@@ -72,6 +72,8 @@
 						# All the remaining packages in the overlay are ones that are not
 						# yet ported in the official nixpkgs repo:
 
+						# https://github.com/fdintino/pillow-avif-plugin
+						pillow-avif-plugin = self.callPackage ./nix/python-packages/pillow-avif-plugin.nix { };
 						# https://pypi.org/project/pygments-graphql/
 						pygments-graphql = self.callPackage ./nix/python-packages/pygments-graphql.nix { };
 						# https://pypi.org/project/rawpy/
@@ -91,6 +93,7 @@
 					django-cors-headers
 					inotifyrecursive
 					pillow
+					pillow-avif-plugin
 					psycopg2
 					py3exiv2
 					rawpy

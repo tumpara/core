@@ -2,10 +2,11 @@
 , fetchFromGitHub
 , cython
 , libraw
-, numpy
 , nose
 , pkgconf
 , opencv4
+
+, numpy
 }:
 
 buildPythonPackage rec {
@@ -23,4 +24,6 @@ buildPythonPackage rec {
 	buildInputs = [ cython libraw ];
 	propagatedBuildInputs = [ numpy ];
 	checkInputs = [ nose opencv4 ];
+
+	pythonImportsCheck = [ "rawpy" ];
 }

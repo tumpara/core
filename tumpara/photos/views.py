@@ -9,6 +9,14 @@ from tumpara.api.views import serve_file
 from .models import Photo
 from .utils import load_image
 
+AVIF_SUPPORTED: bool
+try:
+    import pillow_avif.AvifImagePlugin
+
+    AVIF_SUPPORTED = pillow_avif.AvifImagePlugin.SUPPORTED
+except ImportError:
+    AVIF_SUPPORTED = False
+
 
 def render_thumbnail(request: HttpRequest, description: str) -> HttpResponseBase:
     """Serve a thumbnailed version of a :class:`~tumpara.photos.models.Photo`.
@@ -42,21 +50,26 @@ def render_thumbnail(request: HttpRequest, description: str) -> HttpResponseBase
     # There are still some formats that we would like to support in the long term.
     # Mainly AVIF, which is blocked by this issue:
     # https://github.com/python-pillow/Pillow/pull/5201
-    if request.accepts("image/webp"):
-        format = "webp"
+    if AVIF_SUPPORTED and request.accepts("image/avif"):
+        format_name = "avif"
+    elif request.accepts("image/webp"):
+        format_name = "webp"
     elif request.accepts("image/jpeg"):
-        format = "jpeg"
+        format_name = "jpeg"
     else:
         return HttpResponseBadRequest("Bad Accept header")
 
-    filename = f"{photo_pk}_{requested_width}x{requested_height}.{format}"
+    filename = f"{photo_pk}_{requested_width}x{requested_height}.{format_name}"
 
     if not settings.THUMBNAIL_STORAGE.exists(filename):
         try:
             photo = Photo.objects.select_related("library").get(pk=photo_pk)
         except Photo.DoesNotExist:
             raise Http404()
-        image, _ = load_image(photo.library, photo.main_path)
+        try:
+            image, _ = load_image(photo.library, photo.main_path)
+        except IsADirectoryError as error:
+            raise
 
         image.thumbnail(
             (
@@ -70,6 +83,6 @@ def render_thumbnail(request: HttpRequest, description: str) -> HttpResponseBase
         )
 
         with settings.THUMBNAIL_STORAGE.open(filename, "wb") as file_io:
-            image.save(file_io, format=format.upper())
+            image.save(file_io, format=format_name.upper())
 
     return serve_file(request, settings.THUMBNAIL_STORAGE, filename)
