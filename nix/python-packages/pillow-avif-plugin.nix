@@ -1,5 +1,6 @@
 { buildPythonPackage
 , fetchFromGitHub
+, substituteAll
 , cython
 , libavif
 , libjpeg
@@ -24,9 +25,8 @@ buildPythonPackage rec {
 	buildInputs = [ cython libavif libjpeg ];
 	propagatedBuildInputs = [ pillow ];
 
-	# This currently fails:
-	#   ImportError: /nix/store/cgk8nbxafs8l1igpyvnx0nrymv5hbabk-libyuv-1787/lib/libyuv.so: undefined symbol: jpeg_resync_to_restart
-  doCheck = false;
-#	checkInputs = [ pytestCheckHook ];
-#	pythonImportsCheck = [ "pillow_avif" ];
+	NIX_CFLAGS_LINK = [ "-ljpeg" ];
+
+	checkInputs = [ pytestCheckHook ];
+	pythonImportsCheck = [ "pillow_avif" ];
 }

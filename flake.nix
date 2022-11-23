@@ -151,6 +151,8 @@
 					#          };
 					tumpara = python.withPackages runtimeDependencies;
 
+					libjpeg = pkgs.libjpeg;
+
 					devEnv = python.withPackages allDependencies;
 				};
 				defaultPackage = packages.tumpara;
