@@ -290,7 +290,7 @@ class AssetQuerySet(Generic[_Asset], models.QuerySet[_Asset]):
             )
 
     def with_effective_visibility(self) -> AssetQuerySet[_Asset]:
-        return self.alias(
+        return self.annotate(
             effective_visibility=models.Case(
                 models.When(
                     visibility=Visibility.FROM_LIBRARY,
@@ -367,7 +367,7 @@ class AssetQuerySet(Generic[_Asset], models.QuerySet[_Asset]):
         if not user.is_active:
             return self.none()
         if user.is_superuser:
-            return self
+            return self.with_effective_visibility()
 
         return self.filter(
             # Return assets with at least one available file or no files at all.
@@ -388,7 +388,9 @@ class AssetQuerySet(Generic[_Asset], models.QuerySet[_Asset]):
                 user,
                 "libraries.change_library" if writing else "libraries.view_library",
             ),
-        )
+            # Since we are filtering for the library anyway, annotating the effective
+            # visibility shouldn't influence the total query cost that much:
+        ).with_effective_visibility()
 
     @transaction.atomic
     def stack(self) -> int:
@@ -662,8 +664,14 @@ class Asset(models.Model):
                 # This field is not applicable because it is not the other side of a
                 # OneToOneField from a subclass with parent_link set.
                 continue
+
+            # Pass through properties that were annotated by the manager.
+            effective_visibility = getattr(self, "effective_visibility", None)
+
             try:
                 subtype = cast(Asset, getattr(self, field.name))
+                if effective_visibility is not None:
+                    setattr(subtype, "effective_visibility", effective_visibility)
                 return subtype.resolve_instance() if recursive else subtype
             except field.related_model.DoesNotExist:
                 pass

@@ -15,5 +15,5 @@ from .collections import (
     CollectionFilter,
     CollectionNode,
 )
-from .libraries import LibraryConnection, LibraryEdge, LibraryNode, LibraryVisibility
+from .libraries import EffectiveVisibility, LibraryConnection, LibraryEdge, LibraryNode
 from .notes import NoteNode

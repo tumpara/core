@@ -92,12 +92,12 @@ class PhotoNode(
     fields=[
         "width",
         "height",
+        "aperture_size",
+        "exposure_time",
+        "focal_length",
+        "iso_value",
         "camera_make",
         "camera_model",
-        "iso_value",
-        "exposure_time",
-        "aperture_size",
-        "focal_length",
         "blurhash",
     ],
 ):

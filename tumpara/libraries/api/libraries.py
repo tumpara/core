@@ -1,3 +1,4 @@
+import dataclasses
 import enum
 from typing import Optional
 
@@ -11,10 +12,21 @@ from tumpara.libraries import storage
 from tumpara.libraries.models import Library, Visibility
 
 
+@strawberry.enum
+class EffectiveVisibility(enum.Enum):
+    PUBLIC = Visibility.PUBLIC
+    INTERNAL = Visibility.INTERNAL
+    MEMBERS = Visibility.MEMBERS
+    OWNERS = Visibility.OWNERS
+
+
 @api.remove_duplicate_node_interface
 @strawberry.type(name="Library", description="A library containing media.")
-class LibraryNode(JoinableNode, api.DjangoNode, fields=["source", "context"]):
+class LibraryNode(
+    JoinableNode, api.DjangoNode, fields=["source", "context", "default_visibility"]
+):
     obj: strawberry.Private[Library]
+    default_visibility: EffectiveVisibility = dataclasses.field(init=False)
 
 
 @strawberry.type
@@ -53,14 +65,6 @@ class Query:
             return False
 
 
-@strawberry.enum
-class LibraryVisibility(enum.Enum):
-    PUBLIC = Visibility.PUBLIC
-    INTERNAL = Visibility.INTERNAL
-    MEMBERS = Visibility.MEMBERS
-    OWNERS = Visibility.OWNERS
-
-
 class LibraryForm(forms.ModelForm[Library]):
     class Meta:
         model = Library
@@ -74,12 +78,12 @@ class CreateLibraryForm(LibraryForm):
 
 @strawberry.input(description="Create a new library.")
 class CreateLibraryInput(api.CreateFormInput[CreateLibraryForm, LibraryNode]):
-    default_visibility: LibraryVisibility
+    default_visibility: EffectiveVisibility
 
 
 @strawberry.input(description="Change an existing library.")
 class UpdateLibraryInput(api.UpdateFormInput[LibraryForm, LibraryNode]):
-    default_visibility: Optional[LibraryVisibility]
+    default_visibility: Optional[EffectiveVisibility]
 
 
 LibraryMutationResult = strawberry.union(

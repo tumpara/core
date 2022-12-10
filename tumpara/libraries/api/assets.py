@@ -1,7 +1,7 @@
 import dataclasses
 import enum
 from collections.abc import Sequence, Set
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import strawberry
 from django.db import NotSupportedError, models
@@ -10,7 +10,7 @@ from tumpara import api
 from tumpara.accounts.utils import build_permission_name
 
 from ..models import Asset, AssetModel, AssetQuerySet, File, Visibility
-from .libraries import LibraryNode
+from .libraries import EffectiveVisibility, LibraryNode
 
 ########################################################################################
 # Files                                                                                #
@@ -228,11 +228,27 @@ class MainAssetFilter(AssetFilter):
 
 
 @strawberry.interface(name="Asset")
-class AssetNode(api.DjangoNode, fields=["library", "visibility"]):
+class AssetNode(
+    api.DjangoNode,
+    fields=[
+        "library",
+        "visibility",
+        "import_timestamp",
+        "media_timestamp",
+    ],
+):
     obj: strawberry.Private[Asset]
     # The explicit fields here are to please MyPy:
     library: Optional[LibraryNode] = dataclasses.field(init=False)
     visibility: AssetVisibility = dataclasses.field(init=False)
+
+    @strawberry.field(
+        description="The effective `visibility` value, which might come from the "
+        "library's settings."
+    )
+    def effective_visibility(self) -> EffectiveVisibility:
+        # This is annotated by the for_user() method of the asset's manager.
+        return cast(Any, self.obj).effective_visibility
 
     @api.DjangoConnectionField(
         FileConnection,
