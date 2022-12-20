@@ -101,7 +101,7 @@ class Query:
         self,
         info: api.InfoType,
         node_id: Annotated[
-            strawberry.ID,
+            Optional[strawberry.ID],
             strawberry.argument(name="id", description="The global ID to resolve."),
         ],
     ) -> Optional[api.Node]:
