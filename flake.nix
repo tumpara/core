@@ -1,7 +1,7 @@
 {
 	description = "Tumpara server";
 
-	inputs.nixpkgs.url = "nixpkgs/nixos-unstable";
+	inputs.nixpkgs.url = "nixpkgs/1710ed1f6f8ceb75cf7d1cf55ee0cc21760e1c7a";
 	inputs.flake-utils.url = "github:numtide/flake-utils";
 
 	outputs = { self, nixpkgs, flake-utils }:
@@ -27,11 +27,11 @@
 						});
 
 						django-stubs = super.django-stubs.overridePythonAttrs (oldAttrs: rec {
-							version = "1.13.0";
+							version = "1.13.1";
 							src = self.fetchPypi {
 								inherit (oldAttrs) pname;
 								inherit version;
-								sha256 = "Qk/dGTX4WagCNlBW+cz02xLR2Tpas95tVjPd26DF/HY=";
+								sha256 = "vMYYujU9q8VA2YK52sHVoZIWUvj8KhNlPVRaV9XjzA8=";
 							};
 						});
 
@@ -45,12 +45,12 @@
 						});
 
 						strawberry-graphql = super.strawberry-graphql.overridePythonAttrs (oldAttrs: rec {
-							version = "0.142.0";
+							version = "0.151.1";
 							src = pkgs.fetchFromGitHub {
 								owner = "strawberry-graphql";
 								repo = "strawberry";
 								rev = version;
-								sha256 = "L3zGptNRHMrEtnObrdUw8JI+z3nLWn8Uvt1q6kWedX8=";
+								sha256 = "YzErCBocNeouCsyW58rKwxFbmsSFyuxZK2DqngRfgPM=";
 							};
 							# Strip down to only the essential dependencies as well as the
 							# ones we need:
@@ -62,9 +62,11 @@
 								self.channels
 								self.click
 								self.graphql-core
+								self.libcst
 								self.pygments
 								self.python-dateutil
 								self.python-multipart
+								self.rich
 								self.typing-extensions
 							];
 						});
