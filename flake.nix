@@ -78,6 +78,10 @@
 						pillow-avif-plugin = self.callPackage ./nix/python-packages/pillow-avif-plugin.nix { };
 						# https://pypi.org/project/pygments-graphql/
 						pygments-graphql = self.callPackage ./nix/python-packages/pygments-graphql.nix { };
+						# https://pypi.org/project/exiv2
+						python-exiv2 = self.callPackage ./nix/python-packages/python-exiv2.nix {
+						  inherit (pkgs) pkg-config;
+						};
 						# https://pypi.org/project/rawpy/
 						rawpy = self.callPackage ./nix/python-packages/rawpy.nix { };
 						# https://pypi.org/project/types-Pillow/
@@ -97,7 +101,7 @@
 					pillow
 					pillow-avif-plugin
 					psycopg2
-					py3exiv2
+					python-exiv2
 					rawpy
 					strawberry-graphql
 				];

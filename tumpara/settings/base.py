@@ -331,4 +331,5 @@ DIRECTORY_IGNORE_FILENAME = parse_env(
     "TUMPARA_DIRECTORY_IGNORE_FILENAME", ".nomedia", string_or_none
 )
 
-PIL.ImageFile.LOAD_TRUNCATED_IMAGES = True
+# Whether to enable BMFF supper in exiv2.
+ENABLE_BMFF_METADATA = parse_env("TUMPARA_ENABLE_BMFF_SUPPORT", False, bool)

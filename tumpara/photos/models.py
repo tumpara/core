@@ -17,6 +17,7 @@ from .utils import (
     calculate_blurhash,
     calculate_metadata_checksum,
     extract_metadata_value,
+    extract_timestamp,
     extract_timestamp_from_filename,
     load_image,
     load_metadata,
@@ -165,13 +166,9 @@ class Photo(AssetModel):
             self.blurhash = None
 
         self.media_timestamp = (
-            extract_metadata_value(
-                metadata,
-                timezone.datetime,
-                "Exif.Image.DateTimeOriginal",
-                "Exif.Image.DateTime",
-                "Exif.Image.DateTimeDigitized",
-            )
+            extract_timestamp(metadata, "")
+            or extract_timestamp(metadata, "Original")
+            or extract_timestamp(metadata, "Digitized")
             or extract_timestamp_from_filename(self.main_path)
             or timezone.now()
         )
