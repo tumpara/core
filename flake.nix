@@ -78,10 +78,6 @@
 						pillow-avif-plugin = self.callPackage ./nix/python-packages/pillow-avif-plugin.nix { };
 						# https://pypi.org/project/pygments-graphql/
 						pygments-graphql = self.callPackage ./nix/python-packages/pygments-graphql.nix { };
-						# https://pypi.org/project/exiv2
-						python-exiv2 = self.callPackage ./nix/python-packages/python-exiv2.nix {
-						  inherit (pkgs) pkg-config;
-						};
 						# https://pypi.org/project/rawpy/
 						rawpy = self.callPackage ./nix/python-packages/rawpy.nix { };
 						# https://pypi.org/project/types-Pillow/
@@ -101,7 +97,6 @@
 					pillow
 					pillow-avif-plugin
 					psycopg2
-					python-exiv2
 					rawpy
 					strawberry-graphql
 				];
@@ -157,18 +152,34 @@
 					#          };
 					tumpara = python.withPackages runtimeDependencies;
 
-					libjpeg = pkgs.libjpeg;
+					exiftool = pkgs.exiftool;
+					postgresql = pkgs.postgresql.withPackages (ps: with ps; [
+						postgis
+					]);
 
-					devEnv = python.withPackages allDependencies;
+					devEnv = pkgs.buildEnv {
+						name = "tumpara-dev";
+						paths = with packages; [
+							exiftool
+							postgresql
+							(python.withPackages allDependencies)
+						];
+					};
 				};
 				defaultPackage = packages.tumpara;
 
 				apps = {
-					tumpara = packages.tumpara;
+					tumpara = {
+						name = "tumpara";
+						program = "${packages.tumpara}/bin/tumpara";
+					};
 				};
 				defaultApp = apps.tumpara;
 
-				devShell = packages.devEnv.env;
+				devShells.default = pkgs.mkShell {
+					name = "tumpara-dev-shell";
+					packages = [ packages.devEnv ];
+				};
 			}
 		));
 }

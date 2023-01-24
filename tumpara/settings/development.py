@@ -1,7 +1,12 @@
 import os
+from pathlib import Path
 
 os.environ.setdefault("TUMPARA_SECRET_KEY", "thisisnotsecure")
 os.environ.setdefault("TUMPARA_ENABLE_DEMO_BACKEND", "True")
+os.environ.setdefault(
+    "TUMPARA_EXIFTOOL_BINARY",
+    str(Path(__file__).parent.parent.parent / ".dev" / "bin" / "exiftool"),
+)
 
 # pylint: disable-next=wildcard-import, unused-wildcard-import, wrong-import-position
 from .base import *

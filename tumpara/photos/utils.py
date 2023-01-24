@@ -3,16 +3,16 @@ import functools
 import hashlib
 import io
 import json
+import logging
 import math
 import os.path
+import re
 import subprocess
-import unicodedata
 from collections.abc import Mapping, Sequence
-from typing import Literal, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Optional, TypeVar
 
 import blurhash
 import dateutil.parser
-import exiv2
 import numpy
 import PIL.Image
 import PIL.ImageFile
@@ -24,31 +24,23 @@ from django.utils import timezone
 
 from tumpara.libraries.models import Library
 
+if TYPE_CHECKING:
+    import numbers
+
+_logger = logging.getLogger(__name__)
+
 _T = TypeVar("_T")
+_Real = TypeVar("_Real", bound="numbers.Real")
 
 
 # Run configuration side effects.
 PIL.ImageFile.LOAD_TRUNCATED_IMAGES = True
-if settings.ENABLE_BMFF_METADATA:
-    exiv2.enableBMFF()
 
 
-# This list contains the fields that are used to calculate a hash of EXIF data,
-# which in turn is used to attribute photos to their raw counterparts, if any. The
-# idea here is to use very generic fields that most photo editing / development tools
-# likely won't strip. But we also want to have enough fields to correctly identify
-# images. Ultimately, these are more or less the same ones we read out on photos
-# because they are the most popular. Note that there is an 'ImageUniqueID' field,
-# but that isn't very popular and some editing tools might ignore it. So,
-# it is deliberately ignored in this implementation.
-METADATA_DIGEST_FIELDS: Sequence[str | Sequence[str]] = [
-    "Exif.Image.Make",
-    "Exif.Image.Model",
-    "Exif.Photo.ISOSpeedRatings",
-    "Exif.Photo.ExposureTime",
-    ("Exif.Photo.FNumber", "Exif.Photo.ApertureValue"),
-    "Exif.Photo.FocalLength",
-]
+remove_whitespace = functools.partial(
+    re.compile(r"\s").sub,
+    "",
+)
 
 
 def load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
@@ -90,154 +82,241 @@ def load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
     return image, raw_original
 
 
-class Exiv2ImageMetadata:
+class ImageMetadata:
     """Metadata container that holds EXIF (and other) metadata of an image."""
 
-    def __init__(self, library: Library, path: str) -> None:
-        """Open the image at the specified path in a library."""
-        with library.storage.open(path, "rb") as file:
-            image_data = file.read()
-            exiv2_image = exiv2.ImageFactory.open(image_data)
-            exiv2_image.readMetadata()
-            self._exif_data = exiv2_image.exifData()
-            self._iptc_data = exiv2_image.iptcData()
-            self._xmp_data = exiv2_image.xmpData()
+    def __init__(self):
+        self._metadata = dict[str, Any]()
+        self._formatted_metadata = dict[str, Any]()
 
     @staticmethod
-    def _get_int_datum_value(self, datum: Optional[exiv2.Exifdatum]) -> Optional[int]:
-        if datum is None:
-            return None
-        assert isinstance(datum, exiv2.Exifdatum)
-        assert len(value_container := list(datum.getValue())) == 1
-        assert isinstance(result := value_container[0], int)
-        return result
+    def load(library: Library, path: str) -> "ImageMetadata":
+        """Open the image at the specified path in a library.
 
-    @property
-    def iso_speed(self) -> Optional[int]:
-        return self._get_int_datum_value(exiv2.isoSpeed(self._exif_data))
+        This will gracefully fall back to an empty metadata container if no information
+        is found. Also note that Exiftool supports file types other than images (like
+        plain text files), so getting a result here does not yet imply that the file is
+        a functioning image!
 
-    # TODO DateTimeOriginal
-
-    @property
-    def flash_bias(self) -> Optional[int]:
-        return self._get_int_datum_value(exiv2.flashBias(self._exif_data))
-
-    @property
-    def exposure_mode(self) -> Optional[int]:
-        return self._get_int_datum_value(exiv2.exposureMode(self._exif_data))
-
-    @property
-    def scene_mode(self) -> Optional[int]:
-        return self._get_int_datum_value(exiv2.sceneMode(self._exif_data))
-
-    @property
-    def macro_mode(self) -> Optional[int]:
-        return self._get_int_datum_value(exiv2.macroMode(self._exif_data))
-
-
-def load_metadata(library: Library, path: str) -> "pyexiv2.ImageMetadata":
-    """Get metadata information of an image."""
-    with library.storage.open(path, "rb") as file:
-        metadata = pyexiv2.ImageMetadata.from_buffer(file.read())
-        metadata.read()
-    return metadata
-
-
-def extract_metadata_value(
-    metadata: "pyexiv2.ImageMetadata", cast: type[_T], *keys: str
-) -> Optional[_T]:
-    """Extract a single entry of metadata information for an image.
-
-    :param metadata: The metadata object from :func:`load_metadata`.
-    :param cast: Values will be cast to this type.
-    :param keys: Names of the keys to try, in order. The first key that is present with
-        a valid value will be used.
-    """
-    for key in keys:
+        The reason we use Exiftool with subprocesses and not a library like exiv2 (which
+        we would call directly and therefore improving performance) is because Exiftool
+        does a lot of normalization between different Camera vendors. For example, the
+        different exposure programs that are not always located in the default
+        Exif.Photo.ExposureProgram field (some information is in the maker note) are all
+        bundled together in a single "ExposureProgram" field when parsing with Exiftool.
+        """
         try:
-            value = metadata[key].value
-            value = cast(value)  # type: ignore
-            if isinstance(value, str):
-                value = unicodedata.normalize("NFC", value.strip())
-            return value  # type: ignore
-        except:
-            continue
-    return None
+            with library.storage.open(path, "rb") as file_io:
+                raw_exiftool_result = subprocess.check_output(
+                    [
+                        settings.EXIFTOOL_BINARY,
+                        "-",
+                        "-json",
+                        "-n",
+                    ],
+                    stdin=file_io,
+                    stderr=subprocess.DEVNULL,
+                )
+                exiftool_result = json.loads(raw_exiftool_result)
+                assert isinstance(exiftool_result, Sequence)
+                assert len(exiftool_result) == 1
+                assert isinstance(exiftool_result[0], Mapping)
 
+                file_io.seek(0)
 
-def extract_timestamp(
-    metadata: "pyexiv2.ImageMetadata",
-    variant: Literal["", "Digitized", "Original"],
-) -> Optional[timezone.datetime]:
-    """Extract one of the three metadata timestamps from an image metadata object.
+                raw_formatted_exiftool_result = subprocess.check_output(
+                    [
+                        settings.EXIFTOOL_BINARY,
+                        "-",
+                        "-json",
+                        "-d",
+                        "%Y-%m-%dT%H:%M:%S%6f",
+                    ],
+                    stdin=file_io,
+                    stderr=subprocess.DEVNULL,
+                )
+                formatted_exiftool_result = json.loads(raw_formatted_exiftool_result)
+                assert isinstance(formatted_exiftool_result, Sequence)
+                assert len(formatted_exiftool_result) == 1
+                assert isinstance(formatted_exiftool_result[0], Mapping)
 
-    :param metadata: The metadata object from :func:`load_metadata`.
-    :param variant: One of ``""``, ``"Digitized"`` or ``"Original"``, depending on the
-        timestamp you want.
-    """
-    base_result = extract_metadata_value(
-        metadata,
-        timezone.datetime,
-        f"Exif.Image.DateTime{variant}",
-        f"Exif.Photo.DateTime{variant}",
+            image_metadata = ImageMetadata()
+            image_metadata._metadata = exiftool_result[0]
+            image_metadata._formatted_metadata = formatted_exiftool_result[0]
+            return image_metadata
+        except FileNotFoundError:
+            if not os.path.exists(settings.EXIFTOOL_BINARY):
+                _logger.warning(
+                    f"Could not find the specified Exiftool binary "
+                    f"{settings.EXIFTOOL_BINARY!r}. Image metadata cannot be read."
+                )
+                return ImageMetadata()
+            else:
+                raise
+        except subprocess.CalledProcessError:
+            return ImageMetadata()
+
+    def _get_numeric_value(
+        self,
+        key: str,
+        cast: type[_Real] = float,
+        allow_negative: bool = False,
+        allow_zero: bool = False,
+        require_finite: bool = True,
+    ) -> Optional[_Real]:
+        raw_value = self._metadata.get(key)
+        if raw_value is None:
+            return None
+        try:
+            value = cast(raw_value)
+            assert allow_negative is True or value >= 0
+            assert allow_zero is True or value != 0
+            assert require_finite is False or math.isfinite(value)
+            return value
+        except (AssertionError, TypeError, ValueError):
+            # TODO Raise a warning.
+            return None
+
+    def _get_string_value(self, key: str) -> str:
+        value = self._formatted_metadata.get(key)
+        if value is None:
+            return ""
+        elif isinstance(value, (str, float, int)):
+            return str(value)
+        else:
+            # TODO Raise a warning.
+            return ""
+
+    @functools.cached_property
+    def timestamp(self) -> Optional[datetime.datetime]:
+        value = ""
+        for key in (
+            "SubSecDateTimeOriginal",
+            "SubSecCreateDate",
+            "DateTimeOriginal",
+            "CreateDate",
+        ):
+            try:
+                value = self._formatted_metadata[key]
+            except KeyError:
+                continue
+            else:
+                if value:
+                    break
+
+        if not isinstance(value, str) or not value:
+            return None
+        else:
+            return datetime.datetime.fromisoformat(value)
+
+    aperture_size = functools.cached_property(
+        functools.partial(_get_numeric_value, key="Aperture")
     )
-    if base_result is None:
-        return None
-
-    raw_subsec_value = (
-        extract_metadata_value(
-            metadata,
-            str,
-            f"Exif.Image.SubSecTime{variant}",
-            f"Exif.Photo.SubSecTime{variant}",
-        )
-        or ""
+    camera_make = functools.cached_property(
+        functools.partial(_get_string_value, key="Make")
     )
-    # Some cameras only use a 10ms precision here. In order to keep compatibility with
-    # editing tools that parse this and make a correct millisecond counter out of it,
-    # we might need to add a few zeros. But, if we get a subsec counter with more than
-    # three digits, we need to be able to parse that as well. So, this formula correctly
-    # sets the decimal point:
-    raw_subsec_value += "000"
-    milliseconds = float(raw_subsec_value) / (10 ** (len(raw_subsec_value) - 3))
+    exposure_program_description = functools.cached_property(
+        functools.partial(_get_string_value, key="ExposureProgram")
+    )
+    exposure_time = functools.cached_property(
+        functools.partial(_get_numeric_value, key="ExposureTime")
+    )
+    flash_description = functools.cached_property(
+        functools.partial(_get_string_value, key="Flash")
+    )
+    focal_length = functools.cached_property(
+        functools.partial(_get_numeric_value, key="FocalLength")
+    )
+    focus_mode_description = functools.cached_property(
+        functools.partial(_get_string_value, key="FocusMode")
+    )
+    iso_value = functools.cached_property(
+        functools.partial(_get_numeric_value, key="ISO", cast=int)
+    )
+    lens_identifier = functools.cached_property(
+        functools.partial(_get_string_value, key="LensID")
+    )
+    macro_mode_description = functools.cached_property(
+        functools.partial(_get_string_value, key="MacroMode")
+    )
+    metering_mode_description = functools.cached_property(
+        functools.partial(_get_string_value, key="MeteringMode")
+    )
+    software = functools.cached_property(
+        functools.partial(_get_string_value, key="Software")
+    )
 
-    return base_result + datetime.timedelta(milliseconds=milliseconds)
+    @functools.cached_property
+    def camera_model(self) -> Optional[str]:
+        value = self._get_string_value("Model")
+        if value is None or self.camera_make is None:
+            return value
 
+        # Some camera vendors put their name in the model field as well, which is a bit
+        # redundant. We would like to be able to concatenate the make and model fields
+        # and get a string that nicely describes the camera, so we remove any redundancy
+        # here. Otherwise, we might get things like this when putting the make and model
+        # together:
+        # - "NIKON CORPORATION NIKON D90"
+        # - "Canon Canon EOS 5D Mark III"
+        # By removing the common prefix from the model field, the two examples above
+        # become "NIKON CORPORATION D90" and "Canon EOS 5D Mark III" when put together.
+        camera_prefix = os.path.commonprefix([self.camera_make.lower(), value.lower()])
+        if camera_prefix:
+            return value[len(camera_prefix) :].strip()
+        else:
+            return value
 
-def calculate_metadata_checksum(library: Library, path: str) -> Optional[bytes]:
-    """Calculate a checksum out of all available image metadata.
+    @functools.cached_property
+    def checksum(self) -> Optional[bytes]:
+        """Calculate a checksum out of image metadata that can be used to attribute to
+        identical photos together.
 
-    :return: Checksum that can be used to attribute two identical photos together. If
-        this is ``None``, no checksum could be calculated.
-    """
-    metadata = load_metadata(library, path)
-
-    hasher = hashlib.blake2b(digest_size=32)
-
-    try:
-        hasher.update(extract_timestamp(metadata, "Original").isoformat().encode())
-    except KeyError:
-        # The timestamp is an integral part.
-        return None
-
-    for metadata_key_name_or_names in METADATA_DIGEST_FIELDS:
-        metadata_keys = (
-            metadata_key_name_or_names
-            if isinstance(metadata_key_name_or_names, Sequence)
-            else [metadata_key_name_or_names]
+        The idea behind this value is that it does not change when a photo has been
+        edited by some software. This allows us to figure out when an image is developed
+        from a raw file, for example.
+        """
+        serial_number = remove_whitespace(
+            self._get_string_value("SerialNumber")
+            + self._get_string_value("InternalSerialNumber")
         )
+        file_number = remove_whitespace(
+            self._get_string_value("FileNumber") + self._get_string_value("FileIndex")
+        )
+        if serial_number and file_number:
+            file_identifier = " ".join(
+                (
+                    serial_number,
+                    self._get_string_value("SerialNumberFormat"),
+                    file_number,
+                )
+            )
+        else:
+            file_identifier = None
 
-        for metadata_key in metadata_keys:
-            assert isinstance(metadata_key, str)
-            value = metadata.get(metadata_key, None)
-            if value is not None:
-                hasher.update(bytes(0b1))
-                hasher.update(value.raw_value.encode())
-                break
+        if not self.timestamp and not file_identifier:
+            # We have no sufficiently unique identification, so we can't build a
+            # checksum.
+            return None
+
+        hasher = hashlib.blake2b(digest_size=32)
+
+        if self.timestamp:
+            hasher.update(bytes(0b1))
+            hasher.update(self.timestamp.isoformat().encode())
         else:
             hasher.update(bytes(0b0))
 
-    return hasher.digest()
+        if file_identifier:
+            hasher.update(bytes(0b1))
+            hasher.update(file_identifier.encode())
+        else:
+            hasher.update(bytes(0b0))
+
+        hasher.update(self.camera_make.encode())
+        hasher.update(self.camera_model.encode())
+
+        return hasher.digest()
 
 
 def calculate_blurhash(image: PIL.Image.Image) -> str:

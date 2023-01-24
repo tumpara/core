@@ -10,7 +10,6 @@ from typing import Any, Generic, Optional, Type, TypeVar, Union, overload
 
 import django.apps.registry
 import django_stubs_ext
-import PIL.ImageFile
 from django.core.exceptions import ImproperlyConfigured
 from django.core.files.storage import FileSystemStorage
 
@@ -331,5 +330,5 @@ DIRECTORY_IGNORE_FILENAME = parse_env(
     "TUMPARA_DIRECTORY_IGNORE_FILENAME", ".nomedia", string_or_none
 )
 
-# Whether to enable BMFF supper in exiv2.
-ENABLE_BMFF_METADATA = parse_env("TUMPARA_ENABLE_BMFF_SUPPORT", False, bool)
+# Path to the Exiftool binary to use for parsing image metadata.
+EXIFTOOL_BINARY = parse_env("TUMPARA_EXIFTOOL_BINARY", "/usr/bin/exiftool", str)

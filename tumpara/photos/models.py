@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os.path
 from fractions import Fraction
 from typing import Any, Optional
 
@@ -14,13 +13,10 @@ from django.utils.translation import gettext_lazy as _
 from tumpara.libraries.models import AssetModel, AssetQuerySet, File, Library
 
 from .utils import (
+    ImageMetadata,
     calculate_blurhash,
-    calculate_metadata_checksum,
-    extract_metadata_value,
-    extract_timestamp,
     extract_timestamp_from_filename,
     load_image,
-    load_metadata,
 )
 
 
@@ -36,6 +32,7 @@ class Photo(AssetModel):
         _("metadata checksum"),
         max_length=32,
         null=True,
+        blank=True,
         default=None,
         db_index=True,
         help_text="Hash value of the image's metadata. This is used to attribute "
@@ -49,15 +46,22 @@ class Photo(AssetModel):
         "thumbnails and other information.",
     )
 
-    width = models.PositiveIntegerField(_("width"), null=True)
-    height = models.PositiveIntegerField(_("height"), null=True)
+    width = models.PositiveIntegerField(
+        _("width"),
+        null=True,
+        blank=True,
+    )
+    height = models.PositiveIntegerField(
+        _("height"),
+        null=True,
+        blank=True,
+    )
 
-    aperture_size = models.DecimalField(
+    aperture_size = models.FloatField(
         _("aperture size"),
         null=True,
-        max_digits=3,
-        decimal_places=1,
-        validators=[validators.MinValueValidator(0), validators.MaxValueValidator(100)],
+        blank=True,
+        validators=[validators.MinValueValidator(0)],
         help_text=_(
             "Aperture / F-Stop value of the shot, in inverse. A value of 4 in this "
             "field implies an f-value of f/4."
@@ -66,19 +70,58 @@ class Photo(AssetModel):
     exposure_time = models.FloatField(
         _("exposure time"),
         null=True,
+        blank=True,
         validators=[validators.MinValueValidator(0)],
         help_text=_("The shot's exposure time, in seconds."),
     )
     focal_length = models.FloatField(
         _("focal length"),
         null=True,
+        blank=True,
         validators=[validators.MinValueValidator(0)],
         help_text=_("Focal length of the camera, in millimeters."),
     )
-    iso_value = models.PositiveIntegerField(_("ISO sensitivity value"), null=True)
+    iso_value = models.PositiveIntegerField(
+        _("ISO sensitivity value"),
+        null=True,
+        blank=True,
+    )
+    flash_description = models.CharField(
+        _("flash"),
+        max_length=100,
+        blank=True,
+        help_text=_("As named or identified by the camera vendor. This may be blank."),
+    )
+    focus_mode_description = models.CharField(
+        _("focus mode"),
+        max_length=100,
+        blank=True,
+        help_text=_("As named or identified by the camera vendor. This may be blank."),
+    )
+    exposure_program_description = models.CharField(
+        _("exposure program"),
+        max_length=100,
+        blank=True,
+        help_text=_("As named or identified by the camera vendor. This may be blank."),
+    )
+    metering_mode_description = models.CharField(
+        _("metering mode"),
+        max_length=100,
+        blank=True,
+        help_text=_("As named or identified by the camera vendor. This may be blank."),
+    )
+    macro_mode_description = models.CharField(
+        _("macro mode"),
+        max_length=100,
+        blank=True,
+        help_text=_("As named or identified by the camera vendor. This may be blank."),
+    )
 
     camera_make = models.CharField(_("camera maker"), max_length=50, blank=True)
     camera_model = models.CharField(_("camera model"), max_length=50, blank=True)
+    lens_identifier = models.CharField(_("lens identifier"), max_length=100, blank=True)
+
+    software = models.CharField(_("software"), max_length=100, blank=True)
 
     blurhash = models.CharField(
         "blurhash",
@@ -155,10 +198,9 @@ class Photo(AssetModel):
                 self.save()
             return
 
-        # We could have cached the original image
         assert self.main_path != ""
         image = main_image
-        metadata = load_metadata(self.library, self.main_path)
+        image_metadata = ImageMetadata.load(self.library, self.main_path)
 
         try:
             self.blurhash = calculate_blurhash(image)
@@ -166,9 +208,7 @@ class Photo(AssetModel):
             self.blurhash = None
 
         self.media_timestamp = (
-            extract_timestamp(metadata, "")
-            or extract_timestamp(metadata, "Original")
-            or extract_timestamp(metadata, "Digitized")
+            image_metadata.timestamp
             or extract_timestamp_from_filename(self.main_path)
             or timezone.now()
         )
@@ -176,52 +216,29 @@ class Photo(AssetModel):
         self.width = image.width
         self.height = image.height
 
-        self.camera_make = (
-            extract_metadata_value(metadata, str, "Exif.Image.Make") or ""
-        )
-        self.camera_model = (
-            extract_metadata_value(metadata, str, "Exif.Image.Model") or ""
-        )
-        # Some camera vendors put their name in the model field as well, which is a bit
-        # redundant. We would like to be able to concatenate the make and model fields
-        # and get a string that nicely describes the camera, so we remove any redundancy
-        # here. Otherwise, we might get things like this when putting the make and model
-        # together:
-        # - "NIKON CORPORATION NIKON D90"
-        # - "Canon Canon EOS 5D Mark III"
-        # By removing the common prefix from the model field, the two examples above
-        # become "NIKON CORPORATION D90" and "Canon EOS 5D Mark III" when put together.
-        camera_prefix = os.path.commonprefix(
-            [self.camera_make.lower(), self.camera_model.lower()]
-        )
-        if camera_prefix:
-            self.camera_model = self.camera_model[len(camera_prefix) :].strip()
+        self.aperture_size = image_metadata.aperture_size
+        self.exposure_time = image_metadata.exposure_time
+        self.focal_length = image_metadata.focal_length
+        self.iso_value = image_metadata.iso_value
+        self.flash_description = image_metadata.flash_description
+        self.focus_mode_description = image_metadata.focus_mode_description
+        self.exposure_program_description = image_metadata.exposure_program_description
+        self.metering_mode_description = image_metadata.metering_mode_description
+        self.macro_mode_description = image_metadata.macro_mode_description
 
-        self.iso_value = extract_metadata_value(
-            metadata, int, "Exif.Photo.ISOSpeedRatings"
-        )
-        try:
-            self.exposure_time = extract_metadata_value(
-                metadata, float, "Exif.Photo.ExposureTime"
-            )
-        except ValidationError:
-            self.exposure_time = None
-        try:
-            self.aperture_size = extract_metadata_value(
-                metadata, float, "Exif.Photo.FNumber", "Exif.Photo.ApertureValue"
-            )
-        except ValidationError:
-            self.aperture_size = None
-        try:
-            self.focal_length = extract_metadata_value(
-                metadata, float, "Exif.Photo.FocalLength"
-            )
-        except ValidationError:
-            self.focal_length = None
+        self.camera_make = image_metadata.camera_make
+        self.camera_model = image_metadata.camera_model
+        self.lens_identifier = image_metadata.lens_identifier
+
+        self.software = image_metadata.software
 
         # TODO Extract GPS information.
         self.media_location = None
 
+        try:
+            self.full_clean()
+        except ValidationError as error:
+            raise
         if commit:
             self.save()
 
@@ -244,10 +261,11 @@ class Photo(AssetModel):
         if context != "gallery":
             return None
         try:
-            metadata_checksum = calculate_metadata_checksum(library, path)
-        except IOError:
+            load_image(library, path)
+            metadata = ImageMetadata.load(library, path)
+        except (IOError, PIL.UnidentifiedImageError):
             return None
-        return Photo._get_or_create_photo(library, metadata_checksum)
+        return Photo._get_or_create_photo(library, metadata.checksum)
 
     @staticmethod
     def handle_files_changed(sender: type[Photo], asset: Photo, **kwargs: Any) -> None:
@@ -259,17 +277,17 @@ class Photo(AssetModel):
         for file in asset.files.filter(availability__isnull=False):
             try:
                 load_image(asset.library, file.path)
-                metadata_checksum = calculate_metadata_checksum(
-                    asset.library, file.path
-                )
+                image_metadata = ImageMetadata.load(asset.library, file.path)
             except (IOError, PIL.UnidentifiedImageError):
                 file.availability = None
                 file.save()
             else:
-                if metadata_checksum != asset.metadata_checksum:
+                if image_metadata.checksum != asset.metadata_checksum:
                     # Move the file to another asset if it doesn't match this one.
                     photo = Photo._get_or_create_photo(
-                        asset.library, metadata_checksum, visibility=asset.visibility
+                        asset.library,
+                        image_metadata.checksum,
+                        visibility=asset.visibility,
                     )
                     photos.add(photo)
                     file.asset = photo

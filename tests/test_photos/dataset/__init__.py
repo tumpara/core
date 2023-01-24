@@ -1,6 +1,5 @@
 import dataclasses
 from collections.abc import Sequence
-from decimal import Decimal
 from fractions import Fraction
 from typing import Optional
 
@@ -9,7 +8,7 @@ from typing import Optional
 class ExpectedMetadata:
     width: Optional[int] = None
     height: Optional[int] = None
-    aperture_size: Optional[Decimal] = None
+    aperture_size: Optional[float] = None
     exposure_time: Optional[Fraction] = None
     focal_length: Optional[float] = None
     iso_value: Optional[int] = None
@@ -30,7 +29,7 @@ index = {
     "-Y-XzY0HhEM.jpg": ExpectedMetadata(
         width=4608,
         height=3456,
-        aperture_size=Decimal("3.1"),
+        aperture_size=3.1,
         exposure_time=Fraction(1, 60),
         focal_length=4.5,
         iso_value=100,
@@ -41,7 +40,7 @@ index = {
     "2KXEb_8G5vo.jpg": ExpectedMetadata(
         width=3695,
         height=5543,
-        aperture_size=Decimal("2.8"),
+        aperture_size=2.8,
         exposure_time=Fraction(30),
         focal_length=16.0,
         iso_value=3200,
@@ -52,7 +51,7 @@ index = {
     "8CDzJFF10d0.jpg": ExpectedMetadata(
         width=4288,
         height=2848,
-        aperture_size=Decimal("6.3"),
+        aperture_size=6.3,
         exposure_time=Fraction(1, 640),
         focal_length=105.0,
         iso_value=200,
@@ -63,7 +62,7 @@ index = {
     "GfuxOPaitSs.jpg": ExpectedMetadata(
         width=4000,
         height=3000,
-        aperture_size=Decimal("4.5"),
+        aperture_size=4.5,
         exposure_time=Fraction(15),
         focal_length=13.0,
         iso_value=80,
@@ -79,7 +78,7 @@ index = {
     "j2HQKlLFT_c.jpg": ExpectedMetadata(
         width=3264,
         height=2448,
-        aperture_size=Decimal("2.2"),
+        aperture_size=2.2,
         exposure_time=Fraction(1, 3300),
         focal_length=4.2,
         iso_value=32,
@@ -90,7 +89,7 @@ index = {
     "mwhklqGVzck.jpg": ExpectedMetadata(
         width=4000,
         height=2250,
-        aperture_size=Decimal("7.1"),
+        aperture_size=7.1,
         exposure_time=Fraction(1, 400),
         focal_length=6.1,
         iso_value=100,
@@ -101,7 +100,7 @@ index = {
     "r3ZWnitp3zk.jpg": ExpectedMetadata(
         width=5104,
         height=3454,
-        aperture_size=Decimal("5.6"),
+        aperture_size=5.6,
         exposure_time=Fraction(1, 100),
         focal_length=55.0,
         iso_value=100,
@@ -112,7 +111,7 @@ index = {
     "x6RO8lNSzpo.jpg": ExpectedMetadata(
         width=5472,
         height=3648,
-        aperture_size=Decimal("7.1"),
+        aperture_size=7.1,
         exposure_time=Fraction(1, 8000),
         focal_length=135.0,
         iso_value=100,
@@ -126,9 +125,9 @@ index = {
     "IMG_3452.jpg": ExpectedMetadata(
         width=6016,
         height=4010,
-        aperture_size=Decimal("0.0"),
+        aperture_size=None,
         exposure_time=Fraction(8, 5),
-        focal_length=0.0,
+        focal_length=None,
         iso_value=200,
         camera_make="Canon",
         camera_model="EOS 77D",  # In file: "Canon EOS 77D"
@@ -137,7 +136,7 @@ index = {
     "IMG_4766.jpg": ExpectedMetadata(
         width=4722,
         height=3142,
-        aperture_size=Decimal("5.6"),
+        aperture_size=5.6,
         exposure_time=Fraction(1, 40),
         focal_length=55.0,
         iso_value=1600,
@@ -148,7 +147,7 @@ index = {
     "IMG_7010.jpg": ExpectedMetadata(
         width=4722,
         height=3142,
-        aperture_size=Decimal("6.3"),
+        aperture_size=6.3,
         exposure_time=Fraction(1, 640),
         focal_length=17.0,
         iso_value=200,
@@ -159,6 +158,10 @@ index = {
     "RAW_2021_07_24_13_18_09_096.jpg": ExpectedMetadata(
         width=2984,
         height=3984,
+        aperture_size=1.8,
+        exposure_time=Fraction(1, 60),
+        focal_length=4.71,
+        iso_value=200,
         camera_make="HMD Global",
         camera_model="Nokia 7.2",
         matched_files=["RAW_2021_07_24_13_18_09_096.dng"],
@@ -166,6 +169,10 @@ index = {
     "RAW_2021_07_24_13_23_32_774.jpg": ExpectedMetadata(
         width=3984,
         height=2984,
+        aperture_size=1.8,
+        exposure_time=Fraction(1, 50),
+        focal_length=4.71,
+        iso_value=138,
         camera_make="HMD Global",
         camera_model="Nokia 7.2",
         matched_files=["RAW_2021_07_24_13_23_32_774.dng"],
@@ -177,7 +184,7 @@ index = {
     "AFH_0455.jpg": ExpectedMetadata(
         width=5596,
         height=3724,
-        aperture_size=Decimal("3.5"),
+        aperture_size=3.5,
         exposure_time=Fraction(1, 2500),
         focal_length=18.0,
         iso_value=100,
@@ -188,7 +195,7 @@ index = {
     "DSC00372.jpg": ExpectedMetadata(
         width=4024,
         height=6048,
-        aperture_size=Decimal("5.0"),
+        aperture_size=5.0,
         exposure_time=Fraction(1, 1000),
         focal_length=17.0,
         iso_value=100,
@@ -199,7 +206,7 @@ index = {
     "DSCF2542.jpg": ExpectedMetadata(
         width=3296,
         height=4936,
-        aperture_size=Decimal("2.8"),
+        aperture_size=2.8,
         exposure_time=Fraction(1, 45),
         focal_length=18.0,
         iso_value=1600,
@@ -210,7 +217,7 @@ index = {
     "IMG_0160.jpg": ExpectedMetadata(
         width=5536,
         height=3688,
-        aperture_size=Decimal("11.0"),
+        aperture_size=11.0,
         exposure_time=Fraction(1, 1600),
         focal_length=8.8,
         iso_value=250,
@@ -221,7 +228,7 @@ index = {
     "P8245372.jpg": ExpectedMetadata(
         width=4608,
         height=3456,
-        aperture_size=Decimal("3.5"),
+        aperture_size=3.5,
         exposure_time=Fraction(1, 30),
         focal_length=14.0,
         iso_value=200,
@@ -236,7 +243,7 @@ index = {
     "IMG_0009.JPG": ExpectedMetadata(
         width=4752,
         height=3168,
-        aperture_size=Decimal("7.1"),
+        aperture_size=7.1,
         exposure_time=Fraction(1, 500),
         focal_length=250.0,
         iso_value=400,
