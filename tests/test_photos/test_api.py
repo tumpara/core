@@ -133,7 +133,7 @@ class PhotoApiTestCase(TestCase):
         assert isinstance(thumbnail_url := result.data["node"]["thumbnailUrl"], str)
 
         client = Client()
-        response = client.get(thumbnail_url)
+        response = client.get(thumbnail_url, headers={"Accept": "image/webp"})
         assert response.status_code == 200
         assert response.headers.get("Content-Type") == "image/webp"
         assert isinstance(response, StreamingHttpResponse)
