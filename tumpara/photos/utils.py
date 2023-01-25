@@ -273,14 +273,17 @@ class ImageMetadata:
         else:
             return value
 
-    @functools.cached_property
-    def checksum(self) -> Optional[bytes]:
+    def calculate_checksum(
+        self, *, payload: Optional[bytes | int] = None
+    ) -> Optional[bytes]:
         """Calculate a checksum out of image metadata that can be used to attribute to
         identical photos together.
 
         The idea behind this value is that it does not change when a photo has been
         edited by some software. This allows us to figure out when an image is developed
         from a raw file, for example.
+
+        :param payload: Optional payload that will be encoded into the hash as well.
         """
         serial_number = remove_whitespace(
             self._get_string_value("SerialNumber")
@@ -306,6 +309,12 @@ class ImageMetadata:
             return None
 
         hasher = hashlib.blake2b(digest_size=32)
+
+        if payload is not None:
+            hasher.update(bytes(0b1))
+            hasher.update(bytes(payload))
+        else:
+            hasher.update(bytes(0b0))
 
         if self.timestamp:
             hasher.update(bytes(0b1))

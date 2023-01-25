@@ -5,7 +5,6 @@ from typing import Any, Optional
 
 import PIL.Image
 from django.core import validators
-from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -34,9 +33,9 @@ class Photo(AssetModel):
         null=True,
         blank=True,
         default=None,
-        db_index=True,
-        help_text="Hash value of the image's metadata. This is used to attribute "
-        "multiple variations of the same photo to a single asset.",
+        unique=True,
+        help_text="Hash value of the image's metadata and the library ID. This is used "
+        "to attribute multiple variations of the same photo to a single asset.",
     )
     main_path = models.CharField(
         _("main path"),
@@ -254,13 +253,18 @@ class Photo(AssetModel):
 
     @staticmethod
     def _get_or_create_photo(
-        library: Library, metadata_checksum: Optional[bytes], **kwargs: Any
+        library: Library, metadata_checksum: Optional[bytes], **defaults: Any
     ) -> Photo:
+        # Note: metadata_checksum must incorporate the library's primary key (by passing
+        # it as a payload to ImageMetadata.calculate_checksum() so that unique
+        # constraint in the database works correctly!
         if metadata_checksum is None:
-            photo = Photo.objects.create(library=library, **kwargs)
+            photo = Photo.objects.create(library=library, **defaults)
         else:
             photo, _ = Photo.objects.get_or_create(
-                library=library, metadata_checksum=metadata_checksum, **kwargs
+                library=library,
+                metadata_checksum=metadata_checksum,
+                defaults=defaults,
             )
         return photo
 
@@ -275,7 +279,10 @@ class Photo(AssetModel):
             metadata = ImageMetadata.load(library, path)
         except (IOError, PIL.UnidentifiedImageError):
             return None
-        return Photo._get_or_create_photo(library, metadata.checksum)
+        return Photo._get_or_create_photo(
+            library,
+            metadata.calculate_checksum(payload=library.pk),
+        )
 
     @staticmethod
     def handle_files_changed(sender: type[Photo], asset: Photo, **kwargs: Any) -> None:
@@ -292,11 +299,14 @@ class Photo(AssetModel):
                 file.availability = None
                 file.save()
             else:
-                if image_metadata.checksum != asset.metadata_checksum:
+                metadata_checksum = image_metadata.calculate_checksum(
+                    payload=asset.library.pk,
+                )
+                if metadata_checksum != asset.metadata_checksum:
                     # Move the file to another asset if it doesn't match this one.
                     photo = Photo._get_or_create_photo(
                         asset.library,
-                        image_metadata.checksum,
+                        metadata_checksum,
                         visibility=asset.visibility,
                     )
                     photos.add(photo)
