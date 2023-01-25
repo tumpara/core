@@ -2,12 +2,12 @@
 
 buildPythonPackage rec {
 	pname = "types-pillow";
-	version = "9.3.0.4";
+	version = "9.4.0.5";
 
 	src = fetchPypi {
 		inherit version;
 		pname = "types-Pillow";
-		sha256 = "wY1GbcGFUNlri0onn/lPDLrWloJbWtVUZmBPHa9XCd4=";
+		sha256 = "lBzvqsL1KX19KpmJYzyVtAYxEmkNwhyWXUa9Wn//PHY=";
 	};
 
 	pythonImportsCheck = [ "PIL-stubs" ];

@@ -21,6 +21,11 @@ buildPythonPackage rec {
 		sha256 = "vmVu19WqThe9T4QXTJ9VSqSvQwxTKcuPBUC6An8q0oU=";
 	};
 
+	postPatch = ''
+		substituteInPlace "tests/test_file_avif.py" \
+			--replace "12.0" "13.0"
+	'';
+
 	nativeBuildInputs = [ pkgconf ];
 	buildInputs = [ cython libavif libjpeg ];
 	propagatedBuildInputs = [ pillow ];

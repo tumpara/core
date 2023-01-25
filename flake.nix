@@ -1,7 +1,7 @@
 {
 	description = "Tumpara server";
 
-	inputs.nixpkgs.url = "nixpkgs/1710ed1f6f8ceb75cf7d1cf55ee0cc21760e1c7a";
+	inputs.nixpkgs.url = "nixpkgs/nixpkgs-unstable";
 	inputs.flake-utils.url = "github:numtide/flake-utils";
 
 	outputs = { self, nixpkgs, flake-utils }:
@@ -27,11 +27,11 @@
 						});
 
 						django-stubs = super.django-stubs.overridePythonAttrs (oldAttrs: rec {
-							version = "1.13.1";
+							version = "1.13.2";
 							src = self.fetchPypi {
 								inherit (oldAttrs) pname;
 								inherit version;
-								sha256 = "vMYYujU9q8VA2YK52sHVoZIWUvj8KhNlPVRaV9XjzA8=";
+								sha256 = "Gel+/s+vgOQsR57n7WF58xIMGywR5mWy6DBUV+Qe4Gk=";
 							};
 						});
 
@@ -45,12 +45,12 @@
 						});
 
 						strawberry-graphql = super.strawberry-graphql.overridePythonAttrs (oldAttrs: rec {
-							version = "0.151.1";
+							version = "0.155.1";
 							src = pkgs.fetchFromGitHub {
 								owner = "strawberry-graphql";
 								repo = "strawberry";
 								rev = version;
-								sha256 = "YzErCBocNeouCsyW58rKwxFbmsSFyuxZK2DqngRfgPM=";
+								sha256 = "SYihl9esefMluAcybfYWVYrVEsWtBnwxq6uBPfn0I4c=";
 							};
 							# Strip down to only the essential dependencies as well as the
 							# ones we need:
@@ -58,7 +58,6 @@
 							propagatedBuildInputs = [
 								self.django
 								self.asgiref
-								self.backports-cached-property
 								self.channels
 								self.click
 								self.graphql-core
