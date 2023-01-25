@@ -35,6 +35,15 @@ class PhotoAssetFilter(AssetFilter):
     photo_exposure_time: Optional[api.FloatFilter] = None
     photo_focal_length: Optional[api.FloatFilter] = None
     photo_iso_value: Optional[api.IntFilter] = None
+    photo_flash_description: Optional[api.StringFilter] = None
+    photo_focus_mode_description: Optional[api.StringFilter] = None
+    photo_exposure_program_description: Optional[api.StringFilter] = None
+    photo_metering_mode_description: Optional[api.StringFilter] = None
+    photo_macro_mode_description: Optional[api.StringFilter] = None
+    photo_camera_make: Optional[api.StringFilter] = None
+    photo_camera_model: Optional[api.StringFilter] = None
+    photo_lens_identifier: Optional[api.StringFilter] = None
+    photo_software: Optional[api.StringFilter] = None
 
     def build_query(
         self, info: api.InfoType, field_name: Optional[str]
@@ -60,6 +69,15 @@ class PhotoAssetFilter(AssetFilter):
             "exposure_time",
             "focal_length",
             "iso_value",
+            "flash_description",
+            "focus_mode_description",
+            "exposure_program_description",
+            "metering_mode_description",
+            "macro_mode_description",
+            "camera_make",
+            "camera_model",
+            "lens_identifier",
+            "software",
         ]:
             filter: Optional[api.IntFilter | api.FloatFilter] = getattr(
                 self, f"photo_{attribute_name}", None
@@ -96,8 +114,15 @@ class PhotoNode(
         "exposure_time",
         "focal_length",
         "iso_value",
+        "flash_description",
+        "focus_mode_description",
+        "exposure_program_description",
+        "metering_mode_description",
+        "macro_mode_description",
         "camera_make",
         "camera_model",
+        "lens_identifier",
+        "software",
         "blurhash",
     ],
 ):

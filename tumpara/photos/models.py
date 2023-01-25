@@ -119,9 +119,19 @@ class Photo(AssetModel):
 
     camera_make = models.CharField(_("camera maker"), max_length=50, blank=True)
     camera_model = models.CharField(_("camera model"), max_length=50, blank=True)
-    lens_identifier = models.CharField(_("lens identifier"), max_length=100, blank=True)
+    lens_identifier = models.CharField(
+        _("lens identifier"),
+        max_length=100,
+        blank=True,
+        help_text=_("Name or ID of the camera lens, if applicable."),
+    )
 
-    software = models.CharField(_("software"), max_length=100, blank=True)
+    software = models.CharField(
+        _("software"),
+        max_length=100,
+        blank=True,
+        help_text=_("Name of the Software used to edit the image, if any."),
+    )
 
     blurhash = models.CharField(
         "blurhash",
