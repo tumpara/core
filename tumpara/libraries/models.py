@@ -12,7 +12,7 @@ from django.core.exceptions import EmptyResultSet, ValidationError
 from django.core.files import base as django_files
 from django.db import NotSupportedError, transaction
 from django.db.models import functions
-from django.db.models.query import ModelIterable  # type: ignore
+from django.db.models.query import ModelIterable
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 
@@ -244,7 +244,7 @@ class AssetQuerySet(Generic[_Asset], models.QuerySet[_Asset]):
         if not self._resolve_instances:
             return result
 
-        assert self._iterable_class is ModelIterable  # type: ignore
+        assert self._iterable_class is ModelIterable
 
         if isinstance(result, models.Model):
             assert isinstance(result, Asset)
@@ -259,7 +259,7 @@ class AssetQuerySet(Generic[_Asset], models.QuerySet[_Asset]):
         if not self._resolve_instances:
             yield from super().__iter__()
             return
-        assert self._iterable_class is ModelIterable  # type: ignore
+        assert self._iterable_class is ModelIterable
         for item in super().__iter__():
             assert isinstance(item, Asset)
             yield cast(_Asset, item.resolve_instance())
@@ -268,7 +268,7 @@ class AssetQuerySet(Generic[_Asset], models.QuerySet[_Asset]):
         result = super().get(*args, **kwargs)
         if not self._resolve_instances:
             return result
-        assert self._iterable_class is ModelIterable  # type: ignore
+        assert self._iterable_class is ModelIterable
         assert isinstance(result, Asset)
         return cast(_Asset, result.resolve_instance())
 
@@ -290,7 +290,7 @@ class AssetQuerySet(Generic[_Asset], models.QuerySet[_Asset]):
             )
 
     def with_effective_visibility(self) -> AssetQuerySet[_Asset]:
-        return self.annotate(
+        return self.annotate(  # type: ignore[no-any-return]
             effective_visibility=models.Case(
                 models.When(
                     visibility=Visibility.FROM_LIBRARY,
@@ -311,7 +311,7 @@ class AssetQuerySet(Generic[_Asset], models.QuerySet[_Asset]):
         """
         if (
             self._fields is not None  # type: ignore
-            or self._iterable_class is not ModelIterable  # type: ignore
+            or self._iterable_class is not ModelIterable
         ):
             raise NotSupportedError(
                 "Calling AssetQuerySet.resolve_instances() is not supported after "

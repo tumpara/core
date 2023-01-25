@@ -4,7 +4,6 @@ from typing import Any, ClassVar, Optional
 
 import hypothesis
 import PIL.Image
-import pytest
 from django.http import StreamingHttpResponse
 from django.test import Client
 from hypothesis.extra.django import TestCase
@@ -133,7 +132,7 @@ class PhotoApiTestCase(TestCase):
         assert isinstance(thumbnail_url := result.data["node"]["thumbnailUrl"], str)
 
         client = Client()
-        response = client.get(thumbnail_url, headers={"Accept": "image/webp"})
+        response = client.get(thumbnail_url, HTTP_ACCEPT="image/webp")
         assert response.status_code == 200
         assert response.headers.get("Content-Type") == "image/webp"
         assert isinstance(response, StreamingHttpResponse)

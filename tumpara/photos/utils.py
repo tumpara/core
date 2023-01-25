@@ -9,7 +9,7 @@ import os.path
 import re
 import subprocess
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Optional, TypeVar
+from typing import Any, Literal, Optional, TypeVar, overload
 
 import blurhash
 import dateutil.parser
@@ -24,13 +24,10 @@ from django.utils import timezone
 
 from tumpara.libraries.models import Library
 
-if TYPE_CHECKING:
-    import numbers
-
 _logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
-_Real = TypeVar("_Real", bound="numbers.Real")
+_Number = TypeVar("_Number", bound="int | float")
 
 
 # Run configuration side effects.
@@ -85,7 +82,7 @@ def load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
 class ImageMetadata:
     """Metadata container that holds EXIF (and other) metadata of an image."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._metadata = dict[str, Any]()
         self._formatted_metadata = dict[str, Any]()
 
@@ -141,8 +138,8 @@ class ImageMetadata:
                 assert isinstance(formatted_exiftool_result[0], Mapping)
 
             image_metadata = ImageMetadata()
-            image_metadata._metadata = exiftool_result[0]
-            image_metadata._formatted_metadata = formatted_exiftool_result[0]
+            image_metadata._metadata = exiftool_result[0]  # type: ignore[assignment]
+            image_metadata._formatted_metadata = formatted_exiftool_result[0]  # type: ignore[assignment]
             return image_metadata
         except FileNotFoundError:
             if not os.path.exists(settings.EXIFTOOL_BINARY):
@@ -159,16 +156,15 @@ class ImageMetadata:
     def _get_numeric_value(
         self,
         key: str,
-        cast: type[_Real] = float,
         allow_negative: bool = False,
         allow_zero: bool = False,
         require_finite: bool = True,
-    ) -> Optional[_Real]:
+    ) -> Optional[float]:
         raw_value = self._metadata.get(key)
         if raw_value is None:
             return None
         try:
-            value = cast(raw_value)
+            value = float(raw_value)
             assert allow_negative is True or value >= 0
             assert allow_zero is True or value != 0
             assert require_finite is False or math.isfinite(value)
@@ -176,6 +172,16 @@ class ImageMetadata:
         except (AssertionError, TypeError, ValueError):
             # TODO Raise a warning.
             return None
+
+    def _get_integer_value(
+        self, key: str, allow_negative: bool = False, allow_zero: bool = False
+    ) -> Optional[int]:
+        value = self._get_numeric_value(
+            key, allow_negative, allow_zero, require_finite=True
+        )
+        if value is None:
+            return None
+        return round(value)
 
     def _get_string_value(self, key: str) -> str:
         value = self._formatted_metadata.get(key)
@@ -231,7 +237,7 @@ class ImageMetadata:
         functools.partial(_get_string_value, key="FocusMode")
     )
     iso_value = functools.cached_property(
-        functools.partial(_get_numeric_value, key="ISO", cast=int)
+        functools.partial(_get_integer_value, key="ISO")
     )
     lens_identifier = functools.cached_property(
         functools.partial(_get_string_value, key="LensID")
@@ -247,10 +253,10 @@ class ImageMetadata:
     )
 
     @functools.cached_property
-    def camera_model(self) -> Optional[str]:
+    def camera_model(self) -> str:
         value = self._get_string_value("Model")
-        if value is None or self.camera_make is None:
-            return value
+        if not value or not self.camera_make:
+            return ""
 
         # Some camera vendors put their name in the model field as well, which is a bit
         # redundant. We would like to be able to concatenate the make and model fields
@@ -292,7 +298,7 @@ class ImageMetadata:
                 )
             )
         else:
-            file_identifier = None
+            file_identifier = ""
 
         if not self.timestamp and not file_identifier:
             # We have no sufficiently unique identification, so we can't build a

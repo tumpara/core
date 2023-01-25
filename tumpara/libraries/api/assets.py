@@ -248,7 +248,7 @@ class AssetNode(
     )
     def effective_visibility(self) -> EffectiveVisibility:
         # This is annotated by the for_user() method of the asset's manager.
-        return cast(Any, self.obj).effective_visibility
+        return cast(Any, self).obj.effective_visibility  # type: ignore[no-any-return]
 
     @api.DjangoConnectionField(
         FileConnection,

@@ -7,7 +7,7 @@ import dataclasses
 import inspect
 import typing
 from collections.abc import Collection
-from typing import TYPE_CHECKING, Any, ClassVar, Optional, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, TypeVar, cast, overload
 
 import django.db.models.fields.related
 import strawberry
@@ -310,7 +310,7 @@ class DjangoNode(Node):
 def resolve_node(
     info: InfoType,
     node_id: Optional[str],
-    node_type: type[_Node] = Node,
+    node_type: type[_Node] = Node,  # type: ignore[assignment]
     *,
     permission: Optional[str] = None,
 ) -> Optional[_Node]:
@@ -334,6 +334,6 @@ def resolve_node(
 
     origin, _ = get_node_origin(type_name, info)
     if not issubclass(origin, node_type):
-        pass
+        return None
 
     return origin.from_key(info, permission, *key)

@@ -11,7 +11,7 @@ from .utils import load_image
 
 AVIF_SUPPORTED: bool
 try:
-    import pillow_avif.AvifImagePlugin
+    import pillow_avif.AvifImagePlugin  # type: ignore[import]
 
     AVIF_SUPPORTED = pillow_avif.AvifImagePlugin.SUPPORTED
 except ImportError:

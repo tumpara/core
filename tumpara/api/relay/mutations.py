@@ -260,7 +260,7 @@ class DjangoModelFormInput(
                 queryset_type = field.queryset
                 assert queryset_type is not None
                 node = resolve_node(info, data[field_name], DjangoNode)
-                if not isinstance(node.obj, queryset_type.model):
+                if node is None or not isinstance(node.obj, queryset_type.model):
                     return NodeError(requested_id=data[field_name])
                 data[field_name] = node.obj
 
