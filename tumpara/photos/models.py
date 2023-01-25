@@ -244,10 +244,7 @@ class Photo(AssetModel):
         # TODO Extract GPS information.
         self.media_location = None
 
-        try:
-            self.full_clean()
-        except ValidationError as error:
-            raise
+        self.full_clean()
         if commit:
             self.save()
 

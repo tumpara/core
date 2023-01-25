@@ -187,7 +187,7 @@ class FileEvent(Event):
             if other_file == file:
                 continue
             other_file.availability = None
-            other_file.save()
+            other_file.save(update_fields=("availability",))
 
         if need_saving:
             file.path = self.path
@@ -210,6 +210,7 @@ class FileModifiedEvent(Event):
 
     path: str
 
+    @transaction.atomic
     def commit(self, library: Library) -> None:
         from ..models import File
 
@@ -229,7 +230,7 @@ class FileModifiedEvent(Event):
 
         if library.check_path_ignored(self.path):
             file.availability = None
-            file.save()
+            file.save(update_fields=("availability",))
             _logger.debug(
                 f"Got a file modified event for {self.path!r} in {library}, which is "
                 f"in an ignored directory. The file was marked unavailable."
@@ -244,7 +245,7 @@ class FileModifiedEvent(Event):
             # The file seems to still be available and hasn't changed since the last
             # time we checked, so go ahead and call it a day.
             file.availability = timezone.now()
-            file.save()
+            file.save(update_fields=("availability",))
             return
         else:
             # Since the file was changed, we need to rescan it.
@@ -261,6 +262,7 @@ class FileMovedEvent(Event):
     old_path: str
     new_path: str
 
+    @transaction.atomic
     def commit(self, library: Library) -> None:
         from ..models import Asset, File
 
@@ -343,6 +345,7 @@ class DirectoryMovedEvent(Event):
     old_path: str
     new_path: str
 
+    @transaction.atomic
     def commit(self, library: Library) -> None:
         from ..models import Asset, File
 
@@ -381,7 +384,7 @@ class DirectoryMovedEvent(Event):
                 )
                 if file.availability is not None:
                     file.availability = timezone.now()
-                file.save()
+                file.save(update_fields=("path", "availability"))
                 count += 1
             _logger.debug(
                 f"Got a directory moved event from {self.old_path!r} to "
@@ -395,6 +398,7 @@ class DirectoryRemovedEvent(Event):
 
     path: str
 
+    @transaction.atomic
     def commit(self, library: Library) -> None:
         from ..models import Asset, File
 
@@ -435,6 +439,7 @@ class ScanEvent(Event):
     def __init__(self) -> None:
         self.start_timestamp = timezone.now()
 
+    @transaction.atomic
     def commit(self, library: Library) -> None:
         from ..models import Asset, File
 
