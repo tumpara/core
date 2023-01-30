@@ -89,7 +89,6 @@ class FileEvent(Event):
             file for file in file_candidates if not file.available
         }
         file: Optional[File] = None
-        need_change_signal = False
         need_saving = False
 
         # First case: we have a file object that already matches the description we
@@ -97,7 +96,6 @@ class FileEvent(Event):
         if candidates := candidates_by_path & candidates_by_digest:
             file = candidates.pop()
             need_saving = True
-            need_change_signal = True
 
             for other_file in candidates:
                 if not other_file.available:
@@ -108,18 +106,17 @@ class FileEvent(Event):
                     f"marked unavailable. This is probably a bug."
                 )
                 other_file.availability = None
-                other_file.save()
+                other_file.save(update_fields=("availability",))
 
         # Second case: we have some other unavailable file object on asset with the
         # same digest. Then that old file object can be replaced with this new one.
         elif candidates := candidates_by_digest & unavailable_candidates:
             file = candidates.pop()
             need_saving = True
-            need_change_signal = True
 
         # Third case: we have existing database entries that match the digest, but are
         # currently available. Then we create a new file object in their asset (all
-        # file objects with the same digest should always share a asset).
+        # file objects with the same digest should always share an asset).
         elif candidates := candidates_by_digest & available_candidates:
             file = File(
                 asset=candidates.pop().asset,
@@ -128,14 +125,12 @@ class FileEvent(Event):
                 availability=timezone.now(),
             )
             need_saving = True
-            need_change_signal = True
 
         # Fourth case: we have an existing file object for this path that is marked
         # as available. This is the case when a file is edited on disk.
         elif candidates := candidates_by_path & available_candidates:
             file = candidates.pop()
             need_saving = True
-            need_change_signal = True
 
         # Fifth case: we have an existing file object for this path that is marked as
         # unavailable. Note that this case might be problematic because there might now
@@ -144,7 +139,6 @@ class FileEvent(Event):
         elif candidates := candidates_by_path & unavailable_candidates:
             file = candidates.pop()
             need_saving = True
-            need_change_signal = True
 
         # Sixth case: we have a completely new file. Since we couldn't place the file
         # into any existing library asset, we can now create a new one. To do that,
@@ -179,7 +173,6 @@ class FileEvent(Event):
                     digest=digest,
                     availability=timezone.now(),
                 )
-                need_change_signal = True
 
         # Mark all other files for that path that we might still have in the database
         # as unavailable (because we just created a new one).
@@ -195,9 +188,8 @@ class FileEvent(Event):
             file.availability = timezone.now()
             file.save()
 
-        if need_change_signal:
-            resolved_asset = file.asset.resolve_instance()
-            files_changed.send_robust(sender=type(resolved_asset), asset=resolved_asset)
+        resolved_asset = file.asset.resolve_instance()
+        files_changed.send_robust(sender=type(resolved_asset), asset=resolved_asset)
 
 
 @dataclasses.dataclass
