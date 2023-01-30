@@ -72,7 +72,7 @@ class TokenManager(models.Manager["Token"]):
 
         try:
             queryset = cast(TokenQueryset, self.get_queryset())
-            token = queryset.prefetch_related("user").filter_valid().get(key=key)
+            token = queryset.select_related("user").filter_valid().get(key=key)
         except (Token.DoesNotExist, Token.MultipleObjectsReturned):
             return None
 
