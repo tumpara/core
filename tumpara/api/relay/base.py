@@ -127,7 +127,8 @@ class Node(abc.ABC):
 
 @strawberry.type
 class DjangoNode(Node):
-    _model: ClassVar[type[models.Model]]
+    _model: ClassVar[Optional[type[models.Model]]]
+    _field_names: ClassVar[Optional[Collection[str]]]
     _related_field_nodes: ClassVar[dict[str, type[DjangoNode]]]
 
     # The following field is not exposed through GraphQL. It is used to resolve the
@@ -135,7 +136,8 @@ class DjangoNode(Node):
     obj: strawberry.Private[models.Model]
 
     def __init_subclass__(cls, **kwargs: Any):
-        model = cls._get_model_type()
+        cls._model = None
+        cls._field_names = None
         try:
             cls._related_field_nodes = dict(cls._related_field_nodes)
         except AttributeError:
@@ -151,7 +153,7 @@ class DjangoNode(Node):
             if not isinstance(field_name, str):
                 raise TypeError("field names must be given as strings")
 
-            model_field = model._meta.get_field(field_name)
+            model_field = cls._get_model_type()._meta.get_field(field_name)
             assert isinstance(model_field, models.Field)
 
             try:
@@ -218,6 +220,9 @@ class DjangoNode(Node):
     @classmethod
     def _get_field_names(cls) -> Collection[str]:
         """Return the names of all fields required to initialize a node."""
+        if cls._field_names is not None:
+            return cls._field_names
+
         result = [
             # The primary key field would be filtered out in the following loop, so we
             # include it here.
@@ -230,10 +235,15 @@ class DjangoNode(Node):
                 # This field has its own resolver.
                 continue
             result.append(field.name)
+
+        cls._field_names = result
         return result
 
     @classmethod
     def _get_model_type(cls) -> type[models.Model]:
+        if cls._model is not None:
+            return cls._model
+
         try:
             model = typing.get_type_hints(cls)["obj"]
         except KeyError:
@@ -253,6 +263,7 @@ class DjangoNode(Node):
                 f"'obj: strawberry.Private[TheModel]' - got {model!r}."
             )
 
+        cls._model = model
         return model
 
     def get_key(self, info: InfoType) -> str:
