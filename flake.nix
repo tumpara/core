@@ -105,6 +105,7 @@
 					hypothesis
 					mypy
 					parameterized
+					pyinstrument
 					pylint
 					pylint-django
 					pytest
@@ -134,11 +135,16 @@
 					sphinx
 				];
 
+				productionDependencies = pythonPackages: with pythonPackages; [
+					gunicorn
+				];
+
 				allDependencies = pythonPackages:
 					(runtimeDependencies pythonPackages)
 					++ (testDependencies pythonPackages)
 					++ (developmentDependencies pythonPackages)
-					++ (documentationDependencies pythonPackages);
+					++ (documentationDependencies pythonPackages)
+					++ (productionDependencies pythonPackages);
 			in
 			rec {
 				packages = {
