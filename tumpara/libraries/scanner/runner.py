@@ -22,7 +22,7 @@ _logger = logging.getLogger(__name__)
 RAISE_EXCEPTIONS = False
 
 
-def check_thread_count(requested_thread_count: Optional[int]) -> int:
+def check_thread_count(requested_thread_count: Optional[int] = None) -> int:
     if requested_thread_count is None:
         requested_thread_count = max(1, int((os.cpu_count() or 1) * 0.9))
     elif not isinstance(requested_thread_count, int):

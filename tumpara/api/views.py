@@ -103,7 +103,11 @@ def serve_file(
         # it here directly.
         # TODO Use some sort of sendfile-like serving mechanism. See here:
         #  https://github.com/johnsensible/django-sendfile/blob/master/sendfile/backends/nginx.py
-        return serve(request, file_path, str(file_storage.base_location))
+        return serve(
+            request,
+            file_path,
+            document_root=str(file_storage.base_location),
+        )
     else:
         # TODO Implement this. We probably need to redo the serve() function from above
         #   entirely because we want to support If-Modified-Since headers, content types

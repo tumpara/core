@@ -1,3 +1,5 @@
+import os
+
 import PIL.Image
 from django.conf import settings
 from django.core import signing
@@ -16,6 +18,50 @@ try:
     AVIF_SUPPORTED = pillow_avif.AvifImagePlugin.SUPPORTED
 except ImportError:
     AVIF_SUPPORTED = False
+
+
+def _get_thumbnail_path(
+    photo_pk: int, format_name: str, requested_width: int, requested_height: int
+) -> str:
+    """Render a photo thumbnail to the cache and return its path inside the thumbnail
+    storage."""
+    directory = hex(photo_pk & 0xFF)[2:]
+    subdirectory = hex(photo_pk & 0xFF00)[2:4]
+
+    absolute_directory_path = settings.THUMBNAIL_STORAGE.path(
+        os.path.join(directory, subdirectory)
+    )
+    if not os.path.isdir(absolute_directory_path):
+        os.makedirs(absolute_directory_path, exist_ok=True)
+
+    filename = f"{photo_pk}_{requested_width}x{requested_height}.{format_name}"
+    path = os.path.join(directory, subdirectory, filename)
+
+    if not settings.THUMBNAIL_STORAGE.exists(path):
+        try:
+            photo = Photo.objects.select_related("library").get(pk=photo_pk)
+        except Photo.DoesNotExist:
+            raise Http404()
+        try:
+            image, _ = load_image(photo.library, photo.main_path)
+        except IsADirectoryError as error:
+            raise
+
+        image.thumbnail(
+            (
+                # This means that both None and 0 evaluate to the original dimensions.
+                # An empty API call to thumbnailUrl() will therefore render the image
+                # as-is.
+                requested_width or image.width,
+                requested_height or image.height,
+            ),
+            PIL.Image.BICUBIC,
+        )
+
+        with settings.THUMBNAIL_STORAGE.open(path, "wb") as file_io:
+            image.save(file_io, format=format_name.upper())
+
+    return path
 
 
 def render_thumbnail(request: HttpRequest, description: str) -> HttpResponseBase:
@@ -47,9 +93,6 @@ def render_thumbnail(request: HttpRequest, description: str) -> HttpResponseBase
     ):
         raise Http404()
 
-    # There are still some formats that we would like to support in the long term.
-    # Mainly AVIF, which is blocked by this issue:
-    # https://github.com/python-pillow/Pillow/pull/5201
     if AVIF_SUPPORTED and request.accepts("image/avif"):
         format_name = "avif"
     elif request.accepts("image/webp"):
@@ -59,30 +102,8 @@ def render_thumbnail(request: HttpRequest, description: str) -> HttpResponseBase
     else:
         return HttpResponseBadRequest("Bad Accept header")
 
-    filename = f"{photo_pk}_{requested_width}x{requested_height}.{format_name}"
-
-    if not settings.THUMBNAIL_STORAGE.exists(filename):
-        try:
-            photo = Photo.objects.select_related("library").get(pk=photo_pk)
-        except Photo.DoesNotExist:
-            raise Http404()
-        try:
-            image, _ = load_image(photo.library, photo.main_path)
-        except IsADirectoryError as error:
-            raise
-
-        image.thumbnail(
-            (
-                # This means that both None and 0 evaluate to the original dimensions.
-                # An empty API call to thumbnailUrl() will therefore render the image
-                # as-is.
-                requested_width or image.width,
-                requested_height or image.height,
-            ),
-            PIL.Image.BICUBIC,
-        )
-
-        with settings.THUMBNAIL_STORAGE.open(filename, "wb") as file_io:
-            image.save(file_io, format=format_name.upper())
-
-    return serve_file(request, settings.THUMBNAIL_STORAGE, filename)
+    return serve_file(
+        request,
+        settings.THUMBNAIL_STORAGE,
+        _get_thumbnail_path(photo_pk, format_name, requested_width, requested_height),
+    )
