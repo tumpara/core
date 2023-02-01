@@ -212,8 +212,10 @@ class ImageMetadata:
 
         if not isinstance(value, str) or not value:
             return None
-        else:
+        try:
             return datetime.datetime.fromisoformat(value)
+        except ValueError:
+            return None
 
     aperture_size = functools.cached_property(
         functools.partial(_get_numeric_value, key="Aperture")
@@ -274,7 +276,10 @@ class ImageMetadata:
             return value
 
     def calculate_checksum(
-        self, *, payload: Optional[bytes | int] = None
+        self,
+        *,
+        payload: Optional[bytes | int] = None,
+        use_file_identifier: bool = False,
     ) -> Optional[bytes]:
         """Calculate a checksum out of image metadata that can be used to attribute to
         identical photos together.
@@ -284,24 +289,28 @@ class ImageMetadata:
         from a raw file, for example.
 
         :param payload: Optional payload that will be encoded into the hash as well.
+        :param use_file_identifier: Whether to incorporate the serial number and file
+            number fields into the checksum. Not all image processing tools keep these
+            fields, however. Therefore, this is disabled by default.
         """
-        serial_number = remove_whitespace(
-            self._get_string_value("SerialNumber")
-            + self._get_string_value("InternalSerialNumber")
-        )
-        file_number = remove_whitespace(
-            self._get_string_value("FileNumber") + self._get_string_value("FileIndex")
-        )
-        if serial_number and file_number:
-            file_identifier = " ".join(
-                (
-                    serial_number,
-                    self._get_string_value("SerialNumberFormat"),
-                    file_number,
-                )
+        file_identifier = ""
+        if use_file_identifier:
+            serial_number = remove_whitespace(
+                self._get_string_value("SerialNumber")
+                + self._get_string_value("InternalSerialNumber")
             )
-        else:
-            file_identifier = ""
+            file_number = remove_whitespace(
+                self._get_string_value("FileNumber")
+                + self._get_string_value("FileIndex")
+            )
+            if serial_number and file_number:
+                file_identifier = " ".join(
+                    (
+                        serial_number,
+                        self._get_string_value("SerialNumberFormat"),
+                        file_number,
+                    )
+                )
 
         if not self.timestamp and not file_identifier:
             # We have no sufficiently unique identification, so we can't build a
