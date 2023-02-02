@@ -26,7 +26,11 @@ class Query:
     @api.DjangoConnectionField(
         AssetConnection,
         filter_type=CombinedAssetFilter,
-        description="This connection contains all assets that are currently available.",
+        description="This connection contains all assets that are currently available. "
+        "Next to the default relay pagination pattern, this field also supports using "
+        "a timestamp in ISO format for the `before` and `after` arguments. This can be "
+        "used for a one-time filter to jump to any point in the asset timeline, which "
+        "won't invalidate other cursors.",
     )
     def assets(self, info: api.InfoType, **kwargs: Any) -> models.QuerySet[Asset]:
         queryset = AssetNode.get_queryset(info, "libraries.view_asset")

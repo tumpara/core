@@ -1,4 +1,5 @@
 import dataclasses
+import datetime
 import enum
 from collections.abc import Sequence, Set
 from typing import Any, Optional, cast
@@ -263,9 +264,11 @@ class AssetNode(
         model = cls._get_model_type()
         assert issubclass(model, Asset)
         resolved_permission = permission or build_permission_name(model, "view")
-        return model._default_manager.for_user(
-            info.context.user, resolved_permission
-        ).resolve_instances()
+        return (
+            model._default_manager.for_user(info.context.user, resolved_permission)
+            .resolve_instances()
+            .order_by("media_timestamp")
+        )
 
     @classmethod
     def extract_primary_keys_from_ids(
@@ -298,6 +301,10 @@ class AssetNode(
 class AssetEdge(api.Edge[AssetNode]):
     node: AssetNode
 
+    @strawberry.field()
+    def decoded_cursor(self) -> str:
+        return str(api.decode_key(self.cursor))
+
 
 @strawberry.type(description="A connection to a list of assets.")
 class AssetConnection(
@@ -324,6 +331,43 @@ class AssetConnection(
             return PhotoNode(obj=obj)
         else:
             raise TypeError(f"unsupported asset type: {type(obj)}")
+
+    @classmethod
+    def from_queryset(
+        cls,
+        queryset: models.QuerySet[Asset],
+        info: api.InfoType,
+        *,
+        after: Optional[str] = None,
+        before: Optional[str] = None,
+        first: Optional[int] = None,
+        last: Optional[int] = None,
+    ) -> "AssetConnection":
+        try:
+            after_timestamp = datetime.datetime.fromisoformat(after)
+        except (TypeError, ValueError):
+            pass
+        else:
+            skip_count = queryset.filter(media_timestamp__lte=after_timestamp).count()
+            after = api.encode_key("Connection", skip_count - 1)
+
+        try:
+            before_timestamp = datetime.datetime.fromisoformat(before)
+        except (TypeError, ValueError):
+            pass
+        else:
+            # Note the < comparison here instead of <= in the first case.
+            skip_count = queryset.filter(media_timestamp__lt=before_timestamp).count()
+            before = api.encode_key("Connection", skip_count)
+
+        return super().from_queryset(
+            queryset,
+            info,
+            after=after,
+            before=before,
+            first=first,
+            last=last,
+        )
 
 
 ########################################################################################

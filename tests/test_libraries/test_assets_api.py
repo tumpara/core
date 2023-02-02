@@ -9,6 +9,18 @@ from tumpara.libraries.models import Library, Note, Visibility
 
 from .test_notes_api import user  # noqa: F401
 
+ASSET_PAGINATION_QUERY = """
+    query AssetPagination($after: String, $before: String, $first: Int, $last: Int) {
+      assets(after: $after, before: $before, first: $first, last: $last) {
+        pageInfo { hasNextPage hasPreviousPage startCursor endCursor }
+        nodes {
+          __typename
+          ... on Note { content }
+        }
+      }
+    }
+"""
+
 
 @pytest.fixture
 def library(user: User) -> Library:
@@ -126,18 +138,6 @@ def test_listing_assets(user: User, notes: list[Note]) -> None:
 @pytest.mark.django_db
 def test_asset_pagination(user: User, notes: list[Note]) -> None:
     """Paginating through assets in both directions works as expected."""
-    query = """
-        query AssetPagination($after: String, $before: String, $first: Int, $last: Int) {
-          assets(after: $after, before: $before, first: $first, last: $last) {
-            pageInfo { hasNextPage hasPreviousPage startCursor endCursor }
-            nodes {
-              __typename
-              ... on Note { content }
-            }
-          }
-        }
-    """
-
     expected_nodes = [
         {"__typename": "Note", "content": note.content}
         for note in Note.objects.order_by("import_timestamp")
@@ -145,7 +145,7 @@ def test_asset_pagination(user: User, notes: list[Note]) -> None:
 
     # Forwards
 
-    result = api.execute_sync(query, user, first=6)
+    result = api.execute_sync(ASSET_PAGINATION_QUERY, user, first=6)
     assert result.errors is None
     assert result.data is not None
     assert result.data["assets"]["nodes"] == expected_nodes[:6]
@@ -153,7 +153,7 @@ def test_asset_pagination(user: User, notes: list[Note]) -> None:
     assert isinstance(cursor, str)
     assert result.data["assets"]["pageInfo"]["hasNextPage"]
 
-    result = api.execute_sync(query, user, first=6, after=cursor)
+    result = api.execute_sync(ASSET_PAGINATION_QUERY, user, first=6, after=cursor)
     assert result.errors is None
     assert result.data is not None
     assert result.data["assets"]["nodes"] == expected_nodes[6:]
@@ -161,7 +161,7 @@ def test_asset_pagination(user: User, notes: list[Note]) -> None:
 
     # Backwards
 
-    result = api.execute_sync(query, user, last=6)
+    result = api.execute_sync(ASSET_PAGINATION_QUERY, user, last=6)
     assert result.errors is None
     assert result.data is not None
     assert result.data["assets"]["nodes"] == expected_nodes[-6:]
@@ -169,11 +169,55 @@ def test_asset_pagination(user: User, notes: list[Note]) -> None:
     assert isinstance(cursor, str)
     assert result.data["assets"]["pageInfo"]["hasPreviousPage"]
 
-    result = api.execute_sync(query, user, last=6, before=cursor)
+    result = api.execute_sync(ASSET_PAGINATION_QUERY, user, last=6, before=cursor)
     assert result.errors is None
     assert result.data is not None
     assert result.data["assets"]["nodes"] == expected_nodes[:-6]
     assert not result.data["assets"]["pageInfo"]["hasPreviousPage"]
+
+
+@pytest.mark.django_db
+def test_pagination_by_timestamp(user: User, notes: list[Note]) -> None:
+    """Specifying a timestamp works as an alternative to cursors for pagination."""
+    result = api.execute_sync(ASSET_PAGINATION_QUERY, user, first=2, after="2022-01-05")
+    assert result.errors is None
+    assert result.data is not None
+    assert result.data["assets"]["nodes"] == [
+        {"__typename": "Note", "content": "Seventh note."},
+        {"__typename": "Note", "content": "Eighth note."},
+    ]
+    assert result.data["assets"]["pageInfo"]["hasPreviousPage"] is True
+    assert result.data["assets"]["pageInfo"]["hasNextPage"] is True
+    start_cursor = result.data["assets"]["pageInfo"]["startCursor"]
+    end_cursor = result.data["assets"]["pageInfo"]["endCursor"]
+
+    result = api.execute_sync(ASSET_PAGINATION_QUERY, user, first=2, after=end_cursor)
+    assert result.errors is None
+    assert result.data is not None
+    assert result.data["assets"]["nodes"] == [
+        {"__typename": "Note", "content": "Ninth note."},
+        {"__typename": "Note", "content": "Tenth note."},
+    ]
+
+    result = api.execute_sync(ASSET_PAGINATION_QUERY, user, last=2, before=start_cursor)
+    assert result.errors is None
+    assert result.data is not None
+    assert result.data["assets"]["nodes"] == [
+        {"__typename": "Note", "content": "Fifth note."},
+        {"__typename": "Note", "content": "Sixth note."},
+    ]
+
+    result = api.execute_sync(
+        ASSET_PAGINATION_QUERY, user, last=2, before="2022-01-02T03:20"
+    )
+    assert result.errors is None
+    assert result.data is not None
+    assert result.data["assets"]["nodes"] == [
+        {"__typename": "Note", "content": "First note."},
+        {"__typename": "Note", "content": "Second note."},
+    ]
+    assert result.data["assets"]["pageInfo"]["hasPreviousPage"] is False
+    assert result.data["assets"]["pageInfo"]["hasNextPage"] is True
 
 
 @pytest.mark.django_db
