@@ -31,15 +31,19 @@ details.
 """
 )
 class PageInfo:
-    has_next_page: bool = strawberry.field(
-        description="Whether a next page is available for paginating forwards (using "
-        "`first`). This respects the `before` argument, but ignores any potential "
-        "value for `last`. When not paginating forwards, this will be `false`."
-    )
     has_previous_page: bool = strawberry.field(
-        description="Whether a next page is available for paginating backwards (using "
-        "`last`). This respects the `after` argument, but ignores any potential "
-        "value for `first`. When not paginating backwards, this will be `false`."
+        description="Whether an adjacent page is available for paginating backwards "
+        "(using `last` and `before`). When paginating using both `first` and `last`, "
+        "the meaning of this value might become unclear. Further, this will only be "
+        "`true` if pagination is possible without altering the value of `after`, "
+        "should it be given."
+    )
+    has_next_page: bool = strawberry.field(
+        description="Whether an adjacent page is available for paginating backwards "
+        "(using `first` and `after`). When paginating using both `first` and `last`, "
+        "the meaning of this value might become unclear. Further, this will only be "
+        "`true` if pagination is possible without altering the value of `before`, "
+        "should it be given."
     )
     start_cursor: Optional[str] = strawberry.field(
         description="The cursor to continue with when paginating backwards."
@@ -173,7 +177,7 @@ class Connection(Generic[_Node]):
                 after_context, after_index_string = decode_key(after)
                 after_index = int(after_index_string)
                 assert after_context == "Connection"
-            except (ValueError, AssertionError) as error:
+            except (AssertionError, TypeError, ValueError) as error:
                 raise ValueError("invalid after cursor: " + after) from error
 
         before_index: Optional[int] = None
@@ -182,7 +186,7 @@ class Connection(Generic[_Node]):
                 before_context, before_index_string = decode_key(before)
                 before_index = int(before_index_string)
                 assert before_context == "Connection"
-            except (ValueError, AssertionError) as error:
+            except (AssertionError, TypeError, ValueError) as error:
                 raise ValueError("invalid before cursor: " + before) from error
 
         if first is not None and first < 0:
@@ -216,14 +220,18 @@ class Connection(Generic[_Node]):
 
         # See the specification again for this algorithm:
         # https://relay.dev/graphql/connections.htm#sec-undefined.PageInfo.Fields
-        # This is densed down a bit (see the descriptions of has_previous_page and
-        # has_next_page in our model for details).
-        has_previous_page = False
         if last is not None:
             has_previous_page = slice_stop - slice_start > last
-        has_next_page = False
+        elif after_index is not None:
+            has_previous_page = after_index >= 0
+        else:
+            has_previous_page = False
         if first is not None:
             has_next_page = slice_stop - slice_start > first
+        elif before_index is not None:
+            has_next_page = before_index < sequence_length
+        else:
+            has_next_page = False
 
         # Step 2: limit the result to at most the number of entries specified in the
         # 'first' argument, counting from the front.
@@ -333,19 +341,25 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
         before: Optional[str] = None,
         first: Optional[int] = None,
         last: Optional[int] = None,
+        total_queryset_count: Optional[int] = None,
     ) -> _DjangoConnection:
         # We don't check the generic view permission on the model here anymore because
         # we assume that the connection's (which calls the node's) get_queryset method
         # already filters accordingly.
+
+        queryset_changed = False
+        if total_queryset_count is None:
+            total_queryset_count = queryset.count()
 
         # Since Connection.from_sequence expects a sequence of nodes (the API type) and
         # we only have a queryset (which yields model instances), we need to transform
         # that accordingly.
         class NodeSequence:
             def __getitem__(self, item: int | slice) -> NodeSequence:
-                nonlocal queryset
+                nonlocal queryset, queryset_changed
                 assert isinstance(item, slice)
                 queryset = queryset[item]
+                queryset_changed = True
                 return self
 
             def __iter__(self) -> Iterator[_Node]:
@@ -354,7 +368,8 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
                     yield cls.create_node(obj)
 
             def __len__(self) -> int:
-                return queryset.count()
+                assert not queryset_changed
+                return total_queryset_count
 
         return cls.from_sequence(
             cast(Sequence[DjangoNode], NodeSequence()),

@@ -100,9 +100,6 @@ def test_connection_building_bounds(
             assert connection.page_info.has_next_page is (
                 connection.edges[-1].node < before_or_integer - 1
             )
-        else:
-            # When not paginating forwards, no hint about the next page should be given.
-            assert not connection.page_info.has_next_page
 
         if last is not None:
             # When paginating backwards, has_previous_page should be set correctly.
@@ -111,10 +108,6 @@ def test_connection_building_bounds(
             assert connection.page_info.has_previous_page is (
                 connection.edges[0].node > after_integer + 1
             )
-        else:
-            # When not paginating backwards, no hint about the previous page should
-            # be given.
-            assert not connection.page_info.has_previous_page
 
         first_or_inf = first if first is not None else float("inf")
         last_or_inf = last if last is not None else float("inf")
