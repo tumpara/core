@@ -11,7 +11,7 @@
 
 				python = pkgs.python310.override {
 					packageOverrides = self: super: {
-						django = (super.django_4.override {
+						django_4 = (super.django_4.override {
 							withGdal = true;
 						}).overridePythonAttrs (oldAttrs: {
 							patches = oldAttrs.patches ++ [
@@ -27,30 +27,21 @@
 						});
 
 						django-stubs = super.django-stubs.overridePythonAttrs (oldAttrs: rec {
-							version = "1.13.2";
+							version = "1.14.0";
 							src = self.fetchPypi {
 								inherit (oldAttrs) pname;
 								inherit version;
-								sha256 = "Gel+/s+vgOQsR57n7WF58xIMGywR5mWy6DBUV+Qe4Gk=";
-							};
-						});
-
-						django-stubs-ext = super.django-stubs-ext.overridePythonAttrs (oldAttrs: rec {
-							version = "0.7.0";
-							src = self.fetchPypi {
-								inherit (oldAttrs) pname;
-								inherit version;
-								sha256 = "T9jNvGjRpCHyG7fg2edtUPaktQTTULp4ZAXa9TbpDCE=";
+								sha256 = "1TvNSXWlTKXJq7vTO2H0DUQZGXEBjy6lT3OwpqmeGos=";
 							};
 						});
 
 						strawberry-graphql = super.strawberry-graphql.overridePythonAttrs (oldAttrs: rec {
-							version = "0.155.1";
+							version = "0.155.4";
 							src = pkgs.fetchFromGitHub {
 								owner = "strawberry-graphql";
 								repo = "strawberry";
 								rev = version;
-								sha256 = "SYihl9esefMluAcybfYWVYrVEsWtBnwxq6uBPfn0I4c=";
+								sha256 = "xV+jHVcQ4JeiKPIu0W39XAJdM8pGWUBx0Nf8tjxBiGs=";
 							};
 							# Strip down to only the essential dependencies as well as the
 							# ones we need:
@@ -105,7 +96,6 @@
 					hypothesis
 					mypy
 					parameterized
-					pyinstrument
 					pylint
 					pylint-django
 					pytest
