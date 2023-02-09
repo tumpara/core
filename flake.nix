@@ -11,7 +11,7 @@
 
 				python = pkgs.python310.override {
 					packageOverrides = self: super: {
-						django_4 = (super.django_4.override {
+						django = (super.django_4.override {
 							withGdal = true;
 						}).overridePythonAttrs (oldAttrs: {
 							patches = oldAttrs.patches ++ [
@@ -21,9 +21,6 @@
 									extension = pkgs.stdenv.hostPlatform.extensions.sharedLibrary;
 								})
 							];
-							postPatch = ''
-								sed -ie 's,lib_path = ""/nix/store,lib_path = "/nix/store,g' django/contrib/gis/gdal/libgdal.py
-							'';
 						});
 
 						django-stubs = super.django-stubs.overridePythonAttrs (oldAttrs: rec {
