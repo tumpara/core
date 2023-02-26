@@ -1,8 +1,10 @@
+import collections
 import dataclasses
 import datetime
 import enum
+import math
 from collections.abc import Sequence, Set
-from typing import Any, Optional, cast
+from typing import Annotated, Any, Optional, cast
 
 import strawberry
 from django.db import NotSupportedError, models
@@ -306,6 +308,28 @@ class AssetEdge(api.Edge[AssetNode]):
         return str(api.decode_key(self.cursor))
 
 
+@strawberry.type(
+    description="An asset connection bucket is a subdivision of the entire asset "
+    "dataset, pointing to some part in the middle. These objects are used to aid "
+    "pagination from arbitrary points."
+)
+class AssetConnectionChunk:
+    after_cursor: str = strawberry.field(
+        description="Cursor to use as the `after` parameter for requesting this bucket."
+    )
+    before_cursor: str = strawberry.field(
+        description="Cursor to use as the `before` parameter for requesting this "
+        "bucket."
+    )
+    start_timestamp: datetime.datetime = strawberry.field(
+        description="Media timestamp of the first asset in this bucket."
+    )
+    end_timestamp: datetime.datetime = strawberry.field(
+        description="Media timestamp of the last asset in this bucket."
+    )
+    size: int = strawberry.field(description="The number of assets in this bucket.")
+
+
 @strawberry.type(description="A connection to a list of assets.")
 class AssetConnection(
     api.DjangoConnection[AssetNode, Asset],
@@ -314,6 +338,159 @@ class AssetConnection(
 ):
     edges: list[Optional[AssetEdge]]
     nodes: list[Optional[AssetNode]]
+    queryset: strawberry.Private[AssetQuerySet[Asset]]
+
+    @strawberry.field(
+        description="Divide the entire dataset into easily paginateable chunks. This "
+        "respects the `before` and `after` options, but `first` and `last` are "
+        "ignored. Instead, you will always receive *all* chunks that are available."
+    )
+    def time_chunks(
+        self,
+        target_chunk_size: Annotated[
+            int,
+            strawberry.argument(
+                name="targetSize",
+                description="The returned chunks will contain about this number of "
+                "assets. Any single chunk is guaranteed to be at most 1.5 times this "
+                "size. Most chunks will be at least 0.5 times this size.",
+            ),
+        ] = 200,
+    ) -> list[AssetConnectionChunk]:
+        chunk_size_allowance = 0.5 * target_chunk_size
+        minimum_chunk_size = math.ceil(target_chunk_size - chunk_size_allowance)
+        maximum_chunk_size = math.floor(target_chunk_size + chunk_size_allowance)
+
+        all_timestamps: list[datetime.datetime] = [
+            cast(datetime.datetime, item[0])
+            for item in Asset.objects.all()
+            .resolve_instances(False)
+            .order_by("media_timestamp")
+            .values_list("media_timestamp")
+        ]
+
+        if len(all_timestamps) == 0:
+            return []
+
+        # For each asset, calculate the timestamp difference (in seconds) to the
+        # previous one.
+        timestamp_deltas = [
+            0
+            if index == 0
+            else (all_timestamps[index] - all_timestamps[index - 1]).total_seconds()
+            for index in range(len(all_timestamps))
+        ]
+
+        # Now calculate the average timestamp delta "around" each asset. This basically
+        # measures how close assets are placed together, which we can later use to judge
+        # if a gap in time is actually a big gap where it might be worth splitting.
+        # In essence, the following invariant should hold:
+        #   average_timestamp_deltas[i] = sum(
+        #     timestamp_deltas[i ± target_chunk_size]
+        #   ) / (2 * target_chunk_size + 1)
+        # for every i. Or, in actual Python:
+        #   average_timestamp_deltas[i] == sum(
+        #     timestamp_deltas[i - maximum_chunk_size : i + maximum_chunk_size + 1]
+        #   ) / (2 * maximum_chunk_size + 1)
+        # The following window algorithm calculates the array in O(n), as apposed to the
+        # brute force O(maximum_chunk_size * n) approach.
+        average_timestamp_deltas = list[float]()
+        current_deltas = collections.deque(timestamp_deltas[:maximum_chunk_size])
+        current_delta_sum = sum(current_deltas)
+        for index, timestamp_delta in enumerate(timestamp_deltas[maximum_chunk_size:]):
+            current_deltas.append(timestamp_delta)
+            current_delta_sum += timestamp_delta
+            # Add 1 here because we want the average to be centered on the current
+            # index:
+            if len(current_deltas) > maximum_chunk_size + chunk_size_allowance + 1:
+                current_delta_sum -= current_deltas.popleft()
+            average_timestamp_deltas.append(current_delta_sum / len(current_deltas))
+        while len(average_timestamp_deltas) < len(all_timestamps):
+            current_delta_sum -= current_deltas.popleft()
+            try:
+                average_timestamp_deltas.append(current_delta_sum / len(current_deltas))
+            except ZeroDivisionError:
+                # This happens when there is only one asset.
+                average_timestamp_deltas.append(0)
+
+        max_timestamp_delta = max(timestamp_deltas)
+        results = list[AssetConnectionChunk]()
+
+        # The following greedy algorithm finds assets before which to split the dataset
+        # into a new chunk. For each index, we calculate a badness score that currently
+        # consists of the following two:
+        # - How close the asset is to its predecessor, in relation to how close assets
+        #   are to each in general. This is where the surrounding time delta average
+        #   comes in – some users might sporadically take a few pictures and other might
+        #   generate content in phases. For example, people might take more photos on
+        #   vacation than when they are at home. Then we would like these vacations to
+        #   be in single chunks as much as possible.
+        # - Splits that produce evenly sized chunks are deemed less bad. This lets us
+        #   somewhat adhere to the target chunk size.
+        last_split_index = 0
+        while (
+            remaining_count := len(all_timestamps) - last_split_index
+        ) > maximum_chunk_size:
+            candidate_index = -1
+            candidate_badness = math.inf
+
+            for index in range(
+                last_split_index + minimum_chunk_size,
+                last_split_index + maximum_chunk_size,
+            ):
+                try:
+                    # Timestamp deltas that are larger than the surrounding average
+                    # are the ones we want here - this encourages splitting at places
+                    # where the time jumps - for example when no new photos are taken
+                    # for a few days. Note that using the median instead of the
+                    # average would probably be better here.
+                    timestamp_delta_badness = (
+                        average_timestamp_deltas[index] / timestamp_deltas[index]
+                    )
+                except ZeroDivisionError:
+                    # Since timestamps don't match, go for something large, but not
+                    # infinity so that the chunk size can still have the last word in
+                    # an edge case. Note that a value of "1" for this badness score
+                    # would mean that this asset is averagely spaced to its neighbor.
+                    timestamp_delta_badness = max_timestamp_delta
+
+                # Prioritize chunks that are abound the target size.
+                chunk_size_badness = (
+                    abs((index - last_split_index) - target_chunk_size)
+                    / chunk_size_allowance
+                )
+
+                badness = timestamp_delta_badness + chunk_size_badness
+                if badness < candidate_badness:
+                    candidate_index = index
+                    candidate_badness = badness
+
+            # Create a new chunk that contains assets from last_split_index
+            # to candidate_index - 1 (both inclusive).
+            results.append(
+                AssetConnectionChunk(
+                    after_cursor=api.encode_key("Connection", last_split_index - 1),
+                    before_cursor=api.encode_key("Connection", candidate_index),
+                    start_timestamp=all_timestamps[last_split_index],
+                    end_timestamp=all_timestamps[candidate_index - 1],
+                    size=candidate_index - last_split_index,
+                )
+            )
+            last_split_index = candidate_index
+
+        # Add the final chunk to the result as well. This goes from last_split_index to
+        # len(all_timestamps) - 1 (both inclusive).
+        results.append(
+            AssetConnectionChunk(
+                after_cursor=api.encode_key("Connection", last_split_index - 1),
+                before_cursor=api.encode_key("Connection", len(all_timestamps)),
+                start_timestamp=all_timestamps[last_split_index],
+                end_timestamp=all_timestamps[len(all_timestamps) - 1],
+                size=remaining_count,
+            )
+        )
+
+        return results
 
     @classmethod
     def create_node(cls, obj: models.Model) -> AssetNode:

@@ -301,13 +301,15 @@ class AssetQuerySet(Generic[_Asset], models.QuerySet[_Asset]):
         )
 
     def resolve_instances(
-        self, *prefetch_types: type[AssetModel]
+        self, *prefetch_types: type[AssetModel] | Literal[False]
     ) -> AssetQuerySet[_Asset]:
         """Return a queryset that returns concrete asset subclasses instead of the
         generic :class:`Asset` supertype.
 
         Pass subclasses of :class:`AssetModel` to automatically prefetch the
         corresponding tables, reducing the total number of database queries.
+
+        Call ``resolve_instances(False)`` to disable instance resolving.
         """
         if (
             self._fields is not None  # type: ignore
@@ -318,6 +320,11 @@ class AssetQuerySet(Generic[_Asset], models.QuerySet[_Asset]):
                 ".values() or .values_list()."
             )
         self._not_support_grouping("resolve_instances")
+
+        if False in prefetch_types:
+            clone = self._chain()
+            clone._resolve_instances = False
+            return clone
 
         if prefetch_types:
             related_names = list[str]()

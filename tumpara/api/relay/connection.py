@@ -129,7 +129,9 @@ class Connection(Generic[_Node]):
         super().__init_subclass__(**kwargs)
 
     @classmethod
-    def empty(cls: type[_Connection], total_count: int = 0) -> _Connection:
+    def empty(
+        cls: type[_Connection], total_count: int = 0, **kwargs: Any
+    ) -> _Connection:
         return cls(
             page_info=PageInfo(
                 has_next_page=False,
@@ -140,6 +142,7 @@ class Connection(Generic[_Node]):
             total_count=total_count,
             edges=[],
             nodes=[],
+            **kwargs,
         )
 
     @classmethod
@@ -170,6 +173,7 @@ class Connection(Generic[_Node]):
         before: Optional[str] = None,
         first: Optional[int] = None,
         last: Optional[int] = None,
+        **kwargs: Any,
     ) -> _Connection:
         after_index: Optional[int] = None
         if after is not None:
@@ -198,7 +202,7 @@ class Connection(Generic[_Node]):
 
         # Default to an empty result.
         if first == 0 or last == 0 or (first is None and last is None):
-            return cls.empty(sequence_length)
+            return cls.empty(sequence_length, **kwargs)
 
         # The following algorithm more or less follows the one provided in the Relay
         # specification:
@@ -216,7 +220,7 @@ class Connection(Generic[_Node]):
         slice_stop = max(0, min(slice_stop, sequence_length))
 
         if slice_stop is not None and slice_start >= slice_stop:
-            return cls.empty(sequence_length)
+            return cls.empty(sequence_length, **kwargs)
 
         # See the specification again for this algorithm:
         # https://relay.dev/graphql/connections.htm#sec-undefined.PageInfo.Fields
@@ -264,6 +268,7 @@ class Connection(Generic[_Node]):
             total_count=sequence_length,
             edges=edges,
             nodes=[edge.node if edge is not None else None for edge in edges],
+            **kwargs,
         )
 
 
@@ -272,6 +277,7 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
 
     _node: ClassVar[type]
     _model: ClassVar[type]
+    queryset: strawberry.Private[models.QuerySet[_Model]]
 
     def __init_subclass__(cls, **kwargs: Any):
         node: Optional[type[_DjangoNode]] = None
@@ -341,15 +347,13 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
         before: Optional[str] = None,
         first: Optional[int] = None,
         last: Optional[int] = None,
-        total_queryset_count: Optional[int] = None,
     ) -> _DjangoConnection:
         # We don't check the generic view permission on the model here anymore because
         # we assume that the connection's (which calls the node's) get_queryset method
         # already filters accordingly.
 
         queryset_changed = False
-        if total_queryset_count is None:
-            total_queryset_count = queryset.count()
+        total_queryset_count = queryset.count()
 
         # Since Connection.from_sequence expects a sequence of nodes (the API type) and
         # we only have a queryset (which yields model instances), we need to transform
@@ -377,6 +381,7 @@ class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
             before=before,
             first=first,
             last=last,
+            queryset=queryset,
         )
 
 

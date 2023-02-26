@@ -1,11 +1,13 @@
 from typing import Any
 
+import hypothesis
 import pytest
 from django.utils import timezone
 
 from tumpara import api
 from tumpara.accounts.models import User
 from tumpara.libraries.models import Library, Note, Visibility
+from tumpara.testing import strategies as st
 
 from .test_notes_api import user  # noqa: F401
 
@@ -22,11 +24,15 @@ ASSET_PAGINATION_QUERY = """
 """
 
 
-@pytest.fixture
-def library(user: User) -> Library:
+def create_library(user: User) -> Library:
     library = Library.objects.create(source="testing:///", context="test_storage")
     library.add_membership(user, owner=True)
     return library
+
+
+@pytest.fixture
+def library(user: User) -> Library:
+    return create_library(user)
 
 
 @pytest.fixture
@@ -34,7 +40,7 @@ def notes(library: Library) -> list[Note]:
     return [
         Note.objects.create(  # 0
             library=library,
-            content="First note.",
+            content=" m note.",
             media_timestamp=timezone.datetime(2017, 1, 4, 14, 15),
         ),
         Note.objects.create(  # 1
@@ -482,3 +488,72 @@ def test_asset_stacking(user: User, notes: list[Note]) -> None:
             "stackSize": 7,
         }
     }
+
+
+@hypothesis.settings(deadline=None)
+@hypothesis.given(st.integers(0, 1000), st.integers(10, 50), st.data())
+def test_asset_time_chunks(
+    django_executor: Any, asset_count: int, target_size: int, data: st.DataObject
+) -> None:
+    user = User.objects.create()
+    library = create_library(user)
+    for _ in range(asset_count):
+        Note.objects.create(
+            library=library, content="", media_timestamp=data.draw(st.datetimes())
+        )
+
+    query = """
+        query AssetTimeChunks($size: Int!) {
+            assets {
+                timeChunks(targetSize: $size) {
+                    afterCursor
+                    beforeCursor
+                    startTimestamp
+                    endTimestamp
+                    size
+                }
+            }
+        }
+
+        query AssetTimestamps($after: String!, $before: String!, $count: Int!) {
+            assets(after: $after, before: $before, first: $count) {
+                nodes {
+                    mediaTimestamp
+                }
+            }
+        }
+    """
+
+    result = api.execute_sync(
+        query, user, operation_name="AssetTimeChunks", size=target_size
+    )
+    assert result.errors is None
+    assert result.data is not None
+
+    total_count = 0
+    chunk_count = len(result.data["assets"]["timeChunks"])
+    for chunk_index, chunk in enumerate(result.data["assets"]["timeChunks"]):
+        chunk_result = api.execute_sync(
+            query,
+            user,
+            operation_name="AssetTimestamps",
+            after=chunk["afterCursor"],
+            before=chunk["beforeCursor"],
+            count=int(1.5 * target_size),
+        )
+        assert chunk_result.errors is None
+        assert chunk_result.data is not None
+        chunk_nodes = chunk_result.data["assets"]["nodes"]
+
+        assert len(chunk_nodes) == chunk["size"]
+        if chunk_index < chunk_count - 1:
+            # The last chunk (or the only chunk for small datasets) might be smaller,
+            # but all other chunks should have a minimumm size.
+            assert 0.5 * target_size <= chunk["size"]
+        assert chunk["size"] <= 1.5 * target_size
+        total_count += chunk["size"]
+
+        assert chunk_nodes[0]["mediaTimestamp"] == chunk["startTimestamp"]
+        assert chunk_nodes[-1]["mediaTimestamp"] == chunk["endTimestamp"]
+
+    assert total_count == asset_count
