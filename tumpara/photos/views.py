@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 
 import PIL.Image
 from django.conf import settings
@@ -21,7 +22,10 @@ except ImportError:
 
 
 def _get_thumbnail_path(
-    photo_pk: int, format_name: str, requested_width: int, requested_height: int
+    photo_pk: int,
+    format_name: str,
+    requested_width: Optional[int],
+    requested_height: Optional[int],
 ) -> str:
     """Render a photo thumbnail to the cache and return its path inside the thumbnail
     storage."""
@@ -87,6 +91,7 @@ def render_thumbnail(request: HttpRequest, description: str) -> HttpResponseBase
         )
     except (
         AssertionError,
+        TypeError,
         ValueError,
         signing.BadSignature,
         signing.SignatureExpired,

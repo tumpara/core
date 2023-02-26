@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os.path
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any, Generic, Literal, NoReturn, Optional, TypeVar, cast, overload
 
 from django.conf import settings
@@ -328,7 +328,7 @@ class AssetQuerySet(Generic[_Asset], models.QuerySet[_Asset]):
 
         if prefetch_types:
             related_names = list[str]()
-            for prefetch_type in prefetch_types:
+            for prefetch_type in cast(Sequence[type[AssetModel]], prefetch_types):
                 if not issubclass(prefetch_type, AssetModel):
                     raise TypeError(
                         f"automatic asset prefetching requires types to be "

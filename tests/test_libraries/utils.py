@@ -35,7 +35,7 @@ class LibraryActionsStateMachine(hypothesis.stateful.RuleBasedStateMachine):
     """
 
     def __init__(self) -> None:
-        super().__init__()  # type: ignore
+        super().__init__()
 
         # This set holds all directories that have been created (including the root).
         self.directories = {""}

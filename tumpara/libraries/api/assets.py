@@ -521,7 +521,7 @@ class AssetConnection(
         last: Optional[int] = None,
     ) -> "AssetConnection":
         try:
-            after_timestamp = datetime.datetime.fromisoformat(after)
+            after_timestamp = datetime.datetime.fromisoformat(after or "")
         except (TypeError, ValueError):
             pass
         else:
@@ -529,7 +529,7 @@ class AssetConnection(
             after = api.encode_key("Connection", skip_count - 1)
 
         try:
-            before_timestamp = datetime.datetime.fromisoformat(before)
+            before_timestamp = datetime.datetime.fromisoformat(before or "")
         except (TypeError, ValueError):
             pass
         else:
