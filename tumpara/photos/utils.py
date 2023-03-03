@@ -270,6 +270,12 @@ class ImageMetadata:
         # By removing the common prefix from the model field, the two examples above
         # become "NIKON CORPORATION D90" and "Canon EOS 5D Mark III" when put together.
         camera_prefix = os.path.commonprefix([self.camera_make.lower(), value.lower()])
+        if (
+            # Fix things like "FUJIFILM FinePix A202" becoming "FUJIFILM inePix A202".
+            len(camera_prefix) < len(self.camera_make)
+            and not camera_prefix.endswith(" ")
+        ):
+            camera_prefix = ""
         if camera_prefix:
             return value[len(camera_prefix) :].strip()
         else:

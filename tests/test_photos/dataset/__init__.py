@@ -251,4 +251,14 @@ index = {
         camera_model="EOS 500D",  # In file: "Canon EOS 500D"
         matched_files=["IMG_0009.CR2"],
     ),
+    "2004_05_01 (13).JPG": ExpectedMetadata(
+        width=1600,
+        height=1200,
+        aperture_size=4.6,
+        exposure_time=Fraction(1, 500),
+        focal_length=5.5,
+        iso_value=100,
+        camera_make="FUJIFILM",
+        camera_model="FinePix A202",
+    ),
 }
