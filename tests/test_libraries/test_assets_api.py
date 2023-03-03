@@ -40,7 +40,7 @@ def notes(library: Library) -> list[Note]:
     return [
         Note.objects.create(  # 0
             library=library,
-            content=" m note.",
+            content="First note.",
             media_timestamp=timezone.datetime(2017, 1, 4, 14, 15),
         ),
         Note.objects.create(  # 1

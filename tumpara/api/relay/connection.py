@@ -272,6 +272,7 @@ class Connection(Generic[_Node]):
         )
 
 
+@strawberry.type
 class DjangoConnection(Generic[_DjangoNode, _Model], Connection[_DjangoNode]):
     """A connection superclass for connections with Django models."""
 

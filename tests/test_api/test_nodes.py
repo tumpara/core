@@ -12,7 +12,7 @@ from .models import Other, Thing
 def test_django_node_wrong_initialization() -> None:
     with pytest.raises(TypeError, match="Django model"):
 
-        class ThingNodeA(api.DjangoNode):
+        class ThingNodeA(api.DjangoNode, fields=[""]):
             pass
 
     with pytest.raises(TypeError, match="fields"):
