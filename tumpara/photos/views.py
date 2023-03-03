@@ -43,7 +43,11 @@ def _get_thumbnail_path(
 
     if not settings.THUMBNAIL_STORAGE.exists(path):
         try:
-            photo = Photo.objects.select_related("library").get(pk=photo_pk)
+            photo = (
+                Photo.objects.select_related("library")
+                .only("library__source", "main_path")
+                .get(pk=photo_pk)
+            )
         except Photo.DoesNotExist:
             raise Http404()
         try:
