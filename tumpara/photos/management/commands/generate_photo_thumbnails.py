@@ -22,8 +22,8 @@ def worker(photo_pk_queue: multiprocessing.JoinableQueue[int]) -> None:
         for format_name in ("avif", "webp"):
             if format_name == "avif" and not AVIF_SUPPORTED:
                 continue
-            for size in (150, 800):
-                _get_thumbnail_path(photo_pk, format_name, size, size)
+            for size in [(150, 150), (800, 800), (None, 400)]:
+                _get_thumbnail_path(photo_pk, format_name, *size)
         photo_pk_queue.task_done()
 
 
