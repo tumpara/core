@@ -105,7 +105,7 @@ def load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
         if isinstance(result, Exception):
             raise result
         else:
-            return result
+            return result[0].copy(), result[1]
     else:
         return _load_image(library, path)
 
