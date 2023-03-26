@@ -63,4 +63,5 @@ def thumbnail_from_description(
             request,
             settings.THUMBNAIL_STORAGE,
             photo.render_thumbnail(format_name, requested_width, requested_height),
+            filename=f"thumbnail.{format_name}",
         )

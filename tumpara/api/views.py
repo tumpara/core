@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import dataclasses
+import urllib.parse
 from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 import strawberry
 import strawberry.django.context
 import strawberry.django.views
-from django.core.files import storage
+from django.core.files import storage as django_storage
 from django.http import HttpRequest, HttpResponse, HttpResponseNotAllowed
 from django.http.response import HttpResponseBase
 from django.utils.decorators import method_decorator
@@ -91,23 +92,35 @@ class ApiView(strawberry.django.views.GraphQLView):
 
 
 def serve_file(
-    request: HttpRequest, file_storage: storage.Storage, file_path: str
+    request: HttpRequest,
+    storage: django_storage.Storage,
+    path: str,
+    *,
+    filename: Optional[str] = None,
 ) -> HttpResponseBase:
     """Serve a file download.
 
+    :param request: Original HTTP request.
     :param storage: The storage engine to load the file from.
     :param path: Path inside the storage.
+    :param filename: String to override the file name in the response.
     """
-    if isinstance(file_storage, storage.FileSystemStorage):
+    if isinstance(storage, django_storage.FileSystemStorage):
         # For file system backends, we can serve the file as is, without needing to open
         # it here directly.
         # TODO Use some sort of sendfile-like serving mechanism. See here:
         #  https://github.com/johnsensible/django-sendfile/blob/master/sendfile/backends/nginx.py
-        return serve(
-            request,
-            file_path,
-            document_root=str(file_storage.base_location),
-        )
+        response = serve(request, path, document_root=str(storage.base_location))
+        if filename is not None:
+            try:
+                filename.encode("ascii")
+                encoded_filename = filename.replace("\\", "\\\\").replace('"', r"\"")
+                filename_expression = f'filename="{encoded_filename}"'
+            except UnicodeEncodeError:
+                encoded_filename = urllib.parse.quote(filename)
+                filename_expression = f"filename*=utf-8''{encoded_filename}"
+            response.headers["Content-Disposition"] = f"inline; {filename_expression}"
+        return response
     else:
         # TODO Implement this. We probably need to redo the serve() function from above
         #   entirely because we want to support If-Modified-Since headers, content types
