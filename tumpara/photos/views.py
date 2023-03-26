@@ -1,7 +1,3 @@
-import os
-from typing import Optional
-
-import PIL.Image
 from django.conf import settings
 from django.core import signing
 from django.http import Http404, HttpRequest, HttpResponseBadRequest
@@ -10,69 +6,12 @@ from django.http.response import HttpResponseBase
 from tumpara.api.views import serve_file
 
 from .models import Photo
-from .utils import load_image
-
-AVIF_SUPPORTED: bool
-try:
-    import pillow_avif.AvifImagePlugin  # type: ignore[import]
-
-    AVIF_SUPPORTED = pillow_avif.AvifImagePlugin.SUPPORTED
-except ImportError:
-    AVIF_SUPPORTED = False
+from .utils import AVIF_SUPPORTED
 
 
-def _get_thumbnail_path(
-    photo_pk: int,
-    format_name: str,
-    requested_width: Optional[int],
-    requested_height: Optional[int],
-) -> str:
-    """Render a photo thumbnail to the cache and return its path inside the thumbnail
-    storage."""
-    directory = hex(photo_pk & 0xFF)[2:]
-    subdirectory = hex(photo_pk & 0xFF00)[2:4]
-
-    absolute_directory_path = settings.THUMBNAIL_STORAGE.path(
-        os.path.join(directory, subdirectory)
-    )
-    if not os.path.isdir(absolute_directory_path):
-        os.makedirs(absolute_directory_path, exist_ok=True)
-
-    filename = f"{photo_pk}_{requested_width}x{requested_height}.{format_name}"
-    path = os.path.join(directory, subdirectory, filename)
-
-    if not settings.THUMBNAIL_STORAGE.exists(path):
-        try:
-            photo = (
-                Photo.objects.select_related("library")
-                .only("library__source", "main_path")
-                .get(pk=photo_pk)
-            )
-        except Photo.DoesNotExist:
-            raise Http404()
-        try:
-            image, _ = load_image(photo.library, photo.main_path)
-        except IsADirectoryError as error:
-            raise
-
-        image.thumbnail(
-            (
-                # This means that both None and 0 evaluate to the original dimensions.
-                # An empty API call to thumbnailUrl() will therefore render the image
-                # as-is.
-                requested_width or image.width,
-                requested_height or image.height,
-            ),
-            PIL.Image.BICUBIC,
-        )
-
-        with settings.THUMBNAIL_STORAGE.open(path, "wb") as file_io:
-            image.save(file_io, format=format_name.upper())
-
-    return path
-
-
-def render_thumbnail(request: HttpRequest, description: str) -> HttpResponseBase:
+def thumbnail_from_description(
+    request: HttpRequest, description: str
+) -> HttpResponseBase:
     """Serve a thumbnailed version of a :class:`~tumpara.photos.models.Photo`.
 
     :param description: Information denoting which photo should be rendered and how.
@@ -111,8 +50,17 @@ def render_thumbnail(request: HttpRequest, description: str) -> HttpResponseBase
     else:
         return HttpResponseBadRequest("Bad Accept header")
 
-    return serve_file(
-        request,
-        settings.THUMBNAIL_STORAGE,
-        _get_thumbnail_path(photo_pk, format_name, requested_width, requested_height),
-    )
+    try:
+        photo = (
+            Photo.objects.select_related("library")
+            .only("library__source", "main_path")
+            .get(pk=photo_pk)
+        )
+    except Photo.DoesNotExist:
+        raise Http404()
+    else:
+        return serve_file(
+            request,
+            settings.THUMBNAIL_STORAGE,
+            photo.render_thumbnail(format_name, requested_width, requested_height),
+        )

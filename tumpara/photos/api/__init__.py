@@ -154,4 +154,4 @@ class PhotoNode(
             (self.obj.pk, width, height),
             salt="tumpara.photos.views.render_thumbnail",
         )
-        return urls.reverse("photo_thumbnail", args=[description])
+        return urls.reverse("photos.thumbnail_from_description", args=[description])

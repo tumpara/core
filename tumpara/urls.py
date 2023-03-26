@@ -16,7 +16,7 @@ urlpatterns = [
     ),
     urls.path(
         "api/photo_thumbnail/<description>",
-        tumpara.photos.views.render_thumbnail,
-        name="photo_thumbnail",
+        tumpara.photos.views.thumbnail_from_description,
+        name="photos.thumbnail_from_description",
     ),
 ]

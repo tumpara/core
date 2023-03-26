@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import os
 from fractions import Fraction
 from typing import Any, Optional
 
 import PIL.Image
+import rawpy
+from django.conf import settings
 from django.core import validators
 from django.db import models
 from django.utils import timezone
@@ -12,6 +15,7 @@ from django.utils.translation import gettext_lazy as _
 from tumpara.libraries.models import AssetModel, AssetQuerySet, File, Library
 
 from .utils import (
+    AVIF_SUPPORTED,
     ImageMetadata,
     calculate_blurhash,
     extract_timestamp_from_filename,
@@ -157,6 +161,44 @@ class Photo(AssetModel):
         except TypeError:
             return None
 
+    def render_thumbnail(
+        self,
+        format_name: str,
+        requested_width: Optional[int],
+        requested_height: Optional[int],
+    ) -> str:
+        """Render a photo thumbnail to the cache and return its path inside the thumbnail
+        storage."""
+        directory = hex(self.pk & 0xFF)[2:].zfill(2)
+        subdirectory = hex(self.pk & 0xFF00)[2:4].zfill(2)
+
+        absolute_directory_path = settings.THUMBNAIL_STORAGE.path(
+            os.path.join(directory, subdirectory)
+        )
+        if not os.path.isdir(absolute_directory_path):
+            os.makedirs(absolute_directory_path, exist_ok=True)
+
+        filename = f"{self.pk}_{requested_width}x{requested_height}.{format_name}"
+        path = os.path.join(directory, subdirectory, filename)
+
+        if not settings.THUMBNAIL_STORAGE.exists(path):
+            image, _ = load_image(self.library, self.main_path)
+            image.thumbnail(
+                (
+                    # This means that both None and 0 evaluate to the original
+                    # dimensions. An empty API call to thumbnailUrl() will therefore
+                    # render the image as-is.
+                    requested_width or image.width,
+                    requested_height or image.height,
+                ),
+                PIL.Image.BICUBIC,
+            )
+
+            with settings.THUMBNAIL_STORAGE.open(path, "wb") as file_io:
+                image.save(file_io, format=format_name.upper())
+
+        return path
+
     def scan_metadata(self, commit: bool = True) -> None:
         """Update the metadata for this photo object.
 
@@ -248,6 +290,13 @@ class Photo(AssetModel):
         if commit:
             self.save()
 
+        if settings.PRERENDER_THUMBNAILS:
+            for format_name in ("avif", "webp"):
+                if format_name == "avif" and not AVIF_SUPPORTED:
+                    continue
+                for size in [(150, 150), (800, 800), (None, 400)]:
+                    self.render_thumbnail(format_name, *size)
+
     @staticmethod
     def _get_or_create_photo(
         library: Library, metadata_checksum: Optional[bytes], **defaults: Any
@@ -274,7 +323,7 @@ class Photo(AssetModel):
         try:
             load_image(library, path)
             metadata = ImageMetadata.load(library, path)
-        except (IOError, PIL.UnidentifiedImageError):
+        except (IOError, PIL.UnidentifiedImageError, rawpy.LibRawError):
             return None
         return Photo._get_or_create_photo(
             library,

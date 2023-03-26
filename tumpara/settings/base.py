@@ -316,6 +316,9 @@ THUMBNAIL_PATH = parse_env("TUMPARA_THUMBNAIL_PATH", DATA_ROOT / "thumbnails", P
 THUMBNAIL_STORAGE = FileSystemStorage(THUMBNAIL_PATH)
 THUMBNAIL_PATH.mkdir(parents=True, exist_ok=True)
 
+# Set this to "False" to disable thumbnail generation while scanning metadata.
+PRERENDER_THUMBNAILS = parse_env("TUMPARA_PRERENDER_THUMBNAILS", True, bool)
+
 # Approximate number of total components a blurhash should have.
 BLURHASH_SIZE = parse_env("TUMPARA_BLURHASH_SIZE", 12, int)
 
