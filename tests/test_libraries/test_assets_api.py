@@ -525,6 +525,12 @@ def test_asset_time_chunks(
     """
 
     result = api.execute_sync(
+        query, None, operation_name="AssetTimeChunks", size=target_size
+    )
+    assert result.errors is None
+    assert result.data == {"assets": {"timeChunks": []}}
+
+    result = api.execute_sync(
         query, user, operation_name="AssetTimeChunks", size=target_size
     )
     assert result.errors is None

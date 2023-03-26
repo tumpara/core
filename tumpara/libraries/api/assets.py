@@ -363,8 +363,7 @@ class AssetConnection(
 
         all_timestamps: list[datetime.datetime] = [
             cast(datetime.datetime, item[0])
-            for item in Asset.objects.all()
-            .resolve_instances(False)
+            for item in self.queryset.resolve_instances(False)
             .order_by("media_timestamp")
             .values_list("media_timestamp")
         ]
