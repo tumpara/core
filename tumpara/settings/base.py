@@ -330,5 +330,15 @@ DIRECTORY_IGNORE_FILENAME = parse_env(
     "TUMPARA_DIRECTORY_IGNORE_FILENAME", ".nomedia", string_or_none
 )
 
+# Maximum size of a photo for it to be cached in the in-memory LRU cache. This value is
+# in bytes.
+PHOTO_CACHE_MAX_FILE_SIZE = parse_env(
+    "TUMPARA_PHOTO_CACHE_MAX_FILE_SIZE",
+    1024 * 1024 * 80,  # 80MiB
+    int,
+)
+# The number of photos to keep in the in-memory cache. This number is per scan worker.
+PHOTO_CACHE_SIZE = parse_env("TUMPARA_PHOTO_CACHE_SIZE", 8, int)
+
 # Path to the Exiftool binary to use for parsing image metadata.
 EXIFTOOL_BINARY = parse_env("TUMPARA_EXIFTOOL_BINARY", "/usr/bin/exiftool", str)

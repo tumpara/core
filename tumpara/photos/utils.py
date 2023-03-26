@@ -9,7 +9,7 @@ import os.path
 import re
 import subprocess
 from collections.abc import Mapping, Sequence
-from typing import Any, Literal, Optional, TypeVar, overload
+from typing import Any, Optional, TypeVar, Union
 
 import blurhash
 import dateutil.parser
@@ -33,6 +33,14 @@ _Number = TypeVar("_Number", bound="int | float")
 # Run configuration side effects.
 PIL.ImageFile.LOAD_TRUNCATED_IMAGES = True
 
+AVIF_SUPPORTED: bool
+try:
+    import pillow_avif.AvifImagePlugin  # type: ignore[import]
+
+    AVIF_SUPPORTED = pillow_avif.AvifImagePlugin.SUPPORTED
+except ImportError:
+    AVIF_SUPPORTED = False
+
 
 remove_whitespace = functools.partial(
     re.compile(r"\s").sub,
@@ -40,12 +48,7 @@ remove_whitespace = functools.partial(
 )
 
 
-def load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
-    """Open an image file with Pillow.
-
-    :return: A tuple containing the Pillow :class:`~PIL.Image.Image` and a boolean that
-        indicates whether the file was a raw image.
-    """
+def _load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
     with library.storage.open(path, "rb") as file_io:
         try:
             raw_image = rawpy.imread(file_io)  # type: ignore
@@ -77,6 +80,34 @@ def load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
 
         image = PIL.ImageOps.exif_transpose(image)
     return image, raw_original
+
+
+@functools.lru_cache(maxsize=settings.PHOTO_CACHE_SIZE)
+def _load_image_with_cache(
+    library: Library, path: str
+) -> Union[tuple[PIL.Image.Image, bool], IOError, rawpy.LibRawError]:
+    try:
+        return _load_image(library, path)
+    except (IOError, rawpy.LibRawError) as error:
+        # Make sure the exception is cached as well.
+        return error
+
+
+def load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
+    """Open an image file with Pillow.
+
+    :return: A tuple containing the Pillow :class:`~PIL.Image.Image` and a boolean that
+        indicates whether the file was a raw image.
+    """
+    if library.storage.size(path) <= settings.PHOTO_CACHE_MAX_FILE_SIZE:
+        result = _load_image_with_cache(library, path)
+        # IO and other image-related errors are cached as well. Re-raise them here.
+        if isinstance(result, Exception):
+            raise result
+        else:
+            return result
+    else:
+        return _load_image(library, path)
 
 
 class ImageMetadata:
