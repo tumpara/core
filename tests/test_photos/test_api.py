@@ -4,6 +4,7 @@ from typing import Any, ClassVar, Optional
 
 import hypothesis
 import PIL.Image
+import pytest
 from django.http import StreamingHttpResponse
 from django.test import Client
 from hypothesis.extra.django import TestCase
@@ -16,9 +17,12 @@ from tumpara.testing import strategies as st
 from .dataset import index
 from .test_scanning import dataset_root
 
-
 # Use a Django test case here so that we don't need to re-scan the library for every
-# test.
+# test. This is slow test because the dataset is not yet public.
+# TODO Remove the slow mark once the dataset is freely downloadable.
+
+
+@pytest.mark.slow
 class PhotoApiTestCase(TestCase):
     asset_node_ids: ClassVar[dict[str, str]]
 

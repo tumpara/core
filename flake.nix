@@ -74,75 +74,22 @@
 					};
 				};
 
-				runtimeDependencies = pythonPackages: with pythonPackages; [
-					blurhash
-					dateutil
-					django
-					django-stubs
-					django-cors-headers
-					inotifyrecursive
-					pillow
-					pillow-avif-plugin
-					psycopg2
-					rawpy
-					strawberry-graphql
-				];
-
-				testDependencies = pythonPackages: with pythonPackages; [
-					freezegun
-					hypothesis
-					mypy
-					parameterized
-					pylint
-					pylint-django
-					pytest
-					pytest-cov
-					pytest-django
-					pytest-mypy-plugins
-					pytest-subtests
-					pyyaml
-					selenium
-					types-freezegun
-					types-pillow
-					types-dateutil
-					types-setuptools
-					types-six
-					types-toml
-					types-typed-ast
-				];
-
-				developmentDependencies = pythonPackages: with pythonPackages; [
+				developmentDependencies = with python.pkgs; [
 					black
 					isort
 				];
-
-				documentationDependencies = pythonPackages: with pythonPackages; [
+				documentationDependencies = with python.pkgs; [
 					furo
 					pygments-graphql
 					sphinx
 				];
-
-				productionDependencies = pythonPackages: with pythonPackages; [
+				productionDependencies = with python.pkgs; [
 					gunicorn
 				];
-
-				allDependencies = pythonPackages:
-					(runtimeDependencies pythonPackages)
-					++ (testDependencies pythonPackages)
-					++ (developmentDependencies pythonPackages)
-					++ (documentationDependencies pythonPackages)
-					++ (productionDependencies pythonPackages);
 			in
 			rec {
 				packages = {
-					#          tumpara = pkgs.python39Packages.buildPythonApplication rec {
-					#            pname = "tumpara";
-					#            version = "0.1.0";
-					#            src = ./.;
-					#            propagatedBuildInputs = runtimeDependencies pkgs.python39.pkgs;
-					#            pythonImportsCheck = [ "tumpara" ];
-					#          };
-					tumpara = python.withPackages runtimeDependencies;
+					tumpara = pkgs.callPackage ./nix/tumpara.nix { inherit python; };
 
 					exiftool = pkgs.exiftool;
 					postgresql = pkgs.postgresql.withPackages (ps: with ps; [
@@ -154,7 +101,12 @@
 						paths = with packages; [
 							exiftool
 							postgresql
-							(python.withPackages allDependencies)
+							(python.withPackages
+								(_: ([packages.tumpara]
+								++ packages.tumpara.checkInputs
+								++ developmentDependencies
+								++ documentationDependencies
+								++ productionDependencies)))
 						];
 					};
 				};

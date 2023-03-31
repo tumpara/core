@@ -44,6 +44,9 @@ def check_matched_files(library: Library, filename: str) -> None:
     } == {filename, *expected_metadata.matched_files}
 
 
+# This is slow test because the dataset is not yet public.
+# TODO Remove the slow mark once the dataset is freely downloadable.
+@pytest.mark.slow
 @pytest.mark.django_db
 def test_photo_scanning(patch_exception_handling: None) -> None:
     library = Library.objects.create(context="gallery", source=f"file://{dataset_root}")

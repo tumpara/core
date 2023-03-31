@@ -1,9 +1,31 @@
-[tool.poetry]
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
 name = "tumpara"
 version = "0.1.0"
 description = "Self-hosted solution for managing home media libraries."
-authors = ["Yannik Rödel <hey@yannik.info>"]
-license = "AGPLv3"
+authors = [
+	{"name" = "Yannik Rödel", "email" = "hey@yannik.info"},
+]
+license = {text = "AGPLv3"}
+dependencies = [
+	"blurhash",
+	"python-dateutil",
+	"Django",
+	"django-stubs",
+	"django-cors-headers",
+	"inotifyrecursive",
+	"Pillow",
+	"pillow-avif-plugin",
+	"psycopg2",
+	"rawpy",
+	"strawberry-graphql",
+]
+
+[tool.setuptools.packages]
+find = {}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
