@@ -1,5 +1,3 @@
-from strawberry.arguments import UNSET
-
 from .filtering import GenericFilter
 from .filtering.scalars import (
     DateFilter,
@@ -36,7 +34,6 @@ from .utils import (
 )
 
 __all__ = [
-    "UNSET",
     "Connection",
     "ConnectionField",
     "CreateFormInput",

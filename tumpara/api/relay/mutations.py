@@ -8,7 +8,7 @@ import typing
 from collections.abc import Callable
 from typing import Any, ClassVar, Generic, Optional, TypeVar, cast
 
-import strawberry.arguments
+import strawberry
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -113,9 +113,9 @@ class DjangoFormInput(Generic[_Form], abc.ABC):
                     # Resolve the enum.
                     default_value = type_annotation(form_field.initial)
                 else:
-                    default_value = strawberry.arguments.UNSET
+                    default_value = strawberry.UNSET
             else:
-                default_value = strawberry.arguments.UNSET
+                default_value = strawberry.UNSET
 
             api_field = StrawberryField(
                 python_name=field_name,
@@ -124,7 +124,7 @@ class DjangoFormInput(Generic[_Form], abc.ABC):
                 description=encoding.force_str(form_field.help_text),
             )
 
-            if default_value is strawberry.arguments.UNSET:
+            if default_value is strawberry.UNSET:
                 setattr(cls, field_name, api_field)
             else:
                 # Defer adding this field because those with a default argument must
