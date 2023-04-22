@@ -1,3 +1,5 @@
+import tempfile
+
 from .development import *  # pylint: disable=wildcard-import, unused-wildcard-import
 
 # Force an in-memory test database (since we are testing with SQLite). Pytest
@@ -9,3 +11,6 @@ DATABASES["default"]["NAME"] = ":memory:"
 PASSWORD_HASHERS = [
     "django.contrib.auth.hashers.MD5PasswordHasher",
 ]
+
+THUMBNAIL_PATH = tempfile.mkdtemp()
+THUMBNAIL_STORAGE = FileSystemStorage(THUMBNAIL_PATH)

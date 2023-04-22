@@ -1,6 +1,9 @@
+from collections.abc import Generator
 from typing import Any
 
 import pytest
+
+from tumpara.utils import clean_storages, exiftool
 
 from .utils import DjangoHypothesisExecutor
 
@@ -28,6 +31,12 @@ def django_executor(
             # Do something with the database...
     """
     return DjangoHypothesisExecutor()
+
+
+@pytest.fixture(autouse=True)
+def auto_clean_storages() -> Generator[None, None, None]:
+    yield
+    clean_storages()
 
 
 @pytest.fixture(autouse=True)
