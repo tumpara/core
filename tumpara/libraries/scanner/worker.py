@@ -9,6 +9,8 @@ import django
 from django.conf import settings
 from django.db import connection, transaction
 
+from tumpara.utils import exiftool
+
 from . import Event
 
 __all__ = ["worker"]
@@ -69,3 +71,4 @@ def process(
             queue.task_done()
     finally:
         connection.close()
+        exiftool.stop_exiftool()

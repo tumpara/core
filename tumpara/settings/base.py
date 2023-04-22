@@ -344,3 +344,7 @@ PHOTO_CACHE_SIZE = parse_env("TUMPARA_PHOTO_CACHE_SIZE", 8, int)
 
 # Path to the Exiftool binary to use for parsing image metadata.
 EXIFTOOL_BINARY = parse_env("TUMPARA_EXIFTOOL_BINARY", "/usr/bin/exiftool", str)
+# Maximum output size to expect from a single Exiftool call. This is the number of 4KiB
+# blocks after which output is capped. Increase this if you experience crashes while
+# scanning large (or very strange) files.
+EXIFTOOL_MAX_OUTPUT_SIZE = parse_env("TUMPARA_EXIFTOOL_MAX_OUTPUT_SIZE", 8, int)

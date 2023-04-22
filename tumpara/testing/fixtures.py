@@ -28,3 +28,9 @@ def django_executor(
             # Do something with the database...
     """
     return DjangoHypothesisExecutor()
+
+
+@pytest.fixture(autouse=True)
+def auto_stop_exiftool() -> Generator[None, None, None]:
+    yield
+    exiftool.stop_exiftool()

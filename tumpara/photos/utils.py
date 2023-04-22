@@ -2,13 +2,11 @@ import datetime
 import functools
 import hashlib
 import io
-import json
 import logging
 import math
 import os.path
 import re
 import subprocess
-from collections.abc import Mapping, Sequence
 from typing import Any, Optional, TypeVar, Union
 
 import blurhash
@@ -20,9 +18,11 @@ import PIL.ImageOps
 import rawpy
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+from django.core.files import storage as django_storage
 from django.utils import timezone
 
 from tumpara.libraries.models import Library
+from tumpara.utils import exiftool
 
 _logger = logging.getLogger(__name__)
 
@@ -118,6 +118,7 @@ class ImageMetadata:
         self._formatted_metadata = dict[str, Any]()
 
     @staticmethod
+    @functools.lru_cache(maxsize=settings.PHOTO_CACHE_SIZE)
     def load(library: Library, path: str) -> "ImageMetadata":
         """Open the image at the specified path in a library.
 
@@ -133,56 +134,34 @@ class ImageMetadata:
         Exif.Photo.ExposureProgram field (some information is in the maker note) are all
         bundled together in a single "ExposureProgram" field when parsing with Exiftool.
         """
+        if not isinstance(library.storage, django_storage.FileSystemStorage):
+            _logger.warning(
+                f"Image metadata loading is not implemented yet for storage backends "
+                f"other than the filesystem backend (got {type(library.storage)!r} for "
+                f"library {library.pk})."
+            )
+            return ImageMetadata()
+
         try:
-            with library.storage.open(path, "rb") as file_io:
-                raw_exiftool_result = subprocess.check_output(
-                    [
-                        settings.EXIFTOOL_BINARY,
-                        "-",
-                        "-json",
-                        "-n",
-                    ],
-                    stdin=file_io,
-                    stderr=subprocess.DEVNULL,
-                )
-                exiftool_result = json.loads(raw_exiftool_result)
-                assert isinstance(exiftool_result, Sequence)
-                assert len(exiftool_result) == 1
-                assert isinstance(exiftool_result[0], Mapping)
-
-                file_io.seek(0)
-
-                raw_formatted_exiftool_result = subprocess.check_output(
-                    [
-                        settings.EXIFTOOL_BINARY,
-                        "-",
-                        "-json",
-                        "-d",
-                        "%Y-%m-%dT%H:%M:%S%6f",
-                    ],
-                    stdin=file_io,
-                    stderr=subprocess.DEVNULL,
-                )
-                formatted_exiftool_result = json.loads(raw_formatted_exiftool_result)
-                assert isinstance(formatted_exiftool_result, Sequence)
-                assert len(formatted_exiftool_result) == 1
-                assert isinstance(formatted_exiftool_result[0], Mapping)
-
+            exiftool_result = exiftool.execute_exiftool(
+                "-n",
+                os.path.join(library.storage.base_location, path),
+            )
+            formatted_exiftool_result = exiftool.execute_exiftool(
+                "-d",
+                "%Y-%m-%dT%H:%M:%S%6f",
+                os.path.join(library.storage.base_location, path),
+            )
+        except (subprocess.CalledProcessError, exiftool.ExiftoolError):
+            _logger.exception(
+                f"Cannot read image metadata in library {library.pk} for: {path}"
+            )
+            return ImageMetadata()
+        else:
             image_metadata = ImageMetadata()
             image_metadata._metadata = exiftool_result[0]  # type: ignore[assignment]
             image_metadata._formatted_metadata = formatted_exiftool_result[0]  # type: ignore[assignment]
             return image_metadata
-        except FileNotFoundError:
-            if not os.path.exists(settings.EXIFTOOL_BINARY):
-                _logger.warning(
-                    f"Could not find the specified Exiftool binary "
-                    f"{settings.EXIFTOOL_BINARY!r}. Image metadata cannot be read."
-                )
-                return ImageMetadata()
-            else:
-                raise
-        except subprocess.CalledProcessError:
-            return ImageMetadata()
 
     def _get_numeric_value(
         self,

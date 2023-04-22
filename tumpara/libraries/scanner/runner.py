@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Optional
 from django.conf import settings
 from django.db import connection, transaction
 
+from tumpara.utils import exiftool
+
 from .. import storage
 
 if TYPE_CHECKING:
@@ -79,6 +81,8 @@ def run_sequential(library: Library, events: storage.WatchGenerator) -> None:
             index % settings.REPORT_INTERVAL == settings.REPORT_INTERVAL - 1
         ):  # pragma: no cover
             _logger.info(f"{index + 1} events processed so far.")
+
+    exiftool.stop_exiftool()
 
 
 def run_parallel(
