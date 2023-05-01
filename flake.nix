@@ -80,6 +80,9 @@
 				developmentDependencies = with python.pkgs; [
 					black
 					isort
+    			pytest
+					python-lsp-server
+					python-lsp-server.optional-dependencies.all
 				];
 				documentationDependencies = with python.pkgs; [
 					furo
