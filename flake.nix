@@ -61,6 +61,9 @@
 						# All the remaining packages in the overlay are ones that are not
 						# yet ported in the official nixpkgs repo:
 
+						# https://pypi.org/project/blurhash/
+						# https://github.com/woltapp/blurhash-python
+						blurhash-python = self.callPackage ./nix/python-packages/blurhash-python.nix { };
 						# https://github.com/fdintino/pillow-avif-plugin
 						pillow-avif-plugin = self.callPackage ./nix/python-packages/pillow-avif-plugin.nix { };
 						# https://pypi.org/project/pygments-graphql/

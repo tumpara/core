@@ -221,7 +221,7 @@ class Photo(AssetModel):
         for (path,) in self.files.filter(availability__isnull=False).values_list(
             "path"
         ):
-            image, raw_original = load_image(self.library, path)
+            image, raw_original = load_image(self.library, path, copy=False)
             pixel_count = image.width * image.height
 
             # As mentioned before, the picked image will ideally be non-raw. If there
@@ -254,6 +254,8 @@ class Photo(AssetModel):
         image_metadata = ImageMetadata.load(self.library, self.main_path)
 
         try:
+            # calculate_blurhash calls image.convert("RGB"), which creates a copy. We
+            # therefore don't need to specify copy=True when calling load_image() above.
             self.blurhash = calculate_blurhash(image)
         except:
             self.blurhash = None

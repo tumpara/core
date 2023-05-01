@@ -370,18 +370,20 @@ def calculate_blurhash(image: PIL.Image.Image) -> str:
     # appropriately.
     b = math.sqrt(settings.BLURHASH_SIZE / image.width * image.height)
     a = b * image.width / image.height
+
+    # Limit the components, so we stay inside the CharField's bounds.
+    x_components = max(1, min(math.ceil(a), 8))
+    y_components = max(1, min(math.ceil(b), 8))
+
+    # Note that .convert() creates a copy. Therefore, calculate_blurhash operates on an
+    # immutable input.
     thumbnail = image.convert("RGB")
     thumbnail.thumbnail(
-        (settings.BLURHASH_SIZE * 10, settings.BLURHASH_SIZE * 10),
-        PIL.Image.BICUBIC,
+        (x_components * 10, y_components * 10),
+        PIL.Image.NEAREST,
     )
 
-    return blurhash.encode(
-        numpy.array(thumbnail),
-        # Limit the components, so we stay inside the CharField's bounds.
-        components_x=max(0, min(math.ceil(a), 8)),
-        components_y=max(0, min(math.ceil(b), 8)),
-    )
+    return blurhash.encode(thumbnail, x_components, y_components)
 
 
 def extract_timestamp_from_filename(path: str) -> Optional[timezone.datetime]:

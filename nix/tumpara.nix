@@ -14,7 +14,7 @@ python.pkgs.buildPythonPackage rec {
   '';
 
   propagatedBuildInputs = with python.pkgs; [
-    blurhash
+    blurhash-python
     dateutil
     django
     django-stubs

@@ -1,6 +1,16 @@
-from .blurhash import blurhash_components as components
-from .blurhash import blurhash_encode as encode
-from .blurhash import linear_to_srgb as linear_to_srgb
-from .blurhash import srgb_to_linear as srgb_to_linear
+from enum import Enum
 
-__all__ = ["encode", "components", "srgb_to_linear", "linear_to_srgb"]
+from PIL import Image
+
+class PixelMode(Enum):
+    RGB = ...
+    RGBA = ...
+
+class BlurhashDecodeError(Exception):
+    pass
+
+def encode(image: Image.Image | str, x_components: int, y_components: int) -> str: ...
+def decode(
+    blurhash: str, width: int, height: int, punch: float = ..., mode: PixelMode = ...
+) -> Image.Image: ...
+def is_valid_blurhash(bluhash: str) -> bool: ...

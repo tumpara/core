@@ -11,7 +11,7 @@ authors = [
 ]
 license = {text = "AGPLv3"}
 dependencies = [
-	"blurhash",
+	"blurhash-python",
 	"python-dateutil",
 	"Django",
 	"django-stubs",
