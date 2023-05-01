@@ -8,6 +8,8 @@ INSTALLED_APPS += [
     "tests.test_libraries",
 ]
 
+PRERENDER_THUMBNAILS = True
+
 
 TESTDATA_ROOT = DATA_ROOT / "testdata"
 PREVIEW_ROOT = DATA_ROOT / "previews-test"
