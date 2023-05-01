@@ -82,7 +82,7 @@ def _load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
     return image, raw_original
 
 
-@functools.lru_cache(maxsize=settings.PHOTO_CACHE_SIZE)
+@functools.lru_cache(maxsize=settings.SCANNING_CACHE_SIZE)
 def _load_image_with_cache(
     library: Library, path: str
 ) -> Union[tuple[PIL.Image.Image, bool], IOError, rawpy.LibRawError]:
@@ -93,9 +93,17 @@ def _load_image_with_cache(
         return error
 
 
-def load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
+def load_image(
+    library: Library, path: str, *, copy: bool = True
+) -> tuple[PIL.Image.Image, bool]:
     """Open an image file with Pillow.
 
+    :param library: The library containing the image to load.
+    :param path: Path of the image file inside the library.
+    :param copy: Set this to :obj:`False` if you don't need a mutable copy of the
+        image. This saves the performance cost of copying it out of the cache. However,
+        you shouldn't do things like :meth:`~PIL.Image.Image.thumbnail()`ing, because
+        that would mutate the image in the cache for every subsequent caller as well.
     :return: A tuple containing the Pillow :class:`~PIL.Image.Image` and a boolean that
         indicates whether the file was a raw image.
     """
@@ -105,7 +113,7 @@ def load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
         if isinstance(result, Exception):
             raise result
         else:
-            return result[0].copy(), result[1]
+            return (result[0].copy(), result[1]) if copy else result
     else:
         return _load_image(library, path)
 
@@ -118,7 +126,7 @@ class ImageMetadata:
         self._formatted_metadata = dict[str, Any]()
 
     @staticmethod
-    @functools.lru_cache(maxsize=settings.PHOTO_CACHE_SIZE)
+    @functools.lru_cache(maxsize=settings.SCANNING_CACHE_SIZE)
     def load(library: Library, path: str) -> "ImageMetadata":
         """Open the image at the specified path in a library.
 

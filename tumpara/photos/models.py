@@ -296,7 +296,7 @@ class Photo(AssetModel):
             for format_name in ("avif", "webp"):
                 if format_name == "avif" and not AVIF_SUPPORTED:
                     continue
-                for size in [(150, 150), (800, 800), (None, 400)]:
+                for size in [(None, 400)]:
                     self.render_thumbnail(format_name, *size)
 
     @staticmethod
@@ -323,7 +323,7 @@ class Photo(AssetModel):
         if context != "gallery":
             return None
         try:
-            load_image(library, path)
+            load_image(library, path, copy=False)
             metadata = ImageMetadata.load(library, path)
         except (IOError, PIL.UnidentifiedImageError, rawpy.LibRawError):
             return None
@@ -341,11 +341,11 @@ class Photo(AssetModel):
 
         for file in asset.files.filter(availability__isnull=False):
             try:
-                load_image(asset.library, file.path)
+                load_image(asset.library, file.path, copy=False)
                 image_metadata = ImageMetadata.load(asset.library, file.path)
             except (IOError, PIL.UnidentifiedImageError):
                 file.availability = None
-                file.save()
+                file.save(update_fields=["availability"])
             else:
                 metadata_checksum = image_metadata.calculate_checksum(
                     payload=asset.library.pk,
