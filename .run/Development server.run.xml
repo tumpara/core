@@ -1,13 +1,15 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="Server" type="Python.DjangoServer" factoryName="Django server">
+  <configuration default="false" name="Development server" type="Python.DjangoServer" factoryName="Django server">
     <module name="Tumpara" />
     <option name="INTERPRETER_OPTIONS" value="" />
     <option name="PARENT_ENVS" value="true" />
     <envs>
       <env name="PYTHONUNBUFFERED" value="1" />
-      <env name="DJANGO_SETTINGS_MODULE" value="tumpara.settings.development" />
+      <env name="DJANGO_SETTINGS_MODULE" value="local_settings" />
+      <env name="LOG_LEVEL" value="DEBUG" />
     </envs>
-    <option name="SDK_HOME" value="" />
+    <option name="SDK_HOME" value="$PROJECT_DIR$/.dev/bin/python" />
+    <option name="SDK_NAME" value="Python 3.10 (Tumpara core)" />
     <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
     <option name="IS_MODULE_SDK" value="true" />
     <option name="ADD_CONTENT_ROOTS" value="true" />
