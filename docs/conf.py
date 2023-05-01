@@ -59,6 +59,7 @@ intersphinx_mapping = {
     ),
     "hypothesis": ("https://hypothesis.readthedocs.io/en/latest/", None),
     "pytest": ("https://docs.pytest.org/en/7.1.x/", None),
+    "PIL": ("https://pillow.readthedocs.io/en/stable/", None),
 }
 
 
