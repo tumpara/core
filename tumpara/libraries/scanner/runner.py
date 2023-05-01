@@ -4,6 +4,7 @@ import ctypes
 import logging
 import multiprocessing
 import os
+import time
 from typing import TYPE_CHECKING, Optional
 
 from django.conf import settings
@@ -65,6 +66,8 @@ def run_sequential(library: Library, events: storage.WatchGenerator) -> None:
     """
     _logger.info(f"Sequentially handling scanner events for library {library}.")
 
+    group_start_time = time.perf_counter()
+
     for index, event in enumerate(events):
         if event is None:
             continue
@@ -80,7 +83,14 @@ def run_sequential(library: Library, events: storage.WatchGenerator) -> None:
         if (
             index % settings.REPORT_INTERVAL == settings.REPORT_INTERVAL - 1
         ):  # pragma: no cover
-            _logger.info(f"{index + 1} events processed so far.")
+            process_rate = round(
+                settings.REPORT_INTERVAL / (time.perf_counter() - group_start_time)
+            )
+            _logger.info(
+                f"{index + 1} events processed so far (about {process_rate} per "
+                f"second)."
+            )
+            group_start_time = time.perf_counter()
 
     exiftool.stop_exiftool()
 
@@ -102,6 +112,7 @@ def run_parallel(
     context = multiprocessing.get_context("spawn")
     queue = context.JoinableQueue(maxsize=2 * thread_count)
     counter = context.Value(ctypes.c_int, 0, lock=True)
+    group_start_time = context.Value(ctypes.c_double, time.time())
 
     # Close the active database connection as this can cause issues with
     # multiprocessing. See here for details: https://stackoverflow.com/a/10684672
@@ -110,9 +121,11 @@ def run_parallel(
     from .worker import process
 
     workers = []
-    for _ in range(thread_count):
+    for index in range(thread_count):
         worker = context.Process(
-            target=process, args=(library.id, queue, counter), daemon=True
+            target=process,
+            args=(library.id, queue, counter, group_start_time),
+            daemon=True,
         )
         workers.append(worker)
         worker.start()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import logging
 import multiprocessing.sharedctypes
+import time
 from typing import Any, cast
 
 import django
@@ -21,6 +22,7 @@ def process(
     library_pk: int,
     queue: multiprocessing.JoinableQueue[Event],
     _counter: multiprocessing.sharedctypes.SynchronizedBase[ctypes.c_int],
+    _group_start_time: multiprocessing.sharedctypes.SynchronizedBase[ctypes.c_double],
 ) -> None:
     """Worker process for multiprocessed event handling.
 
@@ -63,10 +65,19 @@ def process(
                     )
 
             with _counter.get_lock():
-                counter: ctypes.c_int = cast(ctypes.c_int, _counter)
+                counter = cast(ctypes.c_int, _counter)
                 counter.value += 1
                 if counter.value % settings.REPORT_INTERVAL == 0 and counter.value > 0:
-                    _logger.info(f"{counter.value} events processed so far.")
+                    group_start_time = cast(ctypes.c_double, _group_start_time)
+                    process_rate = round(
+                        settings.REPORT_INTERVAL
+                        / (time.time() - group_start_time.value)
+                    )
+                    _logger.info(
+                        f"{counter.value} events processed so far (about {process_rate} "
+                        f"per second)."
+                    )
+                    group_start_time.value = time.time()
 
             queue.task_done()
     finally:

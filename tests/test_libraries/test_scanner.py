@@ -3,6 +3,7 @@ import functools
 import multiprocessing
 import multiprocessing.sharedctypes
 import queue
+import time
 from typing import cast
 
 import pytest
@@ -32,6 +33,7 @@ def test_scanner_worker(monkeypatch: pytest.MonkeyPatch, library: Library) -> No
     event_queue.put(scanner.FileEvent("baz"))
 
     counter = multiprocessing.Value(ctypes.c_int, 0, lock=True)
+    group_start_time = multiprocessing.Value(ctypes.c_double, time.time())
 
     # Make sure the queue doesn't block so our test actually runs through.
     monkeypatch.setattr(
@@ -43,7 +45,7 @@ def test_scanner_worker(monkeypatch: pytest.MonkeyPatch, library: Library) -> No
     monkeypatch.setattr(connection, "close", lambda: None)
 
     with pytest.raises(queue.Empty):
-        worker.process(library.pk, event_queue, counter)
+        worker.process(library.pk, event_queue, counter, group_start_time)
 
     assert cast(ctypes.c_int, counter).value == 3
     GenericHandler.objects.get(content=b"content")
