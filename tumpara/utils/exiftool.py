@@ -35,6 +35,8 @@ def execute_exiftool(*exiftool_arguments: str) -> list[dict[str, Any]]:
 
     This will keep an Exiftool instance running in the background to avoid creating too
     many processes. Make sure to call :meth:`close_exiftool` when you are done using it.
+
+    This function is not threadsafe.
     """
     global _exiftool_process
 
@@ -73,20 +75,23 @@ def execute_exiftool(*exiftool_arguments: str) -> list[dict[str, Any]]:
 
     stdout_fd = _exiftool_process.stdout.fileno()
     stderr_fd = _exiftool_process.stderr.fileno()
-    output = ""
-    error_output = ""
+    output = b""
+    error_output = b""
     chunk_count = 0
 
-    while not output.endswith("{ready}\n"):
+    while not output.endswith(b"{ready}\n"):
         input_ready_fds, _, _ = select.select([stdout_fd, stderr_fd], [], [])
         for fd in input_ready_fds:
             if fd == stdout_fd:
                 raw_chunk = os.read(fd, 4096)
                 if chunk_count < settings.EXIFTOOL_MAX_OUTPUT_SIZE:
-                    output += raw_chunk.decode()
+                    output += raw_chunk
                 chunk_count += 1
             if fd == stderr_fd:
-                error_output += os.read(fd, 4096).decode()
+                error_output += os.read(fd, 4096)
+
+    _exiftool_process.stdout.flush()
+    _exiftool_process.stderr.flush()
 
     if chunk_count >= settings.EXIFTOOL_MAX_OUTPUT_SIZE:
         raise ExiftoolOutputToLarge(
@@ -95,11 +100,9 @@ def execute_exiftool(*exiftool_arguments: str) -> list[dict[str, Any]]:
             f"{exiftool_arguments!r}"
         )
 
-    if match_object := re.search(r"(\d+)=$", error_output.strip()):
+    if match_object := re.search(r"(\d+)=$", error_output.decode().strip()):
         return_code = int(match_object.groups(1)[0])
         if return_code != 0:
-            _exiftool_process.stdout.flush()
-            _exiftool_process.stderr.flush()
             raise ExiftoolNonzeroExitCode(
                 f"Exiftool returned the nonzero exit code {return_code}. Called "
                 f"with these arguments: {exiftool_arguments!r}"
