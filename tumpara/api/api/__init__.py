@@ -1,4 +1,5 @@
 import dataclasses
+import datetime
 from typing import Annotated, Optional, cast
 
 import strawberry
@@ -163,7 +164,7 @@ class Mutation:
         # that setting should be changeable later on.
         token, api_token = Token.objects.generate_token(
             user=user,
-            expiry_timestamp=timezone.now() + timezone.timedelta(days=7),
+            expiry_timestamp=timezone.now() + datetime.timedelta(days=7),
             name=name or "",
         )
         return TokenNode(obj=token, header=api_token)

@@ -18,7 +18,6 @@ import rawpy
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.core.files import storage as django_storage
-from django.utils import timezone
 
 from tumpara.libraries.models import Library
 from tumpara.utils import exiftool
@@ -416,7 +415,7 @@ def calculate_blurhash(image: ImmutableImage) -> str:
     return blurhash.encode(thumbnail, x_components, y_components)
 
 
-def extract_timestamp_from_filename(path: str) -> Optional[timezone.datetime]:
+def extract_timestamp_from_filename(path: str) -> Optional[datetime.datetime]:
     """Try to extract a timestamp from a filename."""
     try:
         basename = os.path.basename(path)

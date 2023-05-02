@@ -1,3 +1,4 @@
+import datetime
 from typing import Any
 
 import django.test
@@ -138,7 +139,7 @@ def test_api_context_user_from_token(user_dataset: UserDataset) -> None:
     the provided token is correctly applied."""
     user = user_dataset[0]
     token = user.api_tokens.create(
-        expiry_timestamp=timezone.now() + timezone.timedelta(hours=1)
+        expiry_timestamp=timezone.now() + datetime.timedelta(hours=1)
     )
 
     first_result = api.execute_sync(me_query, user)
@@ -163,11 +164,11 @@ def test_token_expiry_filtering(user_dataset: UserDataset) -> None:
     """Filtering expired tokens works as expected."""
     user = user_dataset[0]
     token = user.api_tokens.create(
-        expiry_timestamp=timezone.now() + timezone.timedelta(minutes=10)
+        expiry_timestamp=timezone.now() + datetime.timedelta(minutes=10)
     )
 
     assert token in Token.objects.filter_valid()
-    with freezegun.freeze_time(timezone.now() + timezone.timedelta(minutes=10)):
+    with freezegun.freeze_time(timezone.now() + datetime.timedelta(minutes=10)):
         assert token not in Token.objects.filter_valid()
 
 
@@ -208,7 +209,7 @@ def test_token_creation_via_http(
     assert "errors" not in result
     assert result["data"]["me"]["username"] == username
 
-    with freezegun.freeze_time(timezone.now() + timezone.timedelta(days=7, seconds=2)):
+    with freezegun.freeze_time(timezone.now() + datetime.timedelta(days=7, seconds=2)):
         response = client.post(
             "/api/graphql",
             {"query": me_query},

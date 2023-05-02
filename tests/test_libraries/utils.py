@@ -1,3 +1,4 @@
+import datetime
 import os
 import os.path
 
@@ -43,7 +44,7 @@ class LibraryActionsStateMachine(hypothesis.stateful.RuleBasedStateMachine):
         # tested that the GenericFileHandler mapped it correctly.
         self.files = dict[str, bytes]()
         # Timestamps of when files have changed.
-        self.file_timestamps = dict[str, timezone.datetime]()
+        self.file_timestamps = dict[str, datetime.datetime]()
         # Keep a list of events for debugging purposes.
         self.events = list[str]()
 

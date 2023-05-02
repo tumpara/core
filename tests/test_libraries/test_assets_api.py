@@ -1,3 +1,4 @@
+import datetime
 from typing import Any
 
 import hypothesis
@@ -41,60 +42,60 @@ def notes(library: Library) -> list[Note]:
         Note.objects.create(  # 0
             library=library,
             content="First note.",
-            media_timestamp=timezone.datetime(2017, 1, 4, 14, 15),
+            media_timestamp=datetime.datetime(2017, 1, 4, 14, 15),
         ),
         Note.objects.create(  # 1
             library=library,
             content="Second note.",
-            media_timestamp=timezone.datetime(2020, 1, 4, 17, 12),
+            media_timestamp=datetime.datetime(2020, 1, 4, 17, 12),
             visibility=Visibility.PUBLIC,
         ),
         Note.objects.create(  # 2
             library=library,
             content="Third note.",
-            media_timestamp=timezone.datetime(2022, 1, 2, 3, 30),
+            media_timestamp=datetime.datetime(2022, 1, 2, 3, 30),
             visibility=Visibility.INTERNAL,
         ),
         Note.objects.create(  # 3
             library=library,
             content="Fourth note.",
-            media_timestamp=timezone.datetime(2022, 1, 4, 3, 30),
+            media_timestamp=datetime.datetime(2022, 1, 4, 3, 30),
             visibility=Visibility.MEMBERS,
         ),
         Note.objects.create(  # 4
             library=library,
             content="Fifth note.",
-            media_timestamp=timezone.datetime(2022, 1, 4, 3, 30),
+            media_timestamp=datetime.datetime(2022, 1, 4, 3, 30),
             visibility=Visibility.OWNERS,
         ),
         Note.objects.create(  # 5
             library=library,
             content="Sixth note.",
-            media_timestamp=timezone.datetime(2022, 1, 4, 3, 30),
+            media_timestamp=datetime.datetime(2022, 1, 4, 3, 30),
             visibility=Visibility.PUBLIC,
         ),
         Note.objects.create(  # 6
             library=library,
             content="Seventh note.",
-            media_timestamp=timezone.datetime(2022, 1, 5, 3, 30),
+            media_timestamp=datetime.datetime(2022, 1, 5, 3, 30),
             visibility=Visibility.INTERNAL,
         ),
         Note.objects.create(  # 7
             library=library,
             content="Eighth note.",
-            media_timestamp=timezone.datetime(2022, 2, 1, 4, 24),
+            media_timestamp=datetime.datetime(2022, 2, 1, 4, 24),
             visibility=Visibility.MEMBERS,
         ),
         Note.objects.create(  # 8
             library=library,
             content="Ninth note.",
-            media_timestamp=timezone.datetime(2022, 3, 1, 15, 28),
+            media_timestamp=datetime.datetime(2022, 3, 1, 15, 28),
             visibility=Visibility.OWNERS,
         ),
         Note.objects.create(  # 9
             library=library,
             content="Tenth note.",
-            media_timestamp=timezone.datetime(2023, 4, 5, 11, 12),
+            media_timestamp=datetime.datetime(2023, 4, 5, 11, 12),
         ),
     ]
 

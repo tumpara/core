@@ -1,3 +1,4 @@
+import datetime
 import functools
 import os.path
 from collections.abc import Generator
@@ -49,7 +50,7 @@ def test_basic_file_scanning(library: Library, monkeypatch: pytest.MonkeyPatch) 
         )
         scanner.FileModifiedEvent("foo").commit(library)
 
-    with freezegun.freeze_time(timezone.timedelta(minutes=2)):
+    with freezegun.freeze_time(datetime.timedelta(minutes=2)):
         TestingStorage.set("foo", "bye")
         scanner.FileModifiedEvent("foo").commit(library)
         assert File.objects.count() == 1

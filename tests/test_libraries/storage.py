@@ -1,3 +1,4 @@
+import datetime
 import os.path
 import urllib.parse
 from collections.abc import Generator
@@ -16,7 +17,7 @@ class TestingStorage(storage.LibraryStorage):
     Use :meth:`set` to define file contents that will be returned.
     """
 
-    _data: ClassVar[dict[str, tuple[timezone.datetime, bytes | str]]] = {}
+    _data: ClassVar[dict[str, tuple[datetime.datetime, bytes | str]]] = {}
 
     def __init__(self, parsed_uri: urllib.parse.ParseResult):
         pass
@@ -36,12 +37,12 @@ class TestingStorage(storage.LibraryStorage):
             content = content.encode("utf-8")
         return ContentFile(content)
 
-    def get_modified_time(self, name: str) -> timezone.datetime:
+    def get_modified_time(self, name: str) -> datetime.datetime:
         if name not in self._data:
             raise FileNotFoundError(f"file path {name!r} not found in dataset")
         return self._data[name][0]
 
-    def get_created_time(self, name: str) -> timezone.datetime:
+    def get_created_time(self, name: str) -> datetime.datetime:
         return self.get_modified_time(name)
 
     def exists(self, name: str) -> bool:
