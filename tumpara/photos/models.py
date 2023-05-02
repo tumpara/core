@@ -14,6 +14,7 @@ from django.utils.translation import gettext_lazy as _
 
 from tumpara.libraries.models import AssetModel, AssetQuerySet, File, Library
 
+from .types import ImmutableImage
 from .utils import (
     AVIF_SUPPORTED,
     ImageMetadata,
@@ -215,7 +216,7 @@ class Photo(AssetModel):
         #    out-of-camera rendition in JPEG form, which is probably of better quality
         #    than what we can produce.
         self.main_path = ""
-        main_image: Optional[PIL.Image.Image] = None
+        main_image: Optional[ImmutableImage] = None
         main_path_raw_original = False
         main_path_pixel_count = 0
         for (path,) in self.files.filter(availability__isnull=False).values_list(

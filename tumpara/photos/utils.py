@@ -7,11 +7,10 @@ import math
 import os.path
 import re
 import subprocess
-from typing import Any, Optional, TypeVar, Union
+from typing import Any, Literal, Optional, TypeVar, Union, overload
 
 import blurhash
 import dateutil.parser
-import numpy
 import PIL.Image
 import PIL.ImageFile
 import PIL.ImageOps
@@ -23,6 +22,8 @@ from django.utils import timezone
 
 from tumpara.libraries.models import Library
 from tumpara.utils import exiftool
+
+from .types import ImmutableImage
 
 _logger = logging.getLogger(__name__)
 
@@ -76,16 +77,23 @@ def _load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
             # Case 3: the image is not a raw file. Hopefully, Pillow can deal with it.
             file_io.seek(0)
             image = PIL.Image.open(file_io)
+            image.load()
             raw_original = False
 
+        # exif_transpose() will return a copy if the image doesn't need rotation. In
+        # this case, the original image will do. This improves performance quite a bit,
+        # especially for large images.
+        original_copy = image.copy
+        image.copy = lambda: image  # type: ignore[assignment]
         image = PIL.ImageOps.exif_transpose(image)
+        image.copy = original_copy  # type: ignore[assignment]
     return image, raw_original
 
 
 @functools.lru_cache(maxsize=settings.SCANNING_CACHE_SIZE)
 def _load_image_with_cache(
     library: Library, path: str
-) -> Union[tuple[PIL.Image.Image, bool], IOError, rawpy.LibRawError]:
+) -> Union[tuple[ImmutableImage, bool], IOError, rawpy.LibRawError]:
     try:
         return _load_image(library, path)
     except (IOError, rawpy.LibRawError) as error:
@@ -93,9 +101,23 @@ def _load_image_with_cache(
         return error
 
 
+@overload
+def load_image(
+    library: Library, path: str, *, copy: Literal[True] = True
+) -> tuple[PIL.Image.Image, bool]:
+    ...
+
+
+@overload
+def load_image(
+    library: Library, path: str, *, copy: Literal[False] = ...
+) -> tuple[ImmutableImage, bool]:
+    ...
+
+
 def load_image(
     library: Library, path: str, *, copy: bool = True
-) -> tuple[PIL.Image.Image, bool]:
+) -> tuple[PIL.Image.Image | ImmutableImage, bool]:
     """Open an image file with Pillow.
 
     :param library: The library containing the image to load.
@@ -167,8 +189,8 @@ class ImageMetadata:
             return ImageMetadata()
         else:
             image_metadata = ImageMetadata()
-            image_metadata._metadata = exiftool_result[0]  # type: ignore[assignment]
-            image_metadata._formatted_metadata = formatted_exiftool_result[0]  # type: ignore[assignment]
+            image_metadata._metadata = exiftool_result[0]
+            image_metadata._formatted_metadata = formatted_exiftool_result[0]
             return image_metadata
 
     def _get_numeric_value(
@@ -367,7 +389,7 @@ class ImageMetadata:
         return hasher.digest()
 
 
-def calculate_blurhash(image: PIL.Image.Image) -> str:
+def calculate_blurhash(image: ImmutableImage) -> str:
     if settings.BLURHASH_SIZE < 1 or settings.BLURHASH_SIZE is None:
         raise ImproperlyConfigured("blurhash calculation has been disabled")
 
