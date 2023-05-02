@@ -24,25 +24,34 @@
 						});
 
 						django-stubs = super.django-stubs.overridePythonAttrs (oldAttrs: rec {
-							version = "1.14.0";
+							version = "4.2.0";
 							src = self.fetchPypi {
 								inherit (oldAttrs) pname;
 								inherit version;
-								sha256 = "1TvNSXWlTKXJq7vTO2H0DUQZGXEBjy6lT3OwpqmeGos=";
+								sha256 = "k7r/gk8KBW5xA2tCO5QqdPB7kJ5F4/o4GFuRD1l8XAg=";
+							};
+						});
+
+						django-stubs-ext = super.django-stubs-ext.overridePythonAttrs (oldAttrs: rec {
+							version = "4.2.0";
+							src = self.fetchPypi {
+								inherit (oldAttrs) pname;
+								inherit version;
+								sha256 = "d4nwyuynFS/vB61rlN7HMQoF0Ljat395eeGdsAN7USc=";
 							};
 						});
 
 						strawberry-graphql = super.strawberry-graphql.overridePythonAttrs (oldAttrs: rec {
-							version = "0.155.4";
+							version = "0.176.0";
 							src = pkgs.fetchFromGitHub {
 								owner = "strawberry-graphql";
 								repo = "strawberry";
 								rev = version;
-								sha256 = "xV+jHVcQ4JeiKPIu0W39XAJdM8pGWUBx0Nf8tjxBiGs=";
+								sha256 = "e61wLFqc3HLCWUiVW3Gzbay1Oi8b7HsLT3+jPnbA4YY=";
 							};
 							# Strip down to only the essential dependencies as well as the
 							# ones we need:
-							# https://github.com/strawberry-graphql/strawberry/blob/0.142.0/pyproject.toml#L34-L57
+							# https://github.com/strawberry-graphql/strawberry/blob/0.176.0/pyproject.toml#L36-L64
 							propagatedBuildInputs = [
 								self.django
 								self.asgiref
@@ -108,7 +117,7 @@
 							exiftool
 							postgresql
 							(python.withPackages
-								(_: ([packages.tumpara]
+								(_: (packages.tumpara.propagatedBuildInputs
 								++ packages.tumpara.checkInputs
 								++ developmentDependencies
 								++ documentationDependencies

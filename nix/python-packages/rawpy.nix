@@ -11,13 +11,13 @@
 
 buildPythonPackage rec {
 	pname = "rawpy";
-	version = "0.18.0";
+	version = "0.18.1";
 
 	src = fetchFromGitHub {
 		owner = "letmaik";
 		repo = "rawpy";
 		rev = "v${version}";
-		sha256 = "vSDzp/ttRloz3E3y2X87VMfQ+Wh+r4SAE5mXlDFmRqE=";
+		sha256 = "ErQSVtv+pxKIgqCPrh74PbuWv4BKwqhLlBxtljmTCFM=";
 	};
 
 	nativeBuildInputs = [ pkgconf ];

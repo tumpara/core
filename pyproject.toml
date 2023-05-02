@@ -89,3 +89,34 @@ disable = [
 	"too-many-nested-blocks",
 ]
 
+[tool.mypy]
+mypy_path = "stubs"
+files = ["tests/**/*.py", "tumpara/**/*.py"]
+
+strict_equality = true
+
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_return_any = true
+warn_unreachable = true
+warn_unused_configs = true
+
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+
+# This must be set to False until this issue is closed:
+# 	https://github.com/python/mypy/issues/9689
+# See also:
+#   https://github.com/strawberry-graphql/strawberry/pull/551#issuecomment-720410754
+disallow_untyped_decorators = false
+
+plugins = ["mypy_django_plugin.main", "strawberry.ext.mypy_plugin"]
+
+[tool.django-stubs]
+django_settings_module = "tumpara.settings.development"
