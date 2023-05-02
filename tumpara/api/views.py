@@ -2,16 +2,13 @@ from __future__ import annotations
 
 import dataclasses
 import urllib.parse
-from typing import TYPE_CHECKING, Any, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import strawberry
 import strawberry.django.context
 import strawberry.django.views
 from django.core.files import storage as django_storage
-from django.http import HttpRequest, HttpResponse, HttpResponseNotAllowed
-from django.http.response import HttpResponseBase
-from django.utils.decorators import method_decorator
-from django.views.decorators import csrf
+from django.http import HttpRequest, HttpResponse, HttpResponseBase
 from django.views.static import serve
 
 if TYPE_CHECKING:
@@ -27,7 +24,7 @@ class ApiContext(strawberry.django.context.StrawberryDjangoContext):
     user: Union[AnonymousUser, User]
 
 
-class ApiView(strawberry.django.views.GraphQLView):
+class ApiView(strawberry.django.views.GraphQLView[ApiContext, Any]):
     schema_manager: Optional[SchemaManager] = None
 
     def __init__(
@@ -55,25 +52,7 @@ class ApiView(strawberry.django.views.GraphQLView):
         # This assertion will hopefully fail if some upstream implementation fails.
         assert schema is None
 
-    @method_decorator(csrf.csrf_exempt)
-    def dispatch(
-        self, request: HttpRequest, *args: Any, **kwargs: Any
-    ) -> HttpResponseBase:
-        if (
-            not self.should_render_graphiql(request)
-            and (request.method or "get").lower() != "post"
-        ):
-            # For this implementation, we limit ourselves to POST for the actual GraphQL
-            # requests, because Strawberry doesn't actually implement GET yet.
-            return HttpResponseNotAllowed(
-                ["POST"],
-                "Tumpara's GraphQL implementation only supports POST requests.",
-            )
-
-        response = super().dispatch(request, *args, **kwargs)  # type: ignore
-        return cast(HttpResponseBase, response)
-
-    def get_context(self, request: HttpRequest, response: HttpResponse) -> Any:
+    def get_context(self, request: HttpRequest, response: HttpResponse) -> ApiContext:
         from tumpara.accounts.models import AnonymousUser, User
 
         from .models import Token

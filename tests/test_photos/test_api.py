@@ -139,7 +139,7 @@ class PhotoApiTestCase(TestCase):
         response = client.get(thumbnail_url, HTTP_ACCEPT="image/webp")
         assert response.status_code == 200
         assert response.headers.get("Content-Type") == "image/webp"
-        assert "thumbnail.webp" in response.headers.get("Content-Disposition")
+        assert "thumbnail.webp" in response.headers.get("Content-Disposition", "")
         assert isinstance(response, StreamingHttpResponse)
 
         image = PIL.Image.open(io.BytesIO(b"".join(response.streaming_content)))
