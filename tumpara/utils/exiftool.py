@@ -10,7 +10,7 @@ from django.conf import settings
 
 _logger = logging.getLogger(__name__)
 
-_exiftool_process: Optional[subprocess.Popen] = None
+_exiftool_process: Optional[subprocess.Popen[str]] = None
 
 
 class ExiftoolError(IOError):
@@ -68,6 +68,10 @@ def execute_exiftool(*exiftool_arguments: str) -> list[dict[str, Any]]:
         except subprocess.CalledProcessError as error:
             raise error
 
+    assert _exiftool_process.stdin is not None
+    assert _exiftool_process.stdout is not None
+    assert _exiftool_process.stderr is not None
+
     _exiftool_process.stdin.write(
         "\n".join((*exiftool_arguments, "-json", "-echo4", "${status}=", "-execute\n"))
     )
@@ -108,7 +112,12 @@ def execute_exiftool(*exiftool_arguments: str) -> list[dict[str, Any]]:
                 f"with these arguments: {exiftool_arguments!r}"
             )
 
-    return json.loads(output[:-8])
+    result = json.loads(output[:-8])
+    assert isinstance(result, list)
+    for item in result:
+        assert isinstance(item, dict)
+        assert all(isinstance(key, str) for key in item.keys())
+    return result
 
 
 def stop_exiftool() -> None:
@@ -116,8 +125,9 @@ def stop_exiftool() -> None:
     global _exiftool_process
     if _exiftool_process is None:
         return
-    _exiftool_process.stdin.write("-stay_open\nFalse\n")
-    _exiftool_process.stdin.flush()
+    if _exiftool_process.stdin is not None:
+        _exiftool_process.stdin.write("-stay_open\nFalse\n")
+        _exiftool_process.stdin.flush()
     _exiftool_process.wait(timeout=2)
     if _exiftool_process.poll() is None:
         _exiftool_process.kill()

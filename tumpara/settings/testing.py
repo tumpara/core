@@ -1,4 +1,5 @@
 import tempfile
+from pathlib import Path
 
 from .development import *  # pylint: disable=wildcard-import, unused-wildcard-import
 
@@ -12,5 +13,5 @@ PASSWORD_HASHERS = [
     "django.contrib.auth.hashers.MD5PasswordHasher",
 ]
 
-THUMBNAIL_PATH = tempfile.mkdtemp()
+THUMBNAIL_PATH = Path(tempfile.mkdtemp())
 THUMBNAIL_STORAGE = FileSystemStorage(THUMBNAIL_PATH)
