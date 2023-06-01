@@ -1,15 +1,15 @@
-{ lib
-, buildPythonPackage
-, fetchFromGitHub
-, libffi
-, cffi
-, pillow
-, six
-, setuptools
-, setuptools-scm
-, pytestCheckHook
+{
+  lib,
+  buildPythonPackage,
+  fetchFromGitHub,
+  libffi,
+  cffi,
+  pillow,
+  six,
+  setuptools,
+  setuptools-scm,
+  pytestCheckHook,
 }:
-
 buildPythonPackage rec {
   pname = "blurhash";
   version = "1.2.0";
@@ -27,19 +27,19 @@ buildPythonPackage rec {
 
   SETUPTOOLS_SCM_PRETEND_VERSION = version;
 
-	nativeBuildInputs = [
-		setuptools
-		setuptools-scm
-	];
-	buildInputs = [
-		libffi
-	];
-	propagatedBuildInputs = [
-		cffi
-		six
-		pillow
-	];
-  checkInputs = [ pytestCheckHook ];
+  nativeBuildInputs = [
+    setuptools
+    setuptools-scm
+  ];
+  buildInputs = [
+    libffi
+  ];
+  propagatedBuildInputs = [
+    cffi
+    six
+    pillow
+  ];
+  checkInputs = [pytestCheckHook];
 
-  pythonImportsCheck = [ "blurhash" ];
+  pythonImportsCheck = ["blurhash"];
 }

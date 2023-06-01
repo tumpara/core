@@ -20,7 +20,6 @@ python.pkgs.buildPythonPackage rec {
     django-stubs
     django-cors-headers
     inotifyrecursive
-    pillow
     pillow-avif-plugin
     psycopg2
     rawpy
@@ -52,6 +51,6 @@ python.pkgs.buildPythonPackage rec {
   pythonImportsCheck = ["tumpara"];
 
   passthru = {
-  	inherit checkInputs;
+    inherit checkInputs;
   };
 }

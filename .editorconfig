@@ -19,3 +19,6 @@ max_line_length = 88
 [*.rst]
 indent_style = space
 max_line_length = 120
+
+[*.nix]
+indent_style = space
