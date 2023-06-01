@@ -9,7 +9,7 @@
 			let
 				pkgs = import nixpkgs { inherit system; };
 
-				python = pkgs.python310.override {
+				python = pkgs.python311.override {
 					packageOverrides = self: super: {
 						django = (super.django_4.override {
 							withGdal = true;
@@ -23,35 +23,17 @@
 							];
 						});
 
-						django-stubs = super.django-stubs.overridePythonAttrs (oldAttrs: rec {
-							version = "4.2.0";
-							src = self.fetchPypi {
-								inherit (oldAttrs) pname;
-								inherit version;
-								sha256 = "k7r/gk8KBW5xA2tCO5QqdPB7kJ5F4/o4GFuRD1l8XAg=";
-							};
-						});
-
-						django-stubs-ext = super.django-stubs-ext.overridePythonAttrs (oldAttrs: rec {
-							version = "4.2.0";
-							src = self.fetchPypi {
-								inherit (oldAttrs) pname;
-								inherit version;
-								sha256 = "d4nwyuynFS/vB61rlN7HMQoF0Ljat395eeGdsAN7USc=";
-							};
-						});
-
 						strawberry-graphql = super.strawberry-graphql.overridePythonAttrs (oldAttrs: rec {
-							version = "0.176.0";
+							version = "0.180.1";
 							src = pkgs.fetchFromGitHub {
 								owner = "strawberry-graphql";
 								repo = "strawberry";
 								rev = version;
-								sha256 = "e61wLFqc3HLCWUiVW3Gzbay1Oi8b7HsLT3+jPnbA4YY=";
+								sha256 = "w4i7HS6cYsTMRigCd8L2R8xpC6S6K8Mjp42TElawYgE=";
 							};
 							# Strip down to only the essential dependencies as well as the
 							# ones we need:
-							# https://github.com/strawberry-graphql/strawberry/blob/0.176.0/pyproject.toml#L36-L64
+							# https://github.com/strawberry-graphql/strawberry/blob/0.180.0/pyproject.toml#L36-L64
 							propagatedBuildInputs = [
 								self.django
 								self.asgiref
@@ -65,12 +47,18 @@
 								self.rich
 								self.typing-extensions
 							];
+							disabledTestPaths = oldAttrs.disabledTestPaths ++ [
+								# The OpenTelemetry dependency isn't packaged yet and we don't
+								# use it anyway.
+								"tests/extensions/test_custom_objects_for_setting_attribute.py"
+								"tests/schema/extensions/test_opentelemetry.py"
+							];
 						});
 
 						# All the remaining packages in the overlay are ones that are not
 						# yet ported in the official nixpkgs repo:
 
-						# https://pypi.org/project/blurhash/
+						# https://pypi.org/project/blurhash-python/
 						# https://github.com/woltapp/blurhash-python
 						blurhash-python = self.callPackage ./nix/python-packages/blurhash-python.nix { };
 						# https://github.com/fdintino/pillow-avif-plugin
@@ -79,8 +67,6 @@
 						pygments-graphql = self.callPackage ./nix/python-packages/pygments-graphql.nix { };
 						# https://pypi.org/project/rawpy/
 						rawpy = self.callPackage ./nix/python-packages/rawpy.nix { };
-						# https://pypi.org/project/types-Pillow/
-						types-pillow = self.callPackage ./nix/python-packages/types-pillow.nix { };
 						# https://pypi.org/project/types-six/
 						types-six = self.callPackage ./nix/python-packages/types-six.nix { };
 					};
