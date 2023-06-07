@@ -9,7 +9,3 @@ INSTALLED_APPS += [
 ]
 
 PRERENDER_THUMBNAILS = True
-
-
-TESTDATA_ROOT = DATA_ROOT / "testdata"
-PREVIEW_ROOT = DATA_ROOT / "previews-test"
