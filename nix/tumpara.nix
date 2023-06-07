@@ -14,13 +14,25 @@ python.pkgs.buildPythonPackage rec {
   '';
 
   propagatedBuildInputs = with python.pkgs; [
-    blurhash-python
+    ((blurhash-python.override {
+        pillow = pillow-simd;
+      })
+      .overridePythonAttrs (oldAttrs: {
+        postPatch = ''
+          ${oldAttrs.postPatch}
+          substituteInPlace "setup.py" --replace "Pillow" "Pillow-SIMD"
+        '';
+      }))
+#    blurhash-python
     dateutil
     django
     django-stubs
     django-cors-headers
     inotifyrecursive
-    pillow-avif-plugin
+    (pillow-avif-plugin.override {
+      pillow = pillow-simd;
+    })
+#    pillow-avif-plugin
     psycopg2
     rawpy
     strawberry-graphql
