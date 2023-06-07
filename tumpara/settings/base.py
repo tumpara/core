@@ -186,7 +186,7 @@ LOGGING = {
         },
         "django.db.backends": {
             "handlers": ["console"],
-            "level": os.environ.get("LOG_LEVEL", "WARNING"),
+            "level": os.environ.get("SQL_LOG_LEVEL", "WARNING"),
             "propagate": False,
         },
         "PIL": {
