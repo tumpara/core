@@ -122,6 +122,9 @@ class Library(Joinable):
         If this method returns ``True``, no :class:`File` objects should be created for
         the path. It is assumed that directories are ignored recursively.
         """
+        # Ignore unix-style hidden directories and files.
+        if "/." in os.path.normpath(path):
+            return True
         return any(
             # This part here is particularly error-prone. We basically want to check if
             # the given path starts with any of our ignored directories *plus* an extra
