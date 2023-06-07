@@ -60,8 +60,15 @@ def _load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
                 raw_thumb = raw_image.extract_thumb()
                 if raw_thumb.format == rawpy.ThumbFormat.JPEG:
                     image = PIL.Image.open(io.BytesIO(raw_thumb.data))
+                    _logger.debug(
+                        f"Loaded JPEG thumbnail from raw image {path!r} from {library}"
+                    )
                 elif raw_thumb.format == rawpy.ThumbFormat.BITMAP:
                     image = PIL.Image.fromarray(raw_thumb.data)
+                    _logger.debug(
+                        f"Loaded bitmap thumbnail from raw image {path!r} from "
+                        f"{library}"
+                    )
                 else:
                     raise rawpy.LibRawNoThumbnailError
                 raw_original = True
@@ -70,6 +77,7 @@ def _load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
                 # Case 2: we have a raw file, but it doesn't have a thumbnail. Here, we
                 # need to process the image ourselves.
                 image = PIL.Image.fromarray(raw_image.postprocess())
+                _logger.debug(f"Developed raw image {path!r} from {library}")
                 raw_original = True
 
         except rawpy.LibRawFileUnsupportedError:
@@ -77,6 +85,7 @@ def _load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
             file_io.seek(0)
             image = PIL.Image.open(file_io)
             image.load()
+            _logger.debug(f"Opened regular image {path!r} from {library}")
             raw_original = False
 
         # exif_transpose() will return a copy if the image doesn't need rotation. In
@@ -128,6 +137,7 @@ def load_image(
     :return: A tuple containing the Pillow :class:`~PIL.Image.Image` and a boolean that
         indicates whether the file was a raw image.
     """
+    _logger.debug(f"Requesting image file {path!r} from library {library}")
     if library.storage.size(path) <= settings.PHOTO_CACHE_MAX_FILE_SIZE:
         result = _load_image_with_cache(library, path)
         # IO and other image-related errors are cached as well. Re-raise them here.
