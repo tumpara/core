@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import collections
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Optional, Protocol, TypeVar, Union, cast
 
 from django import dispatch
 
 if TYPE_CHECKING:
-    from .models import Asset, Library
+    from .models import Asset, File, Library
 
 __all__ = ["new_file", "files_changed"]
 
@@ -86,15 +87,15 @@ new_file = NewFileSignal()
 When you register a receiver, it should use the provided parameters to decide if the new
 file can (or should) be handled. Do this by returning a model instance to the
 :class:`~tumpara.libraries.models.Asset` subclass that should handle the file. The file
-will then be attached to that asset. You may also return an unsaved asset, in which
-case it will be saved.
+will then be attached to that asset. You may also return an unsaved model instance, in
+which case it will be saved.
 
 If no receiver claims a file by returning a value other than ``None``, the new file will
-be ignored. If more than one receiver claims a file it will also be ignored.
+be ignored. However, it is possible for more than one receiver to claim a file.
 
 Note that this signal will *not* be called for new files that are copies of already
 known files. In that case, the new file will be added to the existing
-:class:`tumpara.libraries.models.Asset`.
+:class:`~tumpara.libraries.models.Asset` instead.
 
 :param sender: The Library's ``context``.
 :type sender: str
@@ -110,11 +111,23 @@ known files. In that case, the new file will be added to the existing
 """
 
 
+class NotMyFileAnymore(Exception):
+    """Receivers of the :obj:`files_changed` signal may raise this exception to indicate
+    that the specified file no longer matches the asset it is associated with.
+
+    In that case, the :class:`~tumpara.libraries.models.File` object will be deleted.
+
+    This is only handled when the ``removed`` argument is :obj:`False`.
+    """
+
+
 class FilesChangedReceiver(Protocol[_Asset]):
     def __call__(
         self,
         sender: type[_Asset],
         asset: _Asset,
+        files: Sequence[File],
+        removed: bool,
         **kwargs: Any,
     ) -> None:
         ...
@@ -147,6 +160,12 @@ or doesn't fit the library content object anymore) the
 :type sender: type[tumpara.libraries.models.Asset]
 :param asset: Library asset that had files changed.
 :type asset: ~tumpara.libraries.models.Asset
+:param files: Subset of :class:`~tumpara.libraries.models.File` objects that changed.
+    Note that it is not guaranteed that all these files are available.
+:type files: Sequence[tumpara.libraries.models.File]
+:param removed: :obj:`True` if the specified files have been removed, :obj:`False`
+    otherwise.
+:type removed: bool
 
 :meta hide-value:
 """

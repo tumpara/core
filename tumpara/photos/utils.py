@@ -149,12 +149,46 @@ def load_image(
         return _load_image(library, path)
 
 
-class ImageMetadata:
-    """Metadata container that holds EXIF (and other) metadata of an image."""
+class ImageMetadataError(IOError):
+    pass
 
-    def __init__(self) -> None:
-        self._metadata = dict[str, Any]()
-        self._formatted_metadata = dict[str, Any]()
+
+class ImageMetadata:
+    """Metadata container that holds EXIF (and other) metadata of an image.
+
+    This also supports
+    """
+
+    def __init__(
+        self, metadata: dict[str, Any], formatted_metadata: dict[str, Any]
+    ) -> None:
+        self._metadata = metadata
+        self._formatted_metadata = formatted_metadata
+
+        self._sidecar_format: Optional[tuple[Literal["google", "xmp"], str]] = None
+        self._deriver_name: Optional[str] = None
+
+        if (mime_type := self._get_string_value("MIMEType")).startswith("image/"):
+            pass
+
+        elif (
+            mime_type == "application/json"
+            and "googleusercontent.com" in self._get_string_value("Url")
+            and self.file_basename.lower().endswith(".json")
+        ):
+            # This is a sidecar file downloaded from Google Photos. It contains a few
+            # pieces of metadata that users can set from the UI. These have the same
+            # filename as the actual image (plus the .json suffix).
+            self._sidecar_format = ("google", self.file_basename[:-5])
+
+        elif mime_type == "application/rdf+xml" and (
+            deriver_name := self._get_string_value("DerivedFrom")
+        ):
+            # This is a sidecar file in XMP format, for example from darktable.
+            self._sidecar_format = ("xmp", deriver_name)
+
+        else:
+            raise ValueError("unsupported file type")
 
     @staticmethod
     @functools.lru_cache(maxsize=settings.SCANNING_CACHE_SIZE)
@@ -174,12 +208,11 @@ class ImageMetadata:
         bundled together in a single "ExposureProgram" field when parsing with Exiftool.
         """
         if not isinstance(library.storage, django_storage.FileSystemStorage):
-            _logger.warning(
+            raise NotImplementedError(
                 f"Image metadata loading is not implemented yet for storage backends "
                 f"other than the filesystem backend (got {type(library.storage)!r} for "
                 f"library {library.pk})."
             )
-            return ImageMetadata()
 
         try:
             exiftool_result = exiftool.execute_exiftool(
@@ -191,16 +224,17 @@ class ImageMetadata:
                 "%Y-%m-%dT%H:%M:%S%6f",
                 os.path.join(library.storage.base_location, path),
             )
-        except (subprocess.CalledProcessError, exiftool.ExiftoolError):
-            _logger.exception(
+        except (subprocess.CalledProcessError, exiftool.ExiftoolError) as error:
+            raise ImageMetadataError(
                 f"Cannot read image metadata in library {library.pk} for: {path}"
-            )
-            return ImageMetadata()
+            ) from error
         else:
-            image_metadata = ImageMetadata()
-            image_metadata._metadata = exiftool_result[0]
-            image_metadata._formatted_metadata = formatted_exiftool_result[0]
-            return image_metadata
+            try:
+                return ImageMetadata(exiftool_result[0], formatted_exiftool_result[0])
+            except ValueError as error:
+                raise ImageMetadataError(
+                    f"Cannot read image metadata in library {library.pk} for: {path}"
+                ) from error
 
     def _get_numeric_value(
         self,
@@ -242,6 +276,12 @@ class ImageMetadata:
             # TODO Raise a warning.
             return ""
 
+    @property
+    def deriver_name(self) -> Optional[str]:
+        """If this file is a sidecar file, this property points to the name of the
+        actual image file this sidecar is holding metadata on."""
+        return self._sidecar_format[1] if self._sidecar_format is not None else None
+
     @functools.cached_property
     def timestamp(self) -> Optional[datetime.datetime]:
         value = ""
@@ -266,6 +306,9 @@ class ImageMetadata:
         except ValueError:
             return None
 
+    file_basename = functools.cached_property(
+        functools.partial(_get_string_value, key="FileName")
+    )
     aperture_size = functools.cached_property(
         functools.partial(_get_numeric_value, key="Aperture")
     )
@@ -329,6 +372,24 @@ class ImageMetadata:
             return value[len(camera_prefix) :].strip()
         else:
             return value
+
+    @functools.cached_property
+    def width(self) -> Optional[int]:
+        return (
+            self._get_integer_value("ImageWidth")
+            or self._get_integer_value("OriginalImageWidth")
+            or self._get_integer_value("ExifImageWidth")
+            or self._get_integer_value("CanonImageWidth")
+        )
+
+    @functools.cached_property
+    def height(self) -> Optional[int]:
+        return (
+            self._get_integer_value("ImageHeight")
+            or self._get_integer_value("OriginalImageHeight")
+            or self._get_integer_value("ExifImageHeight")
+            or self._get_integer_value("CanonImageHeight")
+        )
 
     def calculate_checksum(
         self,

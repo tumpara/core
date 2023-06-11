@@ -18,7 +18,7 @@ dataset_root = pathlib.Path(__file__).parent / "dataset"
 
 def check_expected_metadata(library: Library, filename: str) -> None:
     expected_metadata = index[filename]
-    photo = Photo.objects.get(file__path=filename, files__availability__isnull=False)
+    photo = Photo.objects.get(file__path=filename, file__availability__isnull=False)
     assert photo.width == expected_metadata.width
     assert photo.height == expected_metadata.height
     assert photo.aperture_size == expected_metadata.aperture_size

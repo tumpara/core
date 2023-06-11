@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Optional, cast
 from django.db import models, transaction
 from django.utils import timezone
 
-from ..signals import files_changed, new_file
+from ..signals import NotMyFileAnymore, files_changed, new_file
 
 if TYPE_CHECKING:
     from ..models import File, Library
@@ -31,6 +31,42 @@ class Event(abc.ABC):
         """
 
 
+class NewFileException(RuntimeError):
+    def __int__(self, message: str) -> None:
+        self.message = message
+
+
+def _commit_new_file(library: Library, path: str, digest: str) -> None:
+    from ..models import Asset, File
+
+    # TODO Go through each handler and use the first one instead of calling
+    #   each. Also provide an exception that says "Not handling now, but it's my
+    #   file" to signal that it will be handled on the next rescan.
+    result = new_file.send_robust(
+        context=library.context,
+        path=path,
+        library=library,
+    )
+    responses = [
+        cast(Asset, response) for _, response in result if isinstance(response, Asset)
+    ]
+    if len(responses) == 0:
+        raise NewFileException("no compatible file handler was found")
+    elif len(responses) > 1:
+        raise NewFileException("more than one compatible file handler was found")
+    else:
+        asset = responses[0]
+        if asset._state.adding:
+            asset.save()
+
+        File.objects.create(
+            asset=asset,
+            path=path,
+            digest=digest,
+            availability=timezone.now(),
+        )
+
+
 @dataclasses.dataclass
 class FileEvent(Event):
     """Generic event for scanning a file path.
@@ -47,7 +83,7 @@ class FileEvent(Event):
 
     @transaction.atomic
     def commit(self, library: Library) -> None:
-        from ..models import Asset, File
+        from ..models import File
 
         def bail(reason: str) -> None:
             """Bail out and mark all file objects for this path as unavailable."""
@@ -89,30 +125,35 @@ class FileEvent(Event):
             file for file in file_candidates if not file.available
         }
         file: Optional[File] = None
-        need_saving = False
 
         # First case: we have a file object that already matches the description we
         # have. This means that the file has not changed since the last time we scanned.
         if candidates := candidates_by_path & candidates_by_digest:
             file = candidates.pop()
-            need_saving = True
 
-            for other_file in candidates:
-                if not other_file.available:
-                    continue
+            available_other_candidates = [
+                other_file for other_file in candidates if other_file.available
+            ]
+            if available_other_candidates:
                 _logger.warning(
-                    f"Got two matching file assets for the same path in a library, "
-                    f"which should not happen. The file object {other_file} will be "
-                    f"marked unavailable. This is probably a bug."
+                    f"Got two or more matching file assets for the same path in a "
+                    f"library, which should not happen. These file objects will be "
+                    f"marked unavailable. This is probably a bug. (path={self.path!r} "
+                    f"{digest=} kept file={file} obsolete "
+                    f"files={available_other_candidates=})"
                 )
-                other_file.availability = None
-                other_file.save(update_fields=("availability",))
+                _commit_file_removing(
+                    models.Q(
+                        pk__in=[
+                            other_file.pk for other_file in available_other_candidates
+                        ]
+                    )
+                )
 
         # Second case: we have some other unavailable file object on asset with the
         # same digest. Then that old file object can be replaced with this new one.
         elif candidates := candidates_by_digest & unavailable_candidates:
             file = candidates.pop()
-            need_saving = True
 
         # Third case: we have existing database entries that match the digest, but are
         # currently available. Then we create a new file object in their asset (all
@@ -124,13 +165,11 @@ class FileEvent(Event):
                 digest=digest,
                 availability=timezone.now(),
             )
-            need_saving = True
 
         # Fourth case: we have an existing file object for this path that is marked
         # as available. This is the case when a file is edited on disk.
         elif candidates := candidates_by_path & available_candidates:
             file = candidates.pop()
-            need_saving = True
 
         # Fifth case: we have an existing file object for this path that is marked as
         # unavailable. Note that this case might be problematic because there might now
@@ -138,7 +177,6 @@ class FileEvent(Event):
         # there before.
         elif candidates := candidates_by_path & unavailable_candidates:
             file = candidates.pop()
-            need_saving = True
 
         # Sixth case: we have a completely new file. Since we couldn't place the file
         # into any existing library asset, we can now create a new one. To do that,
@@ -146,50 +184,48 @@ class FileEvent(Event):
         # find some content object that is willing to take the file (see the signal's
         # documentation for details).
         else:
-            result = new_file.send_robust(
-                context=library.context,
-                path=self.path,
-                library=library,
-            )
-            responses = [
-                cast(Asset, response)
-                for _, response in result
-                if isinstance(response, Asset)
-            ]
-            if len(responses) == 0:
-                bail("no compatible file handler was found")
-                return
-            elif len(responses) > 1:
-                bail("more than one compatible file handler was found")
-                return
-            else:
-                asset = responses[0]
-                if asset._state.adding:
-                    asset.save()
-
-                file = File.objects.create(
-                    asset=asset,
-                    path=self.path,
-                    digest=digest,
-                    availability=timezone.now(),
-                )
+            try:
+                _commit_new_file(library, self.path, digest)
+            except NewFileException as error:
+                bail(error.message)
 
         # Mark all other files for that path that we might still have in the database
         # as unavailable (because we just created a new one).
-        for other_file in candidates_by_path:
-            if other_file == file:
-                continue
-            other_file.availability = None
-            other_file.save(update_fields=("availability",))
+        available_other_candidates = [
+            other_file
+            for other_file in candidates_by_path
+            if other_file.available and other_file != file
+        ]
+        if available_other_candidates:
+            _commit_file_removing(
+                models.Q(
+                    pk__in=[other_file.pk for other_file in available_other_candidates]
+                )
+            )
 
-        if need_saving:
+        if file is not None:
             file.path = self.path
             file.digest = digest
             file.availability = timezone.now()
             file.save()
 
-        resolved_asset = file.asset.resolve_instance()
-        files_changed.send_robust(sender=type(resolved_asset), asset=resolved_asset)
+            resolved_asset = file.asset.resolve_instance()
+            for _, response in files_changed.send_robust(
+                sender=type(resolved_asset),
+                asset=resolved_asset,
+                files=[file],
+                removed=False,
+            ):
+                if isinstance(response, NotMyFileAnymore):
+                    _logger.warning(
+                        f"Found a file that no longer belongs to its original asset. "
+                        f"(path={self.path!r} {digest=} {library=})"
+                    )
+                    file.delete()
+                    try:
+                        _commit_new_file(library, self.path, digest)
+                    except NewFileException as error:
+                        bail(error.message)
 
 
 @dataclasses.dataclass
@@ -297,6 +333,31 @@ class FileMovedEvent(Event):
             )
 
 
+def _commit_file_removing(file_query: models.Q) -> int:
+    from ..models import Asset, File
+
+    file_queryset = File.objects.filter(file_query).select_related("asset")
+    files = list(file_queryset)
+
+    touched_assets = set[Asset]()
+    for file in files:
+        file.availability = None
+        touched_assets.add(file.asset)
+    File.objects.bulk_update(files, ("availability",))
+
+    for asset in touched_assets:
+        asset_files = [file for file in files if file.asset == asset]
+        resolved_asset = asset.resolve_instance()
+        files_changed.send_robust(
+            sender=type(resolved_asset),
+            asset=resolved_asset,
+            files=asset_files,
+            removed=True,
+        )
+
+    return len(files)
+
+
 @dataclasses.dataclass
 class FileRemovedEvent(Event):
     """Event for a file being deleted or moved outside the library."""
@@ -304,30 +365,24 @@ class FileRemovedEvent(Event):
     path: str
 
     def commit(self, library: Library) -> None:
-        from ..models import Asset, File
-
-        file_queryset = File.objects.filter(
-            asset__library=library, path=self.path, availability__isnull=False
+        count = _commit_file_removing(
+            models.Q(
+                asset__library=library, path=self.path, availability__isnull=False
+            ),
         )
-        touched_assets = list(Asset.objects.filter(file__in=file_queryset).distinct())
 
-        affected_rows = file_queryset.update(availability=None)
-        if affected_rows == 0:
+        if count == 0:
             _logger.debug(
                 f"Got a file removed event for {self.path!r} in {library}, but no "
                 f"asset was available."
             )
         else:
-            if affected_rows > 1:
+            if count > 1:
                 _logger.warning(
                     "More than one file processed for file remove event which should "
                     "have been unique."
                 )
             _logger.debug(f"Removed {self.path} in {library}.")
-
-        for asset in touched_assets:
-            resolved_asset = asset.resolve_instance()
-            files_changed.send_robust(sender=type(resolved_asset), asset=resolved_asset)
 
 
 @dataclasses.dataclass
@@ -348,39 +403,30 @@ class DirectoryMovedEvent(Event):
         # TODO: Check if we have a case-insensitive filesystem.
         path_regex = "^" + re.escape(os.path.join(self.old_path, ""))
 
-        # We intentionally don't filter out unavailable files so they are moved along
+        # We intentionally don't filter out unavailable files, so they are moved along
         # with the other files in the directory. Yay, ghosts :)
-        file_queryset = File.objects.filter(
-            asset__library=library, path__regex=path_regex
-        )
-        touched_assets = list(Asset.objects.filter(file__in=file_queryset).distinct())
+        file_query = models.Q(asset__library=library, path__regex=path_regex)
 
         if library.check_path_ignored(self.new_path):
-            affected_rows = file_queryset.update(availability=None)
+            count = _commit_file_removing(file_query)
             _logger.debug(
                 f"Moving directory {self.old_path!r} to {self.new_path!r}, but the new "
-                f"path is in an ignored directory. {affected_rows} asset(s) were marked "
+                f"path is in an ignored directory. {count} asset(s) were marked "
                 f"unavailable."
             )
-
-            for asset in touched_assets:
-                resolved_asset = asset.resolve_instance()
-                files_changed.send_robust(
-                    sender=type(resolved_asset), asset=resolved_asset
-                )
         else:
-            count = 0
-            for file in file_queryset:
+            file_queryset = File.objects.filter(file_query)
+            files = list(file_queryset)
+            for file in files:
                 file.path = os.path.join(
                     self.new_path, os.path.relpath(file.path, self.old_path)
                 )
                 if file.availability is not None:
                     file.availability = timezone.now()
-                file.save(update_fields=("path", "availability"))
-                count += 1
+            File.objects.bulk_update(files, ("path", "availability"))
             _logger.debug(
                 f"Got a directory moved event from {self.old_path!r} to "
-                f"{self.new_path!r} in {library} which affected {count} file(s)."
+                f"{self.new_path!r} in {library} which affected {len(files)} file(s)."
             )
 
 
@@ -392,27 +438,22 @@ class DirectoryRemovedEvent(Event):
 
     @transaction.atomic
     def commit(self, library: Library) -> None:
-        from ..models import Asset, File
-
         # As before, use regex instead of startswith because SQLite doesn't support the
         # latter case-sensitively.
         # TODO: Check if we have a case-insensitive filesystem.
         path_regex = "^" + re.escape(os.path.join(self.path, ""))
 
-        file_queryset = File.objects.filter(
-            asset__library=library, path__regex=path_regex, availability__isnull=False
+        count = _commit_file_removing(
+            models.Q(
+                asset__library=library,
+                path__regex=path_regex,
+                availability__isnull=False,
+            )
         )
-        touched_assets = list(Asset.objects.filter(file__in=file_queryset).distinct())
-
-        affected_rows = file_queryset.update(availability=None)
         _logger.debug(
             f"Got a directory removed event for {self.path!r} in {library} which "
-            f"affected {affected_rows} file(s)."
+            f"affected {count} file(s)."
         )
-
-        for asset in touched_assets:
-            resolved_asset = asset.resolve_instance()
-            files_changed.send_robust(sender=type(resolved_asset), asset=resolved_asset)
 
 
 class ScanEvent(Event):
@@ -433,22 +474,15 @@ class ScanEvent(Event):
 
     @transaction.atomic
     def commit(self, library: Library) -> None:
-        from ..models import Asset, File
-
-        file_queryset = File.objects.filter(
-            # Since all events mark their touched files as available with a new
-            # timestamp, we can use that to find all the old assets that are no
-            # longer available.
-            availability__lte=self.start_timestamp,
-            asset__library=library,
+        count = _commit_file_removing(
+            models.Q(
+                # Since all events mark their touched files as available with a new
+                # timestamp, we can use that to find all the old assets that are no
+                # longer available.
+                availability__lte=self.start_timestamp,
+                asset__library=library,
+            )
         )
-        touched_assets = list(Asset.objects.filter(file__in=file_queryset).distinct())
-
-        affected_rows = file_queryset.update(availability=None)
         _logger.debug(
-            f"Marked {affected_rows} file objects in {library} as no longer available."
+            f"Marked {count} file objects in {library} as no longer available."
         )
-
-        for asset in touched_assets:
-            resolved_asset = asset.resolve_instance()
-            files_changed.send_robust(sender=type(resolved_asset), asset=resolved_asset)

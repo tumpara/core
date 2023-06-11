@@ -545,6 +545,215 @@ class AssetConnection(
             last=last,
         )
 
+    # @classmethod
+    # def from_queryset2(
+    #     cls,
+    #     queryset: models.QuerySet[Asset],
+    #     info: api.InfoType,
+    #     *,
+    #     after: Optional[str] = None,
+    #     before: Optional[str] = None,
+    #     first: Optional[int] = None,
+    #     last: Optional[int] = None,
+    # ) -> "AssetConnection":
+    #     """Get a queryset for this connection.
+    #
+    #     This implementation differs from the one from :class:`DjangoConnection` in that
+    #     asset timestamps are incorporated into the cursor. This allows using database
+    #     indexes instead of offsets when continuing pagination.
+    #
+    #     It is also supported to pass ISO-encoded timestamps for the 'after' and 'before'
+    #     parameters. In that case they behave like temporary time filters that can be
+    #     used to start pagination from an arbitrary point in time.
+    #     """
+    #     if (
+    #         not issubclass(queryset.model, Asset)
+    #         or not queryset.query.order_by == ("media_timestamp",)
+    #         or not queryset.query.extra_order_by == ()
+    #     ):
+    #         # Our optimizations only work for asset querysets ordered by the timestamp.
+    #         # If that isn't the case, fall back to the default DjangoConnection
+    #         # implementation.
+    #         return super().from_queryset(
+    #             queryset, info, after=after, before=before, first=first, last=last
+    #         )
+    #
+    #     # When using 'AssetConnection' cursors (instead of the general 'Connection'
+    #     # cursors from the superclass), we store a timestamp inside the cursor. This
+    #     # timestamp is the sort key of our queryset, meaning we can use database indexes
+    #     # when looking up adjacent items. In addition to the timestamp, each cursor
+    #     # contains an index inside the timestamp, used for differentiating different
+    #     # assets that share a timestamp. This index may either be positive or negative,
+    #     # depending on the pagination direction. So a cursor like
+    #     #   base64("AssetConnection:1675246998.599744:2")
+    #     # means "the third asset that has the timestamp 2023-02-1 10:23:18.599744".
+    #     # Similarly, the cursor
+    #     #   base64("AssetConnection:1675246998.599744:-1")
+    #     # points to the last asset that has that timestamp. In typical use cases, this
+    #     # index will always be zero, since assets rarely share a timestamp down to the
+    #     # millisecond.
+    #
+    #     def decode_cursor(
+    #         cursor: Optional[str],
+    #     ) -> Optional[tuple[datetime.datetime, int] | datetime.datetime]:
+    #         if cursor is None:
+    #             return None
+    #
+    #         try:
+    #             return datetime.datetime.fromisoformat(cursor)
+    #         except ValueError:
+    #             pass
+    #
+    #         try:
+    #             context, *properties = api.decode_key(cursor)
+    #
+    #             if context == "Connection":
+    #                 # This is handled by the superclass implementation.
+    #                 return None
+    #
+    #             assert context == "AssetConnection"
+    #             assert len(properties) == 2
+    #             timestamp = datetime.datetime.fromtimestamp(float(properties[0]))
+    #             index = int(properties[1])
+    #         except NotImplementedError:
+    #             return None
+    #         except (AssertionError, TypeError, ValueError) as error:
+    #             raise ValueError("invalid cursor: " + cursor) from error
+    #         else:
+    #             return timestamp, index
+    #
+    #     original_queryset = queryset
+    #     original_count = queryset.count()
+    #     has_previous_page: Optional[bool] = None
+    #     has_next_page: Optional[bool] = None
+    #
+    #     if isinstance(decoded_after_cursor := decode_cursor(after), datetime.datetime):
+    #         queryset = queryset.filter(media_timestamp__gt=decoded_after_cursor)
+    #         after = None
+    #         has_previous_page = queryset.count() < original_count
+    #     elif decoded_after_cursor is not None:
+    #         after_timestamp, after_index = decoded_after_cursor
+    #         queryset = queryset.filter(media_timestamp__gte=after_timestamp)
+    #         if after_index >= 0:
+    #             # We were paginating forwards when this cursor was created.
+    #             queryset = queryset[after_index + 1 :]
+    #             # This is totally fake, but if we assume that the user is a
+    #             # spec-compliant client that treats our cursors as opaque strings then
+    #             # the fact that we have a valid cursor pointing forwards is fact enough
+    #             # that a previous page must exist (because something must have generated
+    #             # the cursor in the first place).
+    #             has_previous_page = True
+    #         elif after_index < 0:
+    #             # We were paginating backwards when this cursor was created. In order to
+    #             # know how much to slice off of the queryset now, we need to find out
+    #             # how many assets there are with this timestamp.
+    #             bucket_size = queryset.filter(media_timestamp=after_timestamp).count()
+    #             # Add one here because we want everything *after* the specified index:
+    #             #
+    #             #            ↓ This item here will have a cursor for timestamp 2 and
+    #             #            ↓ index -2 (when paginating backwards).
+    #             # >>> [2,2,2,2,2,3,4,5][5-2+1:]
+    #             # [2, 3, 4, 5]
+    #             #
+    #             # In the above example, we want to continue after the second-last item
+    #             # with a value of 2.
+    #             queryset = queryset[bucket_size + after_index + 1 :]
+    #             has_previous_page = queryset.count() < original_count
+    #         after = None
+    #
+    #     # before_timestamp: Optional[datetime.datetime] = None
+    #     # before_timestamp_keep_count = 0
+    #     # if isinstance(
+    #     #     decoded_before_cursor := decode_cursor(before), datetime.datetime
+    #     # ):
+    #     #     queryset = queryset.filter(media_timestamp__lt=decoded_before_cursor)
+    #     #     before = None
+    #     #     has_next_page = queryset.count() < original_count
+    #     # elif decoded_before_cursor is not None:
+    #     #     before_timestamp, before_index = decoded_before_cursor
+    #     #     queryset = queryset.filter(media_timestamp__lte=before_timestamp)
+    #     #     bucket_size = queryset.filter(media_timestamp=before_timestamp).count()
+    #     #     if before_index >= 0:
+    #     #         before_timestamp_keep_count = before_index
+    #     #         has_next_page = (
+    #     #             original_queryset.filter(
+    #     #                 media_timestamp__lt=before_timestamp
+    #     #             ).count()
+    #     #             + before_timestamp_keep_count
+    #     #             < original_count
+    #     #         )
+    #     #     elif before_index < 0:
+    #     #         before_timestamp_keep_count = bucket_size + before_index
+    #     #         has_next_page = True
+    #     #     if last is not None:
+    #     #         last += bucket_size
+    #     #     before = None
+    #     # TODO only allow either 'first' or 'last' and reverse the queryset if needed?
+    #
+    #     result = super().from_queryset(
+    #         queryset, info, after=after, before=before, first=first, last=last
+    #     )
+    #
+    #     if before_timestamp is not None:
+    #         edge_index = 0
+    #         while edge_index < len(result.edges):
+    #             if (
+    #                 result.edges[edge_index].node.obj.media_timestamp
+    #                 != before_timestamp
+    #             ):
+    #                 edge_index += 1
+    #                 continue
+    #             if before_timestamp_keep_count > 0:
+    #                 before_timestamp_keep_count -= 1
+    #                 edge_index += 1
+    #             else:
+    #                 del result.edges[edge_index]
+    #
+    #     # Give each edge a new cursor, so we can profit from these optimization when
+    #     # continuing pagination. These are all forward-facing cursors (with a positive
+    #     # index), since that's the direction that takes precedence when both 'first' and
+    #     # 'last' are given. The only difference is the first timestamp on record. That
+    #     # will always be a backwards-facing cursor, since we don't know how many assets
+    #     # there are on record for this timestamp without asking the database. By
+    #     # encoding this information in the cursor instead, we can postpone that query
+    #     # to when we actually need it. This also has the added benefit that we never
+    #     # end up counting a bucket_size (see above) if we continue from a PageInfo's
+    #     # start_cursor or end_cursor using the appropriate direction.
+    #     first_timestamp: Optional[datetime.datetime] = None
+    #     first_timestamp_count = 0
+    #     current_timestamp: Optional[datetime.datetime] = None
+    #     current_index = 0
+    #     for edge in result.edges:
+    #         node_timestamp = edge.node.obj.media_timestamp
+    #         if current_index != node_timestamp:
+    #             current_timestamp = node_timestamp
+    #             current_index = 0
+    #         if first_timestamp is None:
+    #             first_timestamp = node_timestamp
+    #         if node_timestamp == first_timestamp:
+    #             first_timestamp_count += 1
+    #         edge.cursor = api.encode_key(
+    #             "AssetConnection", current_timestamp.timestamp(), current_index
+    #         )
+    #     first_timestamp_count *= -1
+    #     for edge in result.edges:
+    #         if edge.node.obj.media_timestamp != first_timestamp:
+    #             break
+    #         edge.cursor = api.encode_key(
+    #             "AssetConnection", current_timestamp.timestamp(), first_timestamp_count
+    #         )
+    #         first_timestamp_count += 1
+    #
+    #     if len(result.edges) > 0:
+    #         result.page_info.start_cursor = result.edges[0].cursor
+    #         result.page_info.end_cursor = result.edges[-1].cursor
+    #     if has_previous_page is not None:
+    #         result.page_info.has_previous_page = has_previous_page
+    #     if has_next_page is not None:
+    #         result.page_info.has_next_page = has_next_page
+    #
+    #     return result
+
 
 ########################################################################################
 # Mutations                                                                            #

@@ -748,6 +748,7 @@ class File(models.Model):
             "start with a slash."
         ),
     )
+    # TODO make this a binary field
     digest = models.CharField(
         _("digest value"),
         max_length=64,

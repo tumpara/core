@@ -4,6 +4,7 @@ import os.path
 import re
 import select
 import subprocess
+import threading
 from typing import Any, Optional
 
 from django.conf import settings
@@ -11,6 +12,7 @@ from django.conf import settings
 _logger = logging.getLogger(__name__)
 
 _exiftool_process: Optional[subprocess.Popen[str]] = None
+_exiftool_lock = threading.Lock()
 
 
 class ExiftoolError(IOError):
@@ -72,52 +74,60 @@ def execute_exiftool(*exiftool_arguments: str) -> list[dict[str, Any]]:
     assert _exiftool_process.stdout is not None
     assert _exiftool_process.stderr is not None
 
-    _exiftool_process.stdin.write(
-        "\n".join((*exiftool_arguments, "-json", "-echo4", "${status}=", "-execute\n"))
-    )
-    _exiftool_process.stdin.flush()
-
-    stdout_fd = _exiftool_process.stdout.fileno()
-    stderr_fd = _exiftool_process.stderr.fileno()
-    output = b""
-    error_output = b""
-    chunk_count = 0
-
-    while not output.endswith(b"{ready}\n"):
-        input_ready_fds, _, _ = select.select([stdout_fd, stderr_fd], [], [])
-        for fd in input_ready_fds:
-            if fd == stdout_fd:
-                raw_chunk = os.read(fd, 4096)
-                if chunk_count < settings.EXIFTOOL_MAX_OUTPUT_SIZE:
-                    output += raw_chunk
-                chunk_count += 1
-            if fd == stderr_fd:
-                error_output += os.read(fd, 4096)
-
-    _exiftool_process.stdout.flush()
-    _exiftool_process.stderr.flush()
-
-    if chunk_count >= settings.EXIFTOOL_MAX_OUTPUT_SIZE:
-        raise ExiftoolOutputToLarge(
-            f"Exiftool returned a larger JSON output than expected ({chunk_count} 4KiB "
-            f"chunks). Refusing to parse. Called with these arguments: "
-            f"{exiftool_arguments!r}"
+    try:
+        _exiftool_lock.acquire()
+        _exiftool_process.stdin.write(
+            "\n".join(
+                (*exiftool_arguments, "-json", "-echo4", "${status}=", "-execute\n")
+            )
         )
+        _exiftool_process.stdin.flush()
 
-    if match_object := re.search(r"(\d+)=$", error_output.decode().strip()):
-        return_code = int(match_object.groups(1)[0])
-        if return_code != 0:
-            raise ExiftoolNonzeroExitCode(
-                f"Exiftool returned the nonzero exit code {return_code}. Called "
-                f"with these arguments: {exiftool_arguments!r}"
+        stdout_fd = _exiftool_process.stdout.fileno()
+        stderr_fd = _exiftool_process.stderr.fileno()
+        output = b""
+        error_output = b""
+        chunk_count = 0
+
+        while not output.endswith(b"{ready}\n"):
+            input_ready_fds, _, _ = select.select([stdout_fd, stderr_fd], [], [])
+            for fd in input_ready_fds:
+                if fd == stdout_fd:
+                    raw_chunk = os.read(fd, 4096)
+                    if chunk_count < settings.EXIFTOOL_MAX_OUTPUT_SIZE:
+                        output += raw_chunk
+                    chunk_count += 1
+                if fd == stderr_fd:
+                    error_output += os.read(fd, 4096)
+
+        if chunk_count >= settings.EXIFTOOL_MAX_OUTPUT_SIZE:
+            raise ExiftoolOutputToLarge(
+                f"Exiftool returned a larger JSON output than expected ({chunk_count} "
+                f"4KiB chunks). Refusing to parse. Called with these arguments: "
+                f"{exiftool_arguments!r}"
             )
 
-    result = json.loads(output[:-8])
-    assert isinstance(result, list)
-    for item in result:
-        assert isinstance(item, dict)
-        assert all(isinstance(key, str) for key in item.keys())
-    return result
+        if match_object := re.search(r"(\d+)=$", error_output.decode().strip()):
+            return_code = int(match_object.groups(1)[0])
+            if return_code != 0:
+                raise ExiftoolNonzeroExitCode(
+                    f"Exiftool returned the nonzero exit code {return_code}. Called "
+                    f"with these arguments: {exiftool_arguments!r}"
+                )
+
+        result = json.loads(output[:-8])
+        assert isinstance(result, list)
+        for item in result:
+            assert isinstance(item, dict)
+            assert all(isinstance(key, str) for key in item.keys())
+        return result
+    finally:
+        try:
+            _exiftool_process.stdout.flush()
+            _exiftool_process.stderr.flush()
+        except IOError:
+            pass
+        _exiftool_lock.release()
 
 
 def stop_exiftool() -> None:
