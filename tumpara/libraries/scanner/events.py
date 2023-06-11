@@ -58,14 +58,20 @@ def _commit_new_file(library: Library, path: str, digest: str) -> None:
         library=library,
     )
     responses = [
-        cast(Asset, response) for _, response in result if isinstance(response, Asset)
+        cast(Asset, response)
+        for _, response in result
+        if isinstance(response, (Asset, tuple))
     ]
     if len(responses) == 0:
         raise NewFileException("no compatible file handler was found")
     elif len(responses) > 1:
         raise NewFileException("more than one compatible file handler was found")
     else:
-        asset = responses[0]
+        if isinstance(responses[0], tuple):
+            asset, extra = responses[0]
+        else:
+            asset = responses[0]
+            extra = ""
         if asset._state.adding:
             asset.save()
 
@@ -74,6 +80,7 @@ def _commit_new_file(library: Library, path: str, digest: str) -> None:
             path=path,
             digest=digest,
             availability=timezone.now(),
+            extra=extra,
         )
 
 

@@ -773,14 +773,25 @@ class File(models.Model):
         _("digest value"),
         max_length=64,
         db_index=True,
-        help_text="The file's cryptographic hash to quickly identify changes.",
+        help_text=_("The file's cryptographic hash to quickly identify changes."),
     )
     availability = models.DateTimeField(
         _("last seen timestamp"),
         null=True,
         blank=True,
-        help_text="Time the file was last deemed available to open. If this is unset, "
-        "the file is known to be unavailable.",
+        help_text=_(
+            "Time the file was last deemed available to open. If this is unset, the "
+            "file is known to be unavailable."
+        ),
+    )
+    extra = models.CharField(
+        _("extra information"),
+        max_length=100,
+        blank=True,
+        help_text=_(
+            "Extra information on this specific file. The content and format of this "
+            "value depends on the asset type. This is intended to be machine-readable."
+        ),
     )
 
     class Meta:

@@ -30,7 +30,7 @@ context_references[None] = None
 class NewFileReceiver(Protocol):
     def __call__(
         self, context: str, path: str, library: Library, **kwargs: Any
-    ) -> Optional[Asset]:
+    ) -> Optional[Union[Asset, tuple[Asset, str]]]:
         ...
 
 
@@ -104,7 +104,9 @@ known files. In that case, the new file will be added to the existing
 :type library: ~tumpara.libraries.models.Library
 :return: If the file cannot (or should not) be handled by the receiver, return ``None``.
     Otherwise return a model instance of the library
-    :class:`tumpara.libraries.models.Asset` the file should be linked to.
+    :class:`tumpara.libraries.models.Asset` the file should be linked to. Receivers may
+    also return a tuple containing the asset and a string that will be set as the file
+    object's :attr:`~tumpara.libraries.models.File.extra` field.
 
 :meta hide-value:
 """

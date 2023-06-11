@@ -19,6 +19,9 @@ dataset_root = pathlib.Path(__file__).parent / "dataset"
 def check_expected_metadata(library: Library, filename: str) -> None:
     expected_metadata = index[filename]
     photo = Photo.objects.get(file__path=filename, file__availability__isnull=False)
+    for file in photo.files.filter(availability__isnull=False):
+        # The `extra` field should contain the MIME type.
+        assert file.extra.startswith("image/")
     assert photo.width == expected_metadata.width
     assert photo.height == expected_metadata.height
     assert photo.aperture_size == expected_metadata.aperture_size
@@ -27,7 +30,7 @@ def check_expected_metadata(library: Library, filename: str) -> None:
     assert photo.iso_value == expected_metadata.iso_value
     assert photo.camera_make == expected_metadata.camera_make
     assert photo.camera_model == expected_metadata.camera_model
-    assert photo.blurhash is not None
+    assert photo.blurhash
 
 
 def check_matched_files(library: Library, filename: str) -> None:

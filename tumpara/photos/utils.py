@@ -301,6 +301,9 @@ class ImageMetadata:
     file_basename = functools.cached_property(
         functools.partial(_get_string_value, key="FileName")
     )
+    mime_type = functools.cached_property(
+        functools.partial(_get_string_value, key="MIMEType")
+    )
     aperture_size = functools.cached_property(
         functools.partial(_get_numeric_value, key="Aperture")
     )

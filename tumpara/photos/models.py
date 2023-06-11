@@ -34,6 +34,18 @@ PhotoManager = models.Manager.from_queryset(PhotoQuerySet)
 
 
 class Photo(AssetModel):
+    """Asset type for photos.
+
+    A photo is identified by a hash of its metadata. This hash contains things like the
+    hardware used to take it. It is used to identify multiple recordings / renditions
+    of the same photo, for example when the user has both a raw image file and an edited
+    version of the same picture in their library. Both these file will end up linked to
+    the same photo asset.
+
+    The :attr:`~tumpara.libraries.models.File.extra` field contains each file's MIME
+    type.
+    """
+
     metadata_checksum = models.BinaryField(
         _("metadata checksum"),
         max_length=32,
@@ -182,14 +194,9 @@ class Photo(AssetModel):
         PIL.Image.init()
         image_mime_types = set(PIL.Image.MIME.values())
 
-        candidate_paths = [
-            path
-            for (path,) in self.files.filter(availability__isnull=False).values_list(
-                "path"
-            )
-        ]
-        candidate_mime_types = get_mime_types(self.library, candidate_paths)
-        assert len(candidate_mime_types) == len(candidate_paths)
+        candidates = list[tuple[str, str]](
+            self.files.filter(availability__isnull=False).values_list("path", "extra")
+        )
 
         # Prefer non-raw images to raw images, because that's probably a better
         # rendition than what rawpy will produce. This setting should be configurable
@@ -197,9 +204,7 @@ class Photo(AssetModel):
         maybe_raw: bool = True
         self.main_path = ""
         image_candidate_paths = {
-            path
-            for path, mime_type in zip(candidate_paths, candidate_mime_types)
-            if mime_type in image_mime_types
+            path for path, mime_type in candidates if mime_type in image_mime_types
         }
         if image_candidate_paths:
             maybe_raw = False
@@ -211,8 +216,8 @@ class Photo(AssetModel):
         else:
             raw_candidate_paths = {
                 path
-                for path, mime_type in zip(candidate_paths, candidate_mime_types)
-                if path not in image_candidate_paths
+                for path, mime_type in candidates
+                if (path, mime_type) not in candidates
                 and mime_type not in ImageMetadata.SIDECAR_MIME_TYPES
             }
             if raw_candidate_paths:
@@ -378,7 +383,7 @@ class Photo(AssetModel):
     @transaction.atomic
     def handle_new_file(
         context: str, path: str, library: Library, **kwargs: Any
-    ) -> Optional[Photo]:
+    ) -> Optional[tuple[Photo, str]]:
         if context != "gallery":
             return None
         try:
@@ -439,7 +444,7 @@ class Photo(AssetModel):
 
         photo._import_metadata(image_metadata)
         photo.save()
-        return photo
+        return photo, image_metadata.mime_type
 
     def handle_file_change(self, file: File) -> None:
         try:
@@ -448,6 +453,7 @@ class Photo(AssetModel):
             file.availability = None
             file.save(update_fields=("availability",))
             return
+        file.extra = image_metadata.mime_type
 
         metadata_checksum = image_metadata.calculate_checksum(payload=self.library.pk)
         if self.metadata_checksum and self.metadata_checksum != metadata_checksum:
