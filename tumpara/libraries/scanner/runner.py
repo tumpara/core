@@ -72,13 +72,12 @@ def run_sequential(library: Library, events: storage.WatchGenerator) -> None:
         if event is None:
             continue
 
-        with transaction.atomic():
-            try:
-                event.commit(library)
-            except:  # noqa
-                if RAISE_EXCEPTIONS:
-                    raise
-                _logger.exception(f"Error while handling event of type {type(event)}.")
+        try:
+            event.commit(library)
+        except:  # noqa
+            if RAISE_EXCEPTIONS:
+                raise
+            _logger.exception(f"Error while handling event of type {type(event)}.")
 
         if (
             index % settings.REPORT_INTERVAL == settings.REPORT_INTERVAL - 1

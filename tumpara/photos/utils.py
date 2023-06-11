@@ -7,7 +7,8 @@ import math
 import os.path
 import re
 import subprocess
-from typing import Any, Literal, Optional, TypeVar, Union, overload
+from collections.abc import Sequence
+from typing import Any, ClassVar, Literal, Optional, TypeVar, Union, cast, overload
 
 import blurhash
 import dateutil.parser
@@ -48,9 +49,23 @@ remove_whitespace = functools.partial(
 )
 
 
-def _load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
+def load_image(
+    library: Library, path: str, *, maybe_raw: bool = True
+) -> tuple[PIL.Image.Image, bool]:
+    """Open an image file with Pillow.
+
+    :param library: The library containing the image to load.
+    :param path: Path of the image file inside the library.
+    :param maybe_raw: Set this to :obj:`False` if you know the image won't be a raw
+        image. In that case, decoding with rawpy is skipped.
+    :return: A tuple containing the Pillow :class:`~PIL.Image.Image` and a boolean that
+        indicates whether the file was a raw image.
+    """
     with library.storage.open(path, "rb") as file_io:
         try:
+            if not maybe_raw:
+                raise rawpy.LibRawFileUnsupportedError
+
             raw_image = rawpy.imread(file_io)  # type: ignore
             try:
                 # Case 1: we have a raw file with an embedded thumbnail. Use that
@@ -95,62 +110,37 @@ def _load_image(library: Library, path: str) -> tuple[PIL.Image.Image, bool]:
         image.copy = lambda: image  # type: ignore[assignment]
         image = PIL.ImageOps.exif_transpose(image)
         image.copy = original_copy  # type: ignore[assignment]
-    return image, raw_original
-
-
-@functools.lru_cache(maxsize=settings.SCANNING_CACHE_SIZE)
-def _load_image_with_cache(
-    library: Library, path: str
-) -> Union[tuple[ImmutableImage, bool], IOError, rawpy.LibRawError]:
-    try:
-        return _load_image(library, path)
-    except (IOError, rawpy.LibRawError) as error:
-        # Make sure the exception is cached as well.
-        return error
-
-
-@overload
-def load_image(
-    library: Library, path: str, *, copy: Literal[True] = True
-) -> tuple[PIL.Image.Image, bool]:
-    ...
-
-
-@overload
-def load_image(
-    library: Library, path: str, *, copy: Literal[False] = ...
-) -> tuple[ImmutableImage, bool]:
-    ...
-
-
-def load_image(
-    library: Library, path: str, *, copy: bool = True
-) -> tuple[PIL.Image.Image | ImmutableImage, bool]:
-    """Open an image file with Pillow.
-
-    :param library: The library containing the image to load.
-    :param path: Path of the image file inside the library.
-    :param copy: Set this to :obj:`False` if you don't need a mutable copy of the
-        image. This saves the performance cost of copying it out of the cache. However,
-        you shouldn't do things like :meth:`~PIL.Image.Image.thumbnail()`ing, because
-        that would mutate the image in the cache for every subsequent caller as well.
-    :return: A tuple containing the Pillow :class:`~PIL.Image.Image` and a boolean that
-        indicates whether the file was a raw image.
-    """
-    _logger.debug(f"Requesting image file {path!r} from library {library}")
-    if library.storage.size(path) <= settings.PHOTO_CACHE_MAX_FILE_SIZE:
-        result = _load_image_with_cache(library, path)
-        # IO and other image-related errors are cached as well. Re-raise them here.
-        if isinstance(result, Exception):
-            raise result
-        else:
-            return (result[0].copy(), result[1]) if copy else result
-    else:
-        return _load_image(library, path)
+    return cast(ImmutableImage, image), raw_original
 
 
 class ImageMetadataError(IOError):
     pass
+
+
+def get_mime_types(library: Library, paths: Sequence[str]) -> Sequence[str]:
+    """Return a list containing the MIME type of each of the supplied file paths.
+
+    :param library: The library containing all the files.
+    :param paths: List of valid paths.
+    """
+    if not isinstance(library.storage, django_storage.FileSystemStorage):
+        raise NotImplementedError(
+            f"Image metadata loading is not implemented yet for storage backends "
+            f"other than the filesystem backend (got {type(library.storage)!r} for "
+            f"library {library.pk})."
+        )
+
+    try:
+        exiftool_result = exiftool.execute_exiftool(
+            "-MimeType",
+            *(os.path.join(library.storage.base_location, path) for path in paths),
+        )
+    except (subprocess.CalledProcessError, exiftool.ExiftoolError) as error:
+        raise ImageMetadataError(
+            f"Failed to find MIME types for {len(paths)} file(s) in {library}."
+        ) from error
+    else:
+        return [str(item.get("MIMEType", "")) for item in exiftool_result]
 
 
 class ImageMetadata:
@@ -158,6 +148,8 @@ class ImageMetadata:
 
     This also supports
     """
+
+    SIDECAR_MIME_TYPES: ClassVar[set[str]] = {"application/json", "application/rdf+xml"}
 
     def __init__(
         self, metadata: dict[str, Any], formatted_metadata: dict[str, Any]

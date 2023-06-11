@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import collections
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Optional, Protocol, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Any, Literal, Optional, Protocol, TypeVar, Union, cast
 
 from django import dispatch
 
 if TYPE_CHECKING:
-    from .models import Asset, File, Library
+    from .models import Asset, Library
 
-__all__ = ["new_file", "files_changed"]
+__all__ = ["new_file"]
 
 _Asset = TypeVar("_Asset", bound="Asset", contravariant=True)
 
@@ -71,14 +70,14 @@ class NewFileSignal(dispatch.Signal):
 
     def send_robust(  # type: ignore
         self, context: str, path: str, library: Library
-    ) -> list[tuple[NewFileReceiver, Union[ValueError, str]]]:
+    ) -> list[tuple[NewFileReceiver, Union[Exception, str]]]:
         result = super().send_robust(
             sender=context_references[context],
             context=context,
             path=path,
             library=library,
         )
-        return cast(list[tuple[NewFileReceiver, Union[ValueError, str]]], result)
+        return cast(list[tuple[NewFileReceiver, Union[Exception, str]]], result)
 
 
 new_file = NewFileSignal()
@@ -111,61 +110,32 @@ known files. In that case, the new file will be added to the existing
 """
 
 
-class NotMyFileAnymore(Exception):
-    """Receivers of the :obj:`files_changed` signal may raise this exception to indicate
-    that the specified file no longer matches the asset it is associated with.
-
-    In that case, the :class:`~tumpara.libraries.models.File` object will be deleted.
-
-    This is only handled when the ``removed`` argument is :obj:`False`.
-    """
-
-
-class FilesChangedReceiver(Protocol[_Asset]):
+class ScanFinishedReceiver:
     def __call__(
         self,
-        sender: type[_Asset],
-        asset: _Asset,
-        files: Sequence[File],
-        removed: bool,
+        sender: Literal["scan"],
+        library: Library,
         **kwargs: Any,
     ) -> None:
         ...
 
 
-class FilesChangedSignal(dispatch.Signal):
+class ScanFinishedSignal(dispatch.Signal):
     def connect(  # type: ignore
         self,
-        receiver: FilesChangedReceiver[Any],
-        sender: Optional[type[Asset]] = None,
+        receiver: ScanFinishedReceiver,
+        sender: Optional[str] = None,
         weak: bool = True,
         dispatch_uid: Optional[str] = None,
     ) -> None:
         super().connect(receiver, sender, weak=weak, dispatch_uid=dispatch_uid)
 
 
-files_changed = FilesChangedSignal()
-"""Sent when the list of files for a library asset changes.
+scan_finished = dispatch.Signal()
+"""Sent when a full library scan has finished.
 
-This happens when a new file has been scanned, an existing file is changed on disk or
-a file is deleted. It is *not* sent when files are moved.
-
-Receivers of this signal should check the files that are attached to the given library
-asset and act accordingly (for example by updating cached metadata). Should any of the
-files no longer be applicable (for example if it has been edited and is now unreadable
-or doesn't fit the library content object anymore) the
-:class:`tumpara.libraries.models.File` object should be deleted.
-
-:param sender: The type of library asset.
-:type sender: type[tumpara.libraries.models.Asset]
-:param asset: Library asset that had files changed.
-:type asset: ~tumpara.libraries.models.Asset
-:param files: Subset of :class:`~tumpara.libraries.models.File` objects that changed.
-    Note that it is not guaranteed that all these files are available.
-:type files: Sequence[tumpara.libraries.models.File]
-:param removed: :obj:`True` if the specified files have been removed, :obj:`False`
-    otherwise.
-:type removed: bool
-
-:meta hide-value:
+:param sender: Currently the fixed string ``scan``.
+:type sender: Literal["scan"]
+:param library: The library that just finished scanning.
+:type library: ~tumpara.libraries.models.Library
 """

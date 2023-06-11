@@ -1,7 +1,7 @@
 import django.apps
 from django.utils.translation import gettext_lazy as _
 
-from tumpara.libraries.signals import files_changed, new_file
+from tumpara.libraries.signals import new_file, scan_finished
 
 
 class PhotosConfig(django.apps.AppConfig):
@@ -13,4 +13,4 @@ class PhotosConfig(django.apps.AppConfig):
         from .models import Photo
 
         new_file.connect(Photo.handle_new_file, sender="gallery")
-        files_changed.connect(Photo.handle_files_changed, sender=Photo)
+        scan_finished.connect(Photo.handle_scan_finished)

@@ -53,8 +53,7 @@ def test_basic_file_scanning(library: Library, monkeypatch: pytest.MonkeyPatch) 
     with freezegun.freeze_time(datetime.timedelta(minutes=2)):
         TestingStorage.set("foo", "bye")
         scanner.FileModifiedEvent("foo").commit(library)
-        assert File.objects.count() == 1
-        file.refresh_from_db()
+        file = File.objects.get()
         asset = file.asset.resolve_instance()
         assert isinstance(asset, GenericHandler)
         assert asset.content == b"bye"
@@ -149,27 +148,17 @@ def test_refinding_files(library: Library) -> None:
     assert isinstance(bar_asset, GenericHandler)
     assert bar_asset.content == b"bar"
 
-    # Move the first file's content to a different location and add it back in. Then the
-    # existing file object should be used.
+    # Move the first file's content to a different location and add it back in.
     TestingStorage.set("foo2", "foo")
     scanner.FileEvent("foo2").commit(library)
-    foo_file.refresh_from_db()
-    # Trick MyPy to think that foo_file is a new variable. We need to do this because
-    # otherwise foo_file.available would still be inferred as False from the assertion
-    # a few lines up. This would lead to the next assertion evaluating to NoReturn,
-    # which in turn yields 'Statement is unreachable' errors for the following lines.
-    # Reassigning the variable seems to do the trick here. See also:
-    # https://github.com/python/mypy/issues/4805#issuecomment-376666418
-    foo_file = foo_file
+    foo_file = File.objects.get(path="foo2")
     assert foo_file.available
     assert foo_file.path == "foo2"
 
-    # Now add the second file back in, but with a new content. This should also lead to
-    # the existing asset being reused.
+    # Now add the second file back in, but with a new content.
     TestingStorage.set("bar", "whooo")
     scanner.FileEvent("bar").commit(library)
-    bar_file.refresh_from_db()
-    bar_file = bar_file  # Trick MyPy again, see above
+    bar_file = File.objects.get(path="bar")
     assert bar_file.available
     assert bar_file.digest != bar_digest
     bar_asset = bar_file.asset.resolve_instance()

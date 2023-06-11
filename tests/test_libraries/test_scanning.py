@@ -17,7 +17,7 @@ def test_file_creating(library: Library) -> None:
 
     TestingStorage.set("foo", "two")
     library.scan()
-    file.refresh_from_db()
+    file = File.objects.get()
     asset = GenericHandler.objects.get(content=b"two")
     assert file.asset.resolve_instance() == asset
     assert File.objects.count() == 1

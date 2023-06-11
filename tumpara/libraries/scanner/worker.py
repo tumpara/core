@@ -42,27 +42,22 @@ def process(
         while True:
             event: Event = queue.get()
 
-            with transaction.atomic():
+            try:
+                event.commit(library)
+            except:  # noqa
                 try:
-                    event.commit(library)
-                except:  # noqa
+                    event_path = cast(Any, event).path
+                except AttributeError:
                     try:
-                        event_path = cast(Any, event).path
+                        event_path = cast(Any, event).new_path
                     except AttributeError:
-                        try:
-                            event_path = cast(Any, event).new_path
-                        except AttributeError:
-                            event_path = None
+                        event_path = None
 
-                    _logger.exception(
-                        f"Error while handling event of type {type(event)}"
-                        + (
-                            f" for path {event_path!r}"
-                            if event_path is not None
-                            else ""
-                        )
-                        + "."
-                    )
+                _logger.exception(
+                    f"Error while handling event of type {type(event)}"
+                    + (f" for path {event_path!r}" if event_path is not None else "")
+                    + "."
+                )
 
             with _counter.get_lock():
                 counter = cast(ctypes.c_int, _counter)

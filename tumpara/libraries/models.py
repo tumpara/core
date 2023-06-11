@@ -710,6 +710,26 @@ class Asset(models.Model):
         if commit:
             self.save()
 
+    def handle_file_change(self, file: File) -> None:
+        """This method is called when one of the registered files on disk has changed.
+
+        :param file: The file object that has changed. It is guaranteed that this
+            :class:`File` belongs to the current asset.
+        :raises ~tumpara.libraries.scanner.events.NotMyFileAnymore: Implementors may
+            raise this exception when the corresponding file no longer matches this
+            asset type. For example, this can happen if the file on disk is now a fully
+            different file format.
+        """
+
+    def handle_file_removal(self, files: Sequence[File]) -> None:
+        """This method is called when one or more of the registered files is removed.
+
+        This is also called when files become unavailable.
+
+        :param files: Sequence of :class:`File` objects -- all belonging to this
+            asset -- that are no longer available.
+        """
+
 
 class AssetModel(Asset):
     asset = models.OneToOneField(

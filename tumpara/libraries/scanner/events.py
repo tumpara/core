@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Optional, cast
 from django.db import models, transaction
 from django.utils import timezone
 
-from ..signals import NotMyFileAnymore, files_changed, new_file
+from ..signals import new_file, scan_finished
 
 if TYPE_CHECKING:
     from ..models import File, Library
@@ -32,8 +32,18 @@ class Event(abc.ABC):
 
 
 class NewFileException(RuntimeError):
-    def __int__(self, message: str) -> None:
+    def __init__(self, message: str) -> None:
         self.message = message
+
+
+class NotMyFileAnymore(Exception):
+    """Implementors of the :meth:`~tumpara.libraries.models.Asset.handle_file_changed`
+    callback may raise this exception to indicate that the specified file no longer
+    matches the asset it is associated with.
+
+    In that case, the :class:`~tumpara.libraries.models.File` object will be deleted and
+    the file will re-scanned as a new asset.
+    """
 
 
 def _commit_new_file(library: Library, path: str, digest: str) -> None:
@@ -210,22 +220,18 @@ class FileEvent(Event):
             file.save()
 
             resolved_asset = file.asset.resolve_instance()
-            for _, response in files_changed.send_robust(
-                sender=type(resolved_asset),
-                asset=resolved_asset,
-                files=[file],
-                removed=False,
-            ):
-                if isinstance(response, NotMyFileAnymore):
-                    _logger.warning(
-                        f"Found a file that no longer belongs to its original asset. "
-                        f"(path={self.path!r} {digest=} {library=})"
-                    )
-                    file.delete()
-                    try:
-                        _commit_new_file(library, self.path, digest)
-                    except NewFileException as error:
-                        bail(error.message)
+            try:
+                resolved_asset.handle_file_change(file)
+            except NotMyFileAnymore:
+                _logger.warning(
+                    f"Found a file that no longer belongs to its original asset. "
+                    f"(path={self.path!r} {digest=} {library=})"
+                )
+                file.delete()
+                try:
+                    _commit_new_file(library, self.path, digest)
+                except NewFileException as error:
+                    bail(error.message)
 
 
 @dataclasses.dataclass
@@ -292,26 +298,20 @@ class FileMovedEvent(Event):
 
     @transaction.atomic
     def commit(self, library: Library) -> None:
-        from ..models import Asset, File
+        from ..models import File
 
-        file_queryset = File.objects.filter(
+        file_query = models.Q(
             asset__library=library, path=self.old_path, availability__isnull=False
         )
-        touched_assets = list(Asset.objects.filter(file__in=file_queryset).distinct())
 
         if library.check_path_ignored(self.new_path):
-            affected_rows = file_queryset.update(availability=None)
+            _commit_file_removing(file_query)
             _logger.debug(
                 f"Moving file {self.old_path!r} to {self.new_path!r}, but the new path "
                 f"is in an ignored directory. Assets were marked unavailable."
             )
-            for asset in touched_assets:
-                resolved_asset = asset.resolve_instance()
-                files_changed.send_robust(
-                    sender=type(resolved_asset), asset=resolved_asset
-                )
         else:
-            affected_rows = file_queryset.update(
+            affected_rows = File.objects.filter(file_query).update(
                 path=self.new_path, availability=timezone.now()
             )
             if affected_rows == 0:
@@ -325,12 +325,11 @@ class FileMovedEvent(Event):
                 _logger.debug(
                     f"Moved {self.old_path!r} to {self.new_path!r} in {library}."
                 )
-
-        if affected_rows > 1:
-            _logger.warning(
-                "More than one file processed for file move event which should "
-                "have been unique."
-            )
+                if affected_rows > 1:
+                    _logger.warning(
+                        "More than one file processed for file move event which should "
+                        "have been unique."
+                    )
 
 
 def _commit_file_removing(file_query: models.Q) -> int:
@@ -348,12 +347,7 @@ def _commit_file_removing(file_query: models.Q) -> int:
     for asset in touched_assets:
         asset_files = [file for file in files if file.asset == asset]
         resolved_asset = asset.resolve_instance()
-        files_changed.send_robust(
-            sender=type(resolved_asset),
-            asset=resolved_asset,
-            files=asset_files,
-            removed=True,
-        )
+        resolved_asset.handle_file_removal(asset_files)
 
     return len(files)
 
@@ -364,6 +358,7 @@ class FileRemovedEvent(Event):
 
     path: str
 
+    @transaction.atomic
     def commit(self, library: Library) -> None:
         count = _commit_file_removing(
             models.Q(
@@ -472,17 +467,19 @@ class ScanEvent(Event):
     def __init__(self) -> None:
         self.start_timestamp = timezone.now()
 
-    @transaction.atomic
     def commit(self, library: Library) -> None:
-        count = _commit_file_removing(
-            models.Q(
-                # Since all events mark their touched files as available with a new
-                # timestamp, we can use that to find all the old assets that are no
-                # longer available.
-                availability__lte=self.start_timestamp,
-                asset__library=library,
+        with transaction.atomic():
+            count = _commit_file_removing(
+                models.Q(
+                    # Since all events mark their touched files as available with a new
+                    # timestamp, we can use that to find all the old assets that are no
+                    # longer available.
+                    availability__lte=self.start_timestamp,
+                    asset__library=library,
+                )
             )
-        )
-        _logger.debug(
-            f"Marked {count} file objects in {library} as no longer available."
-        )
+            _logger.debug(
+                f"Marked {count} file objects in {library} as no longer available."
+            )
+
+        scan_finished.send_robust("scan", library=library)

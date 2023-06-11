@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
 from fractions import Fraction
-from typing import Any, Optional
+from typing import Any, Literal, Optional, cast
 
 import PIL.Image
 from django.conf import settings
@@ -13,7 +12,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from tumpara.libraries.models import AssetModel, AssetQuerySet, File, Library
-from tumpara.libraries.signals import NotMyFileAnymore
+from tumpara.libraries.scanner.events import NotMyFileAnymore
 from tumpara.utils import precisest_datetime
 
 from .types import ImmutableImage
@@ -22,6 +21,7 @@ from .utils import (
     ImageMetadata,
     calculate_blurhash,
     extract_timestamp_from_filename,
+    get_mime_types,
     load_image,
 )
 
@@ -48,6 +48,7 @@ class Photo(AssetModel):
         _("main path"),
         max_length=File._meta.get_field("path").max_length,
         default="",
+        blank=True,
         help_text="Path of the main image that should be used for generating "
         "thumbnails and other information.",
     )
@@ -142,7 +143,8 @@ class Photo(AssetModel):
     blurhash = models.CharField(
         "blurhash",
         max_length=100,
-        null=True,
+        default="",
+        blank=True,
         help_text=_(
             "Blurhash textual representation that can be used for loading placeholders."
         ),
@@ -171,15 +173,98 @@ class Photo(AssetModel):
         except TypeError:
             return None
 
+    @transaction.atomic
+    def check_image(
+        self, *, commit: bool = True
+    ) -> tuple[ImmutableImage, ImageMetadata]:
+        old_main_path = self.main_path
+
+        PIL.Image.init()
+        image_mime_types = set(PIL.Image.MIME.values())
+
+        candidate_paths = [
+            path
+            for (path,) in self.files.filter(availability__isnull=False).values_list(
+                "path"
+            )
+        ]
+        candidate_mime_types = get_mime_types(self.library, candidate_paths)
+        assert len(candidate_mime_types) == len(candidate_paths)
+
+        # Prefer non-raw images to raw images, because that's probably a better
+        # rendition than what rawpy will produce. This setting should be configurable
+        # in the future.
+        maybe_raw: bool = True
+        self.main_path = ""
+        image_candidate_paths = {
+            path
+            for path, mime_type in zip(candidate_paths, candidate_mime_types)
+            if mime_type in image_mime_types
+        }
+        if image_candidate_paths:
+            maybe_raw = False
+            # Use the newest rendition that is available.
+            self.main_path = sorted(
+                image_candidate_paths,
+                key=lambda path: self.library.storage.get_modified_time(path),
+            )[-1]
+        else:
+            raw_candidate_paths = {
+                path
+                for path, mime_type in zip(candidate_paths, candidate_mime_types)
+                if path not in image_candidate_paths
+                and mime_type not in ImageMetadata.SIDECAR_MIME_TYPES
+            }
+            if raw_candidate_paths:
+                self.main_path = sorted(
+                    raw_candidate_paths,
+                    key=lambda path: self.library.storage.get_modified_time(path),
+                )[-1]
+
+        if not self.main_path:
+            self.blurhash = ""
+            if commit:
+                self.save(update_fields=("main_path", "blurhash"))
+            raise FileNotFoundError(f"no main file available for photo {self.pk}")
+
+        image, _ = load_image(self.library, self.main_path, maybe_raw=maybe_raw)
+        image = cast(ImmutableImage, image)
+        image_metadata = ImageMetadata.load(self.library, self.main_path)
+        # Make sure the metadata matches that of the image we are displaying.
+        self._import_metadata(image_metadata)
+
+        try:
+            self.blurhash = calculate_blurhash(image)
+        except:
+            self.blurhash = ""
+
+        if settings.PRERENDER_THUMBNAILS:
+            for format_name in ("avif", "webp"):
+                if format_name == "avif" and not AVIF_SUPPORTED:
+                    continue
+                for size in [(None, 400)]:
+                    self.render_thumbnail(
+                        format_name,
+                        *size,
+                        old_main_path != self.main_path,
+                        image=image.copy(),
+                    )
+
+        if commit:
+            self.save()
+        return image, image_metadata
+
     def render_thumbnail(
         self,
         format_name: str,
         requested_width: Optional[int],
         requested_height: Optional[int],
         rerender: bool = False,
+        *,
+        image: Optional[PIL.Image.Image] = None,
     ) -> str:
-        """Render a photo thumbnail to the cache and return its path inside the thumbnail
-        storage."""
+        """Render a photo thumbnail to the cache and return its path inside the
+        thumbnail storage."""
         directory = hex(self.pk & 0xFF)[2:].zfill(2)
         subdirectory = hex(self.pk & 0xFF00)[2:4].zfill(2)
 
@@ -193,7 +278,8 @@ class Photo(AssetModel):
         path = os.path.join(directory, subdirectory, filename)
 
         if rerender or not settings.THUMBNAIL_STORAGE.exists(path):
-            image, _ = load_image(self.library, self.main_path)
+            if image is None:
+                image, _ = load_image(self.library, self.main_path)
             image.thumbnail(
                 (
                     # This means that both None and 0 evaluate to the original
@@ -209,111 +295,6 @@ class Photo(AssetModel):
                 image.save(file_io, format=format_name.upper())
 
         return path
-
-    def scan_metadata(self, commit: bool = True) -> None:
-        """Update the metadata for this photo object.
-
-        This will re-scan one of the files associated with this record and populate
-        the database.
-        """
-        # Pick one of the files to use as the main source. We mainly want to prefer
-        # JPEGs and other non-raw sources because:
-        # a) They don't require any post-processing.
-        # b) We assume that the user has edited the raw photo and therefore the JPEG (or
-        #    whatever format the output has) will probably be more to their liking than
-        #    the raw image, or whatever we can automatically develop.
-        # c) If the user has not explicitly edited the photo, there might still be an
-        #    out-of-camera rendition in JPEG form, which is probably of better quality
-        #    than what we can produce.
-        main_path_before = self.main_path
-        self.main_path = ""
-        main_image: Optional[ImmutableImage] = None
-        main_path_raw_original = False
-        main_path_pixel_count = 0
-        # TODO Use only the metadata here, check for MIME types.
-        for (path,) in self.files.filter(availability__isnull=False).values_list(
-            "path"
-        ):
-            image, raw_original = load_image(self.library, path, copy=False)
-            pixel_count = image.width * image.height
-
-            # As mentioned before, the picked image will ideally be non-raw. If there
-            # are multiple to choose from, we want to end up with the one with the
-            # highest resolution.
-            if (
-                self.main_path == ""
-                # Non-raws are better than raws.
-                or (main_path_raw_original and not raw_original)
-                # If we can get a higher resolution, use that.
-                or (
-                    main_path_raw_original == raw_original
-                    and main_path_pixel_count < pixel_count
-                )
-            ):
-                self.main_path = path
-                main_image = image
-                main_path_raw_original = raw_original
-                main_path_pixel_count = pixel_count
-
-        if main_image is None:
-            # This photo object is effectively dead and will be filtered out in the API.
-            self.main_path = ""
-            if commit:
-                self.save()
-            return
-
-        if main_path_before == self.main_path:
-            return
-
-        assert self.main_path
-        image = main_image
-        image_metadata = ImageMetadata.load(self.library, self.main_path)
-
-        try:
-            # calculate_blurhash calls image.convert("RGB"), which creates a copy. We
-            # therefore don't need to specify copy=True when calling load_image() above.
-            self.blurhash = calculate_blurhash(image)
-        except:
-            self.blurhash = None
-
-        self.media_timestamp = (
-            image_metadata.timestamp
-            or extract_timestamp_from_filename(self.main_path)
-            or timezone.now()
-        )
-
-        self.width = image.width
-        self.height = image.height
-
-        self.aperture_size = image_metadata.aperture_size
-        self.exposure_time = image_metadata.exposure_time
-        self.focal_length = image_metadata.focal_length
-        self.iso_value = image_metadata.iso_value
-        self.flash_description = image_metadata.flash_description
-        self.focus_mode_description = image_metadata.focus_mode_description
-        self.exposure_program_description = image_metadata.exposure_program_description
-        self.metering_mode_description = image_metadata.metering_mode_description
-        self.macro_mode_description = image_metadata.macro_mode_description
-
-        self.camera_make = image_metadata.camera_make
-        self.camera_model = image_metadata.camera_model
-        self.lens_identifier = image_metadata.lens_identifier
-
-        self.software = image_metadata.software
-
-        # TODO Extract GPS information.
-        self.media_location = None
-
-        self.full_clean()
-        if commit:
-            self.save()
-
-        if settings.PRERENDER_THUMBNAILS:
-            for format_name in ("avif", "webp"):
-                if format_name == "avif" and not AVIF_SUPPORTED:
-                    continue
-                for size in [(None, 400)]:
-                    self.render_thumbnail(format_name, *size, True)
 
     @staticmethod
     def _get_or_create_photo(
@@ -405,6 +386,7 @@ class Photo(AssetModel):
         except IOError:
             return None
 
+        pass
         photo: Photo
 
         if image_metadata.deriver_name:
@@ -417,6 +399,7 @@ class Photo(AssetModel):
                     file__path=deriver_path,
                     file__availability__isnull=False,
                 )
+                pass
             except Photo.DoesNotExist:
                 # This file is a sidecar file, but we haven't found the corresponding
                 # image file yet. In that case, we can create a new Photo asset (which
@@ -450,47 +433,49 @@ class Photo(AssetModel):
             else:
                 # Check and see if this photo is already on record. If not, create a
                 # new asset.
-                try:
-                    photo = Photo.objects.get(
-                        library=library, metadata_checksum=metadata_checksum
-                    )
-                except Photo.DoesNotExist:
-                    photo = Photo(library=library)
+                photo, _ = Photo.objects.get_or_create(
+                    library=library, metadata_checksum=metadata_checksum
+                )
 
         photo._import_metadata(image_metadata)
         photo.save()
         return photo
 
-    @staticmethod
-    def handle_files_changed(
-        sender: type[Photo],
-        asset: Photo,
-        files: Sequence[File],
-        removed: bool,
-        **kwargs: Any,
-    ) -> None:
-        if sender is not Photo or not isinstance(asset, Photo):
+    def handle_file_change(self, file: File) -> None:
+        try:
+            image_metadata = ImageMetadata.load(self.library, file.path)
+        except IOError:
+            file.availability = None
+            file.save(update_fields=("availability",))
             return
-        if removed:
-            return
-        library = asset.library
 
-        for file in files:
-            try:
-                image_metadata = ImageMetadata.load(library, file.path)
-            except IOError:
-                return None
+        metadata_checksum = image_metadata.calculate_checksum(payload=self.library.pk)
+        if self.metadata_checksum and self.metadata_checksum != metadata_checksum:
+            raise NotMyFileAnymore
 
-            metadata_checksum = image_metadata.calculate_checksum(payload=library.pk)
-            if asset.metadata_checksum and asset.metadata_checksum != metadata_checksum:
+        if image_metadata.deriver_name is not None:
+            if not any(
+                os.path.basename(path) == image_metadata.deriver_name
+                for (path,) in self.files.filter(
+                    availability__isnull=False
+                ).values_list("path")
+            ):
+                # This is a sidecar file, but the corresponding actual image file (the
+                # deriver) does not belong to this asset.
                 raise NotMyFileAnymore
 
-            if image_metadata.deriver_name is not None:
-                if not any(
-                    os.path.basename(file.path) == image_metadata.deriver_name
-                    for file in asset.files.all()
-                ):
-                    raise NotMyFileAnymore
+        self._import_metadata(image_metadata)
+        self.save()
 
-            asset._import_metadata(image_metadata)
-            asset.save()
+    @staticmethod
+    def handle_scan_finished(
+        sender: Literal["scan"], library: Library, **kwargs: Any
+    ) -> None:
+        for photo in Photo.objects.filter(
+            models.Exists(
+                File.objects.filter(
+                    asset=models.OuterRef("pk"), availability__isnull=False
+                )
+            )
+        ):
+            photo.check_image()
