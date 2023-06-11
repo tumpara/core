@@ -232,8 +232,8 @@ class Photo(AssetModel):
                 self.save(update_fields=("main_path", "blurhash"))
             raise FileNotFoundError(f"no main file available for photo {self.pk}")
 
-        image, _ = load_image(self.library, self.main_path, maybe_raw=maybe_raw)
-        image = cast(ImmutableImage, image)
+        mutable_image, _ = load_image(self.library, self.main_path, maybe_raw=maybe_raw)
+        image = cast(ImmutableImage, mutable_image)
         image_metadata = ImageMetadata.load(self.library, self.main_path)
         # Make sure the metadata matches that of the image we are displaying.
         self._import_metadata(image_metadata)

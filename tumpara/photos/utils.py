@@ -110,7 +110,7 @@ def load_image(
         image.copy = lambda: image  # type: ignore[assignment]
         image = PIL.ImageOps.exif_transpose(image)
         image.copy = original_copy  # type: ignore[assignment]
-    return cast(ImmutableImage, image), raw_original
+    return image, raw_original
 
 
 class ImageMetadataError(IOError):
