@@ -104,6 +104,7 @@ def serve_file(
         # TODO Implement this. We probably need to redo the serve() function from above
         #   entirely because we want to support If-Modified-Since headers, content types
         #   and so on.
+        #   When doing so, we can leverage storage.path().
         raise NotImplementedError(
             "File downloads are not implemented yet for backends other than the "
             "filesystem backend."

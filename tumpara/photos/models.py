@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from fractions import Fraction
 from typing import Any, Literal, Optional, cast
@@ -21,9 +22,10 @@ from .utils import (
     ImageMetadata,
     calculate_blurhash,
     extract_timestamp_from_filename,
-    get_mime_types,
     load_image,
 )
+
+_logger = logging.getLogger(__name__)
 
 
 class PhotoQuerySet(AssetQuerySet["Photo"]):
@@ -186,9 +188,9 @@ class Photo(AssetModel):
             return None
 
     @transaction.atomic
-    def check_image(
+    def _find_image(
         self, *, commit: bool = True
-    ) -> tuple[ImmutableImage, ImageMetadata]:
+    ) -> Optional[tuple[ImmutableImage, ImageMetadata]]:
         old_main_path = self.main_path
 
         PIL.Image.init()
@@ -217,7 +219,7 @@ class Photo(AssetModel):
             raw_candidate_paths = {
                 path
                 for path, mime_type in candidates
-                if (path, mime_type) not in candidates
+                if path not in image_candidate_paths
                 and mime_type not in ImageMetadata.SIDECAR_MIME_TYPES
             }
             if raw_candidate_paths:
@@ -232,11 +234,14 @@ class Photo(AssetModel):
                 self.save(update_fields=("main_path", "blurhash"))
             raise FileNotFoundError(f"no main file available for photo {self.pk}")
 
+        if self.main_path == old_main_path:
+            return None
+
         mutable_image, _ = load_image(self.library, self.main_path, maybe_raw=maybe_raw)
         image = cast(ImmutableImage, mutable_image)
         image_metadata = ImageMetadata.load(self.library, self.main_path)
         # Make sure the metadata matches that of the image we are displaying.
-        self._import_metadata(image_metadata)
+        self._import_metadata(image_metadata, reset_main_path=False)
 
         try:
             self.blurhash = calculate_blurhash(image)
@@ -284,7 +289,12 @@ class Photo(AssetModel):
 
         if rerender or not settings.THUMBNAIL_STORAGE.exists(path):
             if image is None:
-                image, _ = load_image(self.library, self.main_path)
+                if not self.main_path:
+                    find_image_result = self._find_image()
+                    if find_image_result is not None:
+                        image = find_image_result[0]
+                if image is None:
+                    image, _ = load_image(self.library, self.main_path)
             image.thumbnail(
                 (
                     # This means that both None and 0 evaluate to the original
@@ -317,7 +327,9 @@ class Photo(AssetModel):
                 defaults=defaults,
             )
 
-    def _import_metadata(self, image_metadata: ImageMetadata) -> None:
+    def _import_metadata(
+        self, image_metadata: ImageMetadata, *, reset_main_path: bool = True
+    ) -> None:
         """Merge image metadata from the given metadata object with this asset.
 
         In most cases, this prefers information from the parameter to the already
@@ -377,6 +389,12 @@ class Photo(AssetModel):
         # TODO Extract GPS information.
         self.media_location = None
 
+        # Reset the stored main path so that the next _find_image() call will re-save
+        # metadata. This makes sure we are prioritizing metadata from the same image
+        # that also produced the thumbnail.
+        if reset_main_path:
+            self.main_path = ""
+
         self.full_clean()
 
     @staticmethod
@@ -396,7 +414,7 @@ class Photo(AssetModel):
 
         if image_metadata.deriver_name:
             deriver_path = os.path.join(
-                os.path.basename(path), image_metadata.deriver_name
+                os.path.dirname(path), image_metadata.deriver_name
             )
             try:
                 photo = Photo.objects.get(
@@ -456,7 +474,10 @@ class Photo(AssetModel):
         file.extra = image_metadata.mime_type
 
         metadata_checksum = image_metadata.calculate_checksum(payload=self.library.pk)
-        if self.metadata_checksum and self.metadata_checksum != metadata_checksum:
+        if (
+            self.metadata_checksum
+            and bytes(self.metadata_checksum) != metadata_checksum
+        ):
             raise NotMyFileAnymore
 
         if image_metadata.deriver_name is not None:
@@ -477,11 +498,17 @@ class Photo(AssetModel):
     def handle_scan_finished(
         sender: Literal["scan"], library: Library, **kwargs: Any
     ) -> None:
-        for photo in Photo.objects.filter(
+        photo_queryset = Photo.objects.filter(
             models.Exists(
                 File.objects.filter(
                     asset=models.OuterRef("pk"), availability__isnull=False
                 )
-            )
-        ):
-            photo.check_image()
+            ),
+            main_path="",
+        ).select_related("library")
+        _logger.debug(
+            f"Scanning image files for {photo_queryset.count()} photo(s). This might "
+            f"take a while."
+        )
+        for photo in photo_queryset:
+            photo._find_image()

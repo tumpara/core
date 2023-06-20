@@ -186,9 +186,7 @@ class Library(Joinable):
         _logger.info(f"Scanning step 2 of 3 for {self}: Searching for new content...")
         scanner.run(self, scan_events(), thread_count=thread_count)
 
-        _logger.info(
-            f"Scanning step 3 of 3 for {self}: Removing obsolete database entries..."
-        )
+        _logger.info(f"Scanning step 3 of 3 for {self}: Running post-scan tasks...")
         scan_event.commit(self)
 
         if not watch:

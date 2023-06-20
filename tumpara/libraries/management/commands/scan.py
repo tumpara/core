@@ -21,5 +21,5 @@ class Command(management.BaseCommand):
         else:
             _logger.info(f"Starting consecutive scan of {library_count} libraries...")
 
-        for library in Library.objects.all():
+        for library in Library.objects.filter(pk=2):
             library.scan()

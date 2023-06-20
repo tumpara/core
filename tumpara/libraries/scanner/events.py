@@ -489,4 +489,4 @@ class ScanEvent(Event):
                 f"Marked {count} file objects in {library} as no longer available."
             )
 
-        scan_finished.send_robust("scan", library=library)
+        # scan_finished.send_robust("scan", library=library)

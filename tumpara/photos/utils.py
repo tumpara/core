@@ -8,7 +8,7 @@ import os.path
 import re
 import subprocess
 from collections.abc import Sequence
-from typing import Any, ClassVar, Literal, Optional, TypeVar, Union, cast, overload
+from typing import Any, ClassVar, Literal, Optional, TypeVar
 
 import blurhash
 import dateutil.parser
@@ -18,7 +18,6 @@ import PIL.ImageOps
 import rawpy
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
-from django.core.files import storage as django_storage
 
 from tumpara.libraries.models import Library
 from tumpara.utils import exiftool
@@ -49,6 +48,16 @@ remove_whitespace = functools.partial(
 )
 
 
+def _exif_transpose(image: PIL.Image.Image) -> None:
+    # exif_transpose() will return a copy if the image doesn't need rotation. In
+    # this case, the original image will do. This improves performance quite a bit,
+    # especially for large images.
+    original_copy = image.copy
+    image.copy = lambda: image  # type: ignore[assignment]
+    image = PIL.ImageOps.exif_transpose(image)
+    image.copy = original_copy  # type: ignore[assignment]
+
+
 def load_image(
     library: Library, path: str, *, maybe_raw: bool = True
 ) -> tuple[PIL.Image.Image, bool]:
@@ -61,11 +70,21 @@ def load_image(
     :return: A tuple containing the Pillow :class:`~PIL.Image.Image` and a boolean that
         indicates whether the file was a raw image.
     """
+    if maybe_raw is False:
+        # Speed up loading by giving Pillow the file path directly. In this case, Pillow
+        # will use mmap if possible.
+        try:
+            local_path = library.storage.path(path)
+        except NotImplementedError:
+            pass
+        else:
+            image = PIL.Image.open(local_path)
+            _exif_transpose(image)
+            _logger.debug(f"Opened regular image {path!r} from {library} using Pillow")
+            return image, False
+
     with library.storage.open(path, "rb") as file_io:
         try:
-            if not maybe_raw:
-                raise rawpy.LibRawFileUnsupportedError
-
             raw_image = rawpy.imread(file_io)  # type: ignore
             try:
                 # Case 1: we have a raw file with an embedded thumbnail. Use that
@@ -103,13 +122,7 @@ def load_image(
             _logger.debug(f"Opened regular image {path!r} from {library}")
             raw_original = False
 
-        # exif_transpose() will return a copy if the image doesn't need rotation. In
-        # this case, the original image will do. This improves performance quite a bit,
-        # especially for large images.
-        original_copy = image.copy
-        image.copy = lambda: image  # type: ignore[assignment]
-        image = PIL.ImageOps.exif_transpose(image)
-        image.copy = original_copy  # type: ignore[assignment]
+        _exif_transpose(image)
     return image, raw_original
 
 
@@ -123,18 +136,17 @@ def get_mime_types(library: Library, paths: Sequence[str]) -> Sequence[str]:
     :param library: The library containing all the files.
     :param paths: List of valid paths.
     """
-    if not isinstance(library.storage, django_storage.FileSystemStorage):
+    try:
+        local_paths = [library.storage.path(path) for path in paths]
+    except NotImplementedError as error:
         raise NotImplementedError(
             f"Image metadata loading is not implemented yet for storage backends "
-            f"other than the filesystem backend (got {type(library.storage)!r} for "
+            f"that don't provide a local option (got {type(library.storage)!r} for "
             f"library {library.pk})."
-        )
+        ) from error
 
     try:
-        exiftool_result = exiftool.execute_exiftool(
-            "-MimeType",
-            *(os.path.join(library.storage.base_location, path) for path in paths),
-        )
+        exiftool_result = exiftool.execute_exiftool("-MimeType", *local_paths)
     except (subprocess.CalledProcessError, exiftool.ExiftoolError) as error:
         raise ImageMetadataError(
             f"Failed to find MIME types for {len(paths)} file(s) in {library}."
@@ -199,22 +211,19 @@ class ImageMetadata:
         Exif.Photo.ExposureProgram field (some information is in the maker note) are all
         bundled together in a single "ExposureProgram" field when parsing with Exiftool.
         """
-        if not isinstance(library.storage, django_storage.FileSystemStorage):
+        try:
+            local_path = library.storage.path(path)
+        except NotImplementedError as error:
             raise NotImplementedError(
                 f"Image metadata loading is not implemented yet for storage backends "
-                f"other than the filesystem backend (got {type(library.storage)!r} for "
+                f"that don't provide a local option (got {type(library.storage)!r} for "
                 f"library {library.pk})."
-            )
+            ) from error
 
         try:
-            exiftool_result = exiftool.execute_exiftool(
-                "-n",
-                os.path.join(library.storage.base_location, path),
-            )
+            exiftool_result = exiftool.execute_exiftool("-n", local_path)
             formatted_exiftool_result = exiftool.execute_exiftool(
-                "-d",
-                "%Y-%m-%dT%H:%M:%S%6f",
-                os.path.join(library.storage.base_location, path),
+                "-d", "%Y-%m-%dT%H:%M:%S%6f", local_path
             )
         except (subprocess.CalledProcessError, exiftool.ExiftoolError) as error:
             raise ImageMetadataError(
@@ -314,12 +323,14 @@ class ImageMetadata:
         functools.partial(_get_string_value, key="ExposureProgram")
     )
     exposure_time = functools.cached_property(
+        # TODO parse fraction
         functools.partial(_get_numeric_value, key="ExposureTime")
     )
     flash_description = functools.cached_property(
         functools.partial(_get_string_value, key="Flash")
     )
     focal_length = functools.cached_property(
+        # HHH
         functools.partial(_get_numeric_value, key="FocalLength")
     )
     focus_mode_description = functools.cached_property(

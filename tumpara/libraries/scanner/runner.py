@@ -8,7 +8,7 @@ import time
 from typing import TYPE_CHECKING, Optional
 
 from django.conf import settings
-from django.db import connection, transaction
+from django.db import connection
 
 from tumpara.utils import exiftool
 
